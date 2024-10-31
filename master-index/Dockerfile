@@ -25,4 +25,4 @@ RUN poetry install --no-interaction --no-ansi --verbose
 COPY . /app
 
 # Run the application
-CMD ["poetry", "run", "python", "src/backend.py"]
+CMD ["poetry", "run", "python", "src/main.py"]

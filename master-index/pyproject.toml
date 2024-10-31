@@ -7,6 +7,11 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.12"
+quixstreams = "^3.1.1"
+pandas = "^2.2.3"
+requests = "^2.32.3"
+loguru = "^0.7.2"
+autopep8 = "^2.3.1"
 
 
 [build-system]
