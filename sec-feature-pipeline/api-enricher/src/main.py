@@ -50,9 +50,10 @@ def consume_data() -> Generator[Dict, None, None]:
    
 
 def produce_data(enriched_transactions: Generator[Dict, None, None]) -> None:
-    with app.get_producer() as producer:
+    
+    with app.get_producer() as producer:    
         for tx in enriched_transactions:
-
+            
             timestamp = int(datetime.strptime(
                 tx['date'], '%Y-%m-%d').timestamp()
             ) * 1000

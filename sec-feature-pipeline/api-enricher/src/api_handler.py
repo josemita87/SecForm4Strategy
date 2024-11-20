@@ -96,17 +96,21 @@ class ApiHandler():
         except:
             self._log_error(tx, self.failed_mcaps_path, 'missing_mcap')
 
+#TODO
+# Add additional fallback logic in case the first api fails!
     def _get_exchange(self, tx: dict) -> str:
         try:
             return self.mapper['exchange'].get(tx.get('company_cik', None), None)
         except:
             self._log_error(tx, self.failed_exchange_path, 'missing_exchange')
 
+
     def _get_sic(self, tx: dict) -> str:
         try:
             return self.mapper['sic'].get(tx.get('company_cik', None), None)
         except:
             self._log_error(tx, self.failed_sic_path, 'missing_sic')
+
 
     def _log_error(self, tx: dict, path: str, error: str) -> None:
 

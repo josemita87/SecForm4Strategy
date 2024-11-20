@@ -44,6 +44,31 @@ class Config(BaseSettings):
         "sic": str,
     }
     
+    # Inference blueprint
+    inference_blueprint: dict = Field({
+        "key": "000000000",  # Dummy key
+        "company_cik": "0000000000",  # Dummy CIK
+        "ticker": "DUM",
+        "insider_cik": "0000000001",  # Dummy insider CIK
+        "insider_name": "DOE JOHN",
+        "owner_code": "9999",
+        "rule105b1": "False",
+        "derivative": "False",
+        "link": "https://www.example.com/test-dummy-data",
+        "shares": "1",
+        "acquired_disposed": "D",
+        "price": "1.01",
+        "date": datetime.strptime("2000-01-01",'%Y-%m-%d'),  # Use a fictional date
+        "remaining_shares": "1",
+        "ownership": "D",
+        "coding": "T",
+        "direct_holding": "1",
+        "indirect_holding": "0",
+        "market_cap": "1.0",
+        "exchange": "DUMMY",
+        "sic": "0000"
+    })
+
     class Config:
         env_file = ".env"  # Specify the .env file for local development
 

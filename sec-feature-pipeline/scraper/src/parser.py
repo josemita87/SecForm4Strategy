@@ -26,7 +26,7 @@ class Form4Parser:
     def __init__(self,  url):
         self.url = self.BASE_URL + url
         logger.info(self.url)
-      #  time.sleep(30)
+        time.sleep(0.1)
         self.xml = self.get_filing()
 
     def get_filing(self) -> Text:

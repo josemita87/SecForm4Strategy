@@ -1,7 +1,7 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
-import os
+import pandas as pd
 
 # Load the main .env file and then the credentials.env file
 load_dotenv(".env")
@@ -16,8 +16,14 @@ class Config(BaseSettings):
     feature_view_name: str = Field(..., json_schema_extra={'env': 'FEATURE_VIEW_NAME'})
     event_time: str = Field(..., json_schema_extra={'env': 'EVENT_TIME'})
     api_key: str = Field(..., json_schema_extra={'env': 'API_KEY'})
+    inference_blueprint: dict = Field({
+        "date": pd.to_datetime(["1999-01-01"]),
+        "close": [-1.0],
+        "ticker": ["INFERENCE_VALUE"],
+        
+        
+    })
     
-
     buffer_size: int = Field(100, json_schema_extra={'env': 'BUFFER_SIZE'})
 
     class Config:

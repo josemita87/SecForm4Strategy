@@ -70,12 +70,6 @@ stop-redpanda:
 	cd docker-compose && docker-compose -f redpanda.yml down
 
 #Running docker containers for sec-4 pipeline
-run-prod-master: stop-master build-master
-	docker run \
-	-it --network redpanda-network \
-	--env-file master-index/.env \
-	--name master-index master-index
-
 run-prod-scraper: stop-scraper build-scraper
 	docker run \
 	-it --network redpanda-network \

@@ -1,19 +1,10 @@
-from src.config import config
 import hopsworks
 import pandas as pd
-from typing import Tuple
 from loguru import logger
 import time
 
 
 class Connection:  
-
-    INFERENCE_BLUEPRINT = {
-        "ticker": ["INFERENCE_VALUE"],
-        "close": [-1.0],
-        "date": pd.to_datetime(["1999-01-01"])
-    }
-
     def __init__(
             self, 
             project_name, 
@@ -46,16 +37,16 @@ class Connection:
        
         data: pd.DataFrame = fg.read()
         tickers = data['ticker'].unique()
-        logger.debug(f"Data fetched from feature store")
-
+        
         return tickers
     
 
     def fetch_price_data(
         self,
-        tickers_to_process: list,
+        processing_tickers: list,
         feature_group_name: hopsworks,
         feature_group_version: int,
+        inference_blueprint: dict, 
         feature_view_name: str = None,
         feature_view_version: int = 1,
         ) -> pd.DataFrame:
@@ -68,25 +59,21 @@ class Connection:
         )
 
         #Insert dummy data infer schema
-        fg.insert(pd.DataFrame(self.INFERENCE_BLUEPRINT))
+        blueprint = reduce_mem_storage(pd.DataFrame(inference_blueprint))
+        fg.insert(blueprint)
+
         try:
             prices_fv = self.fs.get_or_create_feature_view(
                 name=feature_view_name,
                 version=feature_view_version,
                 query=fg.filter(
-                    fg.ticker.isin(tickers_to_process)
+                    fg.ticker.isin(processing_tickers)
                 )
             )
 
-        except:  
-            prices_fv = None
-    
-
-        if prices_fv:
-            logger.debug(f"Data fetched from feature store")
             return prices_fv.get_batch_data()
         
-        else:
+        except:  
             logger.debug('Could not find data in feature store')
             return pd.DataFrame()
         
@@ -101,19 +88,35 @@ class Connection:
         
         fg = self.fs.get_or_create_feature_group(
             name=feature_group_name,
-            version=config.feature_group_version,
+            version=feature_group_version,
             primary_key=['ticker', 'date'],
             event_time='date'
         )
-        data.reset_index(inplace=True, drop=True)
-        data.drop(columns=['index'], inplace=True)
- 
-        fg.insert(
-            data, write_options = {
-                'start_offline_materialization':False,
-                'mode':'append' 
-            }
-        )
+        
+        if not data.empty: 
+        
+            fg.insert(
+                data, write_options = {
+                    'start_offline_materialization':False,
+                    'mode':'append' 
+                }
+            )
 
-        logger.debug(f"Data pushed to feature store")
-        time.sleep(30)
+            logger.debug(f"Data pushed to feature store")
+            time.sleep(30)
+
+
+# Auxiliary function
+def reduce_mem_storage(df:pd.DataFrame) -> pd.DataFrame:
+    """Reduces the memory usage of the given DataFrame"""
+    # Drop index column if it exists
+    if df.columns.str.contains('index').any():
+        df.drop(columns=['index'], inplace=True)
+    # Convert the date column to datetime 64ns
+    df['date'] = pd.to_datetime(df['date'])
+    # Convert the close column to float32
+    df['close'] = df['close'].astype('float32')
+    # Convert the ticker column to category
+    df['ticker'] = df['ticker'].astype('category')
+
+    return df
