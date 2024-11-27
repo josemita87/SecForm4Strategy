@@ -1,0 +1,58 @@
+version: '3.8'
+
+name: f4-feature_pipeline
+
+networks:
+  redpanda_network:
+    name: redpanda_network
+    driver: bridge
+
+services:
+  master-index:
+    build:
+      context: ../sec-feature-pipeline/master-index
+    networks:
+      - redpanda_network
+    env_file:
+      - ../sec-feature-pipeline/master-index/.env
+    ports:
+      - "8001:8001"
+    restart:
+      on-failure
+
+  scraper:
+    build:
+      context: ../sec-feature-pipeline/scraper
+    networks:
+      - redpanda_network
+    env_file:
+      - ../sec-feature-pipeline/scraper/.env
+    ports:
+      - "8002:8002"
+    restart:
+      always
+
+  api-enricher:
+    build:
+      context: ../sec-feature-pipeline/api-enricher
+    networks:
+      - redpanda_network
+    env_file:
+      - ../sec-feature-pipeline/api-enricher/.env
+    ports:
+      - "8003:8003"
+    restart:
+      always
+
+  kafka-to-store:
+    build:
+      context: ../sec-feature-pipeline/kafka-to-store
+    networks:
+      - redpanda_network
+    env_file:
+      - ../sec-feature-pipeline/kafka-to-store/.env
+    ports:
+      - "8004:8004"
+    restart:
+      always
+    

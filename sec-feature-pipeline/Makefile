@@ -63,11 +63,6 @@ stop-feature:
 		docker rm kafka-to-store; \
 	fi
 
-#Running docker containers for redpanda cluster 
-start-redpanda:
-	cd docker-compose && docker-compose -f redpanda.yml up -d
-stop-redpanda:
-	cd docker-compose && docker-compose -f redpanda.yml down
 
 #Running docker containers for sec-4 pipeline
 run-prod-scraper: stop-scraper build-scraper

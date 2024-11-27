@@ -1,5 +1,5 @@
 # Ignore all Python files by default
-*.py
+#*.py
 
 # But not these directories where actual code is located
 !src/
