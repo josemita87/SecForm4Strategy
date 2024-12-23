@@ -3,8 +3,6 @@ import requests
 import xml.etree.ElementTree as ET
 from transaction import EssentialTrade
 from typing import Text, List, Dict
-import sys
-import os
 import time
 from loguru import logger
 # Get the absolute path to the 'scraper' directory
@@ -23,18 +21,27 @@ class Form4Parser:
     DERIVATIVE_PATHS = derivative_paths
     HEADERS = headers
 
-    def __init__(self,  url):
+    def __init__(self,  url, sleep_time=0.1):
         self.url = self.BASE_URL + url
         logger.info(self.url)
-        time.sleep(0.1)
+        time.sleep(sleep_time)
         self.xml = self.get_filing()
 
     def get_filing(self) -> Text:
-        filing = requests.get(self.url, headers=headers).text
-        return ET.fromstring(re.search(self.XML_DELIM, filing, re.DOTALL).group(1))
-
+        try:
+            filing = requests.get(self.url, headers=headers).text
+            return ET.fromstring(re.search(self.XML_DELIM, filing, re.DOTALL).group(1))
+        
+        except Exception as e:
+            logger.error(f"\n\nFailed to get filing: {e}, {self.url}\n\n")
+            time.sleep(5)
+            return None
     def create_txs(self) -> list[dict]:
-
+        '''For a given filing, create a list of transactions.
+        Initialize list to store transactions as dicts, and query the XML for 
+        non-derivative and derivative transactions.For each individual transaction, 
+        create EssentialTrade which is filled with process_transaction().'''
+        
         filing_data = []
 
         if self.xml is None:
@@ -71,15 +78,15 @@ class Form4Parser:
     def _query_xml(self, etree: ET.ElementTree, paths: dict):
         """
         Given an ElementTree object and a dictionary of paths, 
-        this function queries the paths and returns a dict with the 
-        values.
+        this function queries the paths and sets the attributes 
+        of the transaction object.
 
         Parameters:
             etree (ElementTree): The ElementTree object to query.
             paths (dict): A dictionary where the keys are the desired output keys, 
-                          and the values are the paths to the values in the ElementTree.
+            and the values are the paths to the values in the ElementTree.
         Returns:
-            dict: A dictionary with the queried values.
+            None
         """
 
         for key, path in paths.items():

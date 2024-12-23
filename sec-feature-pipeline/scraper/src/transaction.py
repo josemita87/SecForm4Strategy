@@ -66,12 +66,15 @@ class EssentialTrade(BaseModel):
         self.is_equity_swap = str(self.equity_swap).lower() in ['true', '1']
 
     def _set_rule105b1(self) -> str:
-        """Determine if this is a Rule 10b5-1 trade."""
+        """Determine if this is a Rule 10b5-1 trade.
+        This method first checks if the rule105b1 attribute is set to True.
+        If it is not, it checks the footnotes for the presence of '10b5-1' 
+        for the footnote corresponding to the transaction."""
+        
         if str(self.rule105b1).lower() in ['true', '1']:
             self.rule105b1 = True
 
         else:
-
             id = self.d_footnote_id if self.is_derivative else self.footnote_id
             for footnote in self.xml.findall('footnotes/footnote'):
                 if footnote.get('id') == id and '10b5-1' in footnote.text:
@@ -145,7 +148,8 @@ class EssentialTrade(BaseModel):
                 'ownership': self.d_ownership,
                 'coding': self.d_coding,
                 'direct_holding': self.d_direct_holding,
-                'indirect_holding': self.d_indirect_holding
+                'indirect_holding': self.d_indirect_holding,
+                'equity_swap': self.is_equity_swap
             }
 
         else:
@@ -158,7 +162,8 @@ class EssentialTrade(BaseModel):
                 'ownership': self.ownership,
                 'coding': self.coding,
                 'direct_holding': self.direct_holding,
-                'indirect_holding': self.indirect_holding
+                'indirect_holding': self.indirect_holding,
+                'equity_swap': self.is_equity_swap
             }
 
         return {**insider_data, **tx_data}

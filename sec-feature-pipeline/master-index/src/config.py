@@ -9,7 +9,7 @@ class Config(BaseSettings):
     kafka_output_topic: str = Field(..., env='KAFKA_OUTPUT_TOPIC')
     years: int = Field(None, env='LAST_N_DAYS') 
     form_type: str = Field(None, env='FORM_TYPE') 
-    
+    batch_size: int = Field(1000, env='BATCH_SIZE')
 
     @field_validator('form_type')
     def validate_form_type(cls, v):

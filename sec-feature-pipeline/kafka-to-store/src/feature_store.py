@@ -10,13 +10,13 @@ from datetime import datetime
 class Connection:  
 
     def __init__(self, project_name, api_key):
-        self.project_name = project_name
-        self.api_key = api_key
-        self.project = hopsworks.login(
-            project=self.project_name,
-            api_key_value=self.api_key,
+        
+        # Initialize Feature Store Object
+        project = hopsworks.login(
+            project=project_name,
+            api_key_value=api_key,
         )
-        self.fs = self.project.get_feature_store()
+        self.fs = project.get_feature_store()
     
     
     def _validate_dataframe_types(self, data: pd.DataFrame, expected_schema: dict) -> pd.DataFrame:
@@ -43,7 +43,7 @@ class Connection:
             event_time='date'
         )
 
-        breakpoint()
+        
         # Validate and coerce the DataFrame
         data = self._validate_dataframe_types(data, schema)
         
@@ -98,12 +98,17 @@ def reduce_mem_storage(data: pd.DataFrame) -> pd.DataFrame:
     # Convert booleans to actual boolean dtype
     data['rule105b1'] = data['rule105b1'].astype('bool')
     data['derivative'] = data['derivative'].astype('bool')
+    data['equity_swap'] = data['equity_swap'].astype('bool')
 
     # Convert numeric columns to more memory-efficient types
     data['shares'] = pd.to_numeric(data['shares'], errors='coerce').astype('int32')
     data['price'] = pd.to_numeric(data['price'], errors='coerce').astype('float32')
     data['remaining_shares'] = pd.to_numeric(data['remaining_shares'], errors='coerce').astype('int32')
-    data['market_cap'] = pd.to_numeric(data['market_cap'], errors='coerce').astype('int32')
+    data['direct_holding'] = pd.to_numeric(data['direct_holding'], errors='coerce').astype('int32')
+    data['indirect_holding'] = pd.to_numeric(data['indirect_holding'], errors='coerce').astype('int32')
+    
+    data['market_cap'] = pd.to_numeric(data['market_cap'], errors='coerce').astype('int64')
+    data['timestamp'] = pd.to_numeric(data['timestamp'], errors='coerce').astype('int64')
 
     # Convert 'date' to datetime
     data['date'] = pd.to_datetime(data['date'])

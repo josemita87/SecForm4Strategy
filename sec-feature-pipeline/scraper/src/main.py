@@ -1,5 +1,5 @@
 from config import config
-from typing import List, Dict
+from typing import List, Dict, Generator
 from loguru import logger
 from quixstreams import Application
 from datetime import datetime
@@ -53,10 +53,6 @@ def consume_data() -> List[str]:
                 logger.debug('Coudln\'t get timestamp')
                 pass
            
-
-            #counter += 1
-            #if counter > 100:
-                #break
             try:
                 url = json.loads(message.value().decode('utf-8'))['file_path']
                 urls.append(url)
@@ -73,9 +69,10 @@ def parse_and_produce_4Fs(urls: List[str], buffer_size: int) -> None:
     
     for url in islice(urls, config.test_size):
         
-        buffer.extend(
-            Form4Parser(url).create_txs()
-        )
+        filing_transactions = Form4Parser(url, config.sleep_time).create_txs()
+        if filing_transactions:
+            buffer.extend(filing_transactions)
+        
         if len(buffer) >= buffer_size:
             produce_data(buffer)
             buffer = []
@@ -93,6 +90,9 @@ def produce_data(data: List[dict]) -> None:
                 record['date'], '%Y-%m-%d').timestamp()
             ) * 1000
             
+            #Add timestamp to the record for future reference
+            record['timestamp'] = timestamp
+
             try:
                 key = xxhash.xxh64(
                     record['link'] + record['remaining_shares'] +
@@ -100,7 +100,7 @@ def produce_data(data: List[dict]) -> None:
                 ).hexdigest()
 
             except:
-                #Create a key for the record without using link for when it's not available
+                #Create a key for the record without using link 
                 key = xxhash.xxh64(
                     record['remaining_shares'] +
                     ('1' if record['derivative'] else '0')
@@ -120,6 +120,13 @@ def produce_data(data: List[dict]) -> None:
             )
                 
     logger.debug(f"Produced {len(data)} messages")
+
+
+#Auxiliary function to batch records when producing data
+def batch_records(records: list, batch_size: int) -> Generator:
+    """Yield successive batches of size `batch_size` from `records`."""
+    for i in range(0, len(records), batch_size):
+        yield records[i:i + batch_size]
 
 
 if __name__ == '__main__':

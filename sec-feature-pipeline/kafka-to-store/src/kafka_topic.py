@@ -12,8 +12,9 @@ class Connection:
         
         self.app = Application(
             broker_address=broker_address,
-            consumer_group='form-4-enriched',
-            auto_offset_reset='earliest',
+            consumer_group='kafka-to-store',
+            auto_offset_reset='latest',
+            #commit_every=1
             )
 
         self.input_topic = self.app.topic(
@@ -34,19 +35,17 @@ class Connection:
             while True:
                 
                 message = consumer.poll()
-                if not message:
-                    logger.debug("Not any messages left to consume")
-                    return True, buffer
+                #if not message:
+                   # logger.debug("Not any messages left to consume")
+                    
+                    #return True, buffer
             
                 if message:
                     # Decode the key and value & add to buffer
                     key = {'key': message.key().decode('utf-8')}
                     updated_values = json.loads(message.value().decode('utf-8'))
                     
-                    # Convert values to string to avoid type errors
-                    #updated_values = {k: str(v) for k, v in values.items()}
-    
-                    # Convert the 'date' field back to a datetime object if required
+                    # Convert the date to datetime object
                     if 'date' in updated_values:
                         updated_values['date'] = datetime.strptime(updated_values['date'], '%Y-%m-%d')
                     
@@ -55,6 +54,8 @@ class Connection:
                     
                 
                 if len(buffer) >= buffer_size:
+                    #Update offset for the consumer
+                 
                     return False, buffer
                     
 

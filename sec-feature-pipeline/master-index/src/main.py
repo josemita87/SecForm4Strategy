@@ -1,12 +1,9 @@
 from config import config
-from typing import List, Dict
+from typing import List, Dict, Generator
 from loguru import logger
 from quixstreams import Application
-import sqlite3 as sql
-import os
 import pandas as pd
 import requests
-import json
 from datetime import datetime
 import xxhash
 from io import BytesIO
@@ -41,6 +38,7 @@ def fetch_parse_data(year, quarter):
         lines = content_str.splitlines()
 
         start_index = 0
+        # Crop the header
         for i, line in enumerate(lines):
             if '|' in line:
                 start_index = i + 2
@@ -60,34 +58,49 @@ def fetch_parse_data(year, quarter):
             encoding='utf-8'
         )
 
+        import time
+        time.sleep(1)
         logger.debug(f'Fetched data for {year} {quarter}')
         return df
 
 
 def produce_data(data: pd.DataFrame) -> None:
 
-    data: List[Dict] = data.to_dict(orient='records')
+    data = data.copy()
 
-    for record in data:
+    # Convert the date to a timestamp in milliseconds
+    data['timestamp'] = pd.to_datetime(data['date']).astype(int) // 10**6
 
-        timestamp = int(datetime.strptime(
-            record['date'], '%Y-%m-%d').timestamp()) * 1000
-        key = xxhash.xxh64(record['file_path']).hexdigest()
+    # Convert the file path to a unique key
+    data['key'] = data['file_path'].apply(lambda x: xxhash.xxh64(x).hexdigest())
+    
+    # Convert the data to a list of dictionaries
+    records: List[Dict] = data.to_dict(orient='records')
 
-        with app.get_producer() as producer:
+    with app.get_producer() as producer:
+        
+        # Split the records into batches
+        batch:Generator = batch_records(records, config.batch_size)
+        
+        for records in batch:
+            for record in records:
+     
+                key = record.pop('key')
+                message = output_topic.serialize(
+                    key=key,
+                    value=record,
+                )
 
-            message = output_topic.serialize(
-                key=key,
-                value=record,
-            )
+                producer.produce(
+                    topic=output_topic.name,
+                    value=message.value,
+                    key=message.key,
+                    timestamp=record['timestamp']
+                )
 
-            producer.produce(
-                topic=output_topic.name,
-                value=message.value,
-                key=message.key,
-                timestamp=timestamp
-            )
-
+            # Flush the producer
+            producer.flush()
+            
 
 def get_historic_data(form_type: str, years: int) -> None:
 
@@ -109,7 +122,14 @@ def get_latest_data(form_type: str) -> None:
     produce_data(filings)
 
 
+
+#Auxiliary function to batch records when producing data
+def batch_records(records: list, batch_size: int) -> Generator:
+    """Yield successive batches of size `batch_size` from `records`."""
+    for i in range(0, len(records), batch_size):
+        yield records[i:i + batch_size]
+
 if __name__ == '__main__':
     get_historic_data(config.form_type, config.years)
 
-# TODO
+

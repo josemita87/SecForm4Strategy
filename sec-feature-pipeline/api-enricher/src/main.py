@@ -54,10 +54,6 @@ def produce_data(enriched_transactions: Generator[Dict, None, None]) -> None:
     with app.get_producer() as producer:    
         for tx in enriched_transactions:
             
-            timestamp = int(datetime.strptime(
-                tx['date'], '%Y-%m-%d').timestamp()
-            ) * 1000
-        
             key = xxhash.xxh64(
                 tx['link'] + tx['remaining_shares'] +
                 ('1' if tx['derivative'] else '0')
@@ -72,9 +68,9 @@ def produce_data(enriched_transactions: Generator[Dict, None, None]) -> None:
                 topic=output_topic.name,
                 key=message.key,
                 value=message.value,
-                timestamp=timestamp
+                timestamp=tx['timestamp']
             )
-
+    
 
 if __name__ == '__main__':
     # Create an enriched generator from the consumed data

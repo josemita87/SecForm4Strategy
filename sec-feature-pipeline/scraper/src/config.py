@@ -13,6 +13,7 @@ class Config(BaseSettings):
     timedelta: int = Field(..., env='TIMEDELTA')
     test_size: int = Field(..., env='TEST_SIZE')
     buffer_size: int = Field(..., env='BUFFER_SIZE')
+    sleep_time: float = Field(..., env='SLEEP_TIME')
     # Dev settings
     
     """kafka_broker_address: str = 'localhost:19092'
