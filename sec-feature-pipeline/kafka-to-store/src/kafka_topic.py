@@ -8,13 +8,12 @@ from datetime import datetime
 
 
 class Connection:
-    def __init__(self, broker_address, input_topic_name):
+    def __init__(self, broker_address, input_topic_name, consumer_group, auto_offset_reset):
         
         self.app = Application(
             broker_address=broker_address,
-            consumer_group='kafka-to-store',
-            auto_offset_reset='latest',
-            #commit_every=1
+            consumer_group=consumer_group,
+            auto_offset_reset=auto_offset_reset,
             )
 
         self.input_topic = self.app.topic(
@@ -24,7 +23,7 @@ class Connection:
         )
 
          
-    def consume_data(self, buffer_size) -> Tuple[bool, list[Dict]]:
+    def consume_data(self, buffer_size:int, timeout:int) -> Generator[Tuple[bool, pd.DataFrame], None, None]:
         """ In this method, we consume data from the Kafka topic and return a buffer of transactions.
         We do not use generators because the aim is to push data in batches to the feature store."""
 
@@ -34,11 +33,9 @@ class Connection:
 
             while True:
                 
-                message = consumer.poll()
-                #if not message:
-                   # logger.debug("Not any messages left to consume")
-                    
-                    #return True, buffer
+                message = consumer.poll(timeout)
+                if not message:
+                    return True, buffer
             
                 if message:
                     # Decode the key and value & add to buffer
@@ -54,8 +51,9 @@ class Connection:
                     
                 
                 if len(buffer) >= buffer_size:
-                    #Update offset for the consumer
-                 
+                    #Update offset for the last message consumed
+                    consumer.store_offsets(message)
+                    
                     return False, buffer
                     
 

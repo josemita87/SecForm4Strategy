@@ -10,7 +10,7 @@ class Config(BaseSettings):
     years: int = Field(None, env='LAST_N_DAYS') 
     form_type: str = Field(None, env='FORM_TYPE') 
     batch_size: int = Field(1000, env='BATCH_SIZE')
-
+    mode: Literal['historical', 'latest'] = Field('historical', env='MODE')
     @field_validator('form_type')
     def validate_form_type(cls, v):
         if v not in ['4', '13F-HR']:

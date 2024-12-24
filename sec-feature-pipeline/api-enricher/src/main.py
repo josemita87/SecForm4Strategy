@@ -9,8 +9,8 @@ import xxhash
 
 app = Application(
     broker_address=config.kafka_broker_address,
-    consumer_group='form-4-enriched',
-    auto_offset_reset='earliest',
+    consumer_group=config.consumer_group,
+    auto_offset_reset=config.auto_offset_reset,
 )
 
 input_topic = app.topic(
@@ -32,8 +32,9 @@ def consume_data() -> Generator[Dict, None, None]:
         consumer.subscribe(topics=[input_topic.name])
 
         while True:
-            message = consumer.poll(4)
+            message = consumer.poll(10)
 
+            #If no new messages for 10 seconds break
             if message is None:
                 if buffer:
                     yield from buffer
@@ -43,6 +44,7 @@ def consume_data() -> Generator[Dict, None, None]:
 
             buffer.append(json.loads(message.value().decode('utf-8')))
             
+            #If buffer is full, yield the data
             if len(buffer) >= config.buffer_size:
                 yield from buffer
                 buffer.clear()  
@@ -73,6 +75,13 @@ def produce_data(enriched_transactions: Generator[Dict, None, None]) -> None:
     
 
 if __name__ == '__main__':
+    
+    logger.info(f'Enricher Microservice Started')
+    logger.info(f'Connected to redpanda broker at {config.kafka_broker_address}')
+    logger.info(f'Input topic: {config.kafka_input_topic}')
+    logger.info(f'Output topic: {config.kafka_output_topic}')
+    logger.info(f'ENV VARIABLES:\n ->Buffer Size: {config.buffer_size} \n -> Consumer Group: {config.consumer_group} \n -> Auto Offset Reset: {config.auto_offset_reset} \n')
+    
     # Create an enriched generator from the consumed data
     enriched_generator = ApiHandler(
         consume_data(),
@@ -85,7 +94,8 @@ if __name__ == '__main__':
         config.buffer_size
     ).get_enriched_data()
 
+    logger.info('Enricher Microservice Enriched Data')
     # Pass the enriched generator directly to produce_data
     produce_data(enriched_generator)
 
-    
+    logger.info(f'Enricher Microservice Produced Buffered Data. Exiting...')

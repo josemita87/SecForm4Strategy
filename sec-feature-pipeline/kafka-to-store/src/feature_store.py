@@ -54,7 +54,8 @@ class Connection:
 
         except Exception as e:
             logger.error(f"Failed to push data to feature store: {e}")
-            raise
+            logger.debug(f"Data: {data}")
+            
         
 
 
@@ -78,40 +79,40 @@ def data_cleaning(data: list[dict]) -> pd.DataFrame:
 
 
 #Auxiliary function
-def reduce_mem_storage(data: pd.DataFrame) -> pd.DataFrame:
+def validate_and_reduce_mem_storage(data: pd.DataFrame) -> pd.DataFrame:
     """
     Reduce the memory usage of the DataFrame by downcasting the numeric columns.
+    Invalid rows for each conversion will be dropped.
     """
-  
+    data['link'] = data['link'].astype('str')
+
     # Convert columns to categorical where appropriate
-    data['company_cik'] = data['company_cik'].astype('category')
-    data['ticker'] = data['ticker'].astype('category')
-    data['insider_cik'] = data['insider_cik'].astype('category')
-    data['insider_name'] = data['insider_name'].astype('category')
-    data['exchange'] = data['exchange'].astype('category')
-    data['owner_code'] = data['owner_code'].astype('category')
-    data['acquired_disposed'] = data['acquired_disposed'].astype('category')
-    data['ownership'] = data['ownership'].astype('category')
-    data['coding'] = data['coding'].astype('category')
-    data['sic'] = data['sic'].astype('category')
+    for col in ['company_cik', 'ticker', 'insider_cik', 'insider_name', 
+                'owner_code', 'exchange', 'acquired_disposed', 'coding', 'sic']:
+        data[col] = data[col].astype('category')
 
     # Convert booleans to actual boolean dtype
-    data['rule105b1'] = data['rule105b1'].astype('bool')
-    data['derivative'] = data['derivative'].astype('bool')
-    data['equity_swap'] = data['equity_swap'].astype('bool')
+    for col in ['rule105b1', 'derivative', 'equity_swap', 'ownership']:
+        data[col] = data[col].astype('bool')
 
     # Convert numeric columns to more memory-efficient types
-    data['shares'] = pd.to_numeric(data['shares'], errors='coerce').astype('int32')
-    data['price'] = pd.to_numeric(data['price'], errors='coerce').astype('float32')
-    data['remaining_shares'] = pd.to_numeric(data['remaining_shares'], errors='coerce').astype('int32')
-    data['direct_holding'] = pd.to_numeric(data['direct_holding'], errors='coerce').astype('int32')
-    data['indirect_holding'] = pd.to_numeric(data['indirect_holding'], errors='coerce').astype('int32')
-    
-    data['market_cap'] = pd.to_numeric(data['market_cap'], errors='coerce').astype('int64')
-    data['timestamp'] = pd.to_numeric(data['timestamp'], errors='coerce').astype('int64')
+    numeric_columns = {
+        'shares': 'int32',
+        'price': 'float32',
+        'remaining_shares': 'int32',
+        'direct_holding': 'int32',
+        'indirect_holding': 'int32',
+        'market_cap': 'int64',
+        'timestamp': 'int64',
+    }
+    for col, dtype in numeric_columns.items():
+        data[col] = pd.to_numeric(data[col], errors='coerce').astype(dtype)
+        data = data.dropna(subset=[col])  # Drop rows where conversion failed
 
     # Convert 'date' to datetime
-    data['date'] = pd.to_datetime(data['date'])
+    data['date'] = pd.to_datetime(data['date'], errors='coerce')
+    data = data.dropna(subset=['date'])  # Drop rows where 'date' conversion failed
 
     return data
+
 

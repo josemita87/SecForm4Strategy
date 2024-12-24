@@ -10,6 +10,9 @@ class Config(BaseSettings):
     kafka_input_topic: str = Field(..., env='KAFKA_INPUT_TOPIC') 
     kafka_output_topic: str = Field(..., env='KAFKA_OUTPUT_TOPIC')
     buffer_size: int = Field(..., env='BUFFER_SIZE')
+    consumer_group: str = Field(..., env='CONSUMER_GROUP')
+    auto_offset_reset: str = Field(..., env='AUTO_OFFSET_RESET')
+    poll_timeout: int = Field(..., env='POLL_TIMEOUT')
     # Api  Paths
     mcaps_path: str = Field(..., env='MCAPS_PATH')
     mapper_path: str = Field(..., env='MAPPER_PATH')

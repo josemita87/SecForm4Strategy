@@ -13,8 +13,8 @@ from datetime import timedelta
 
 app = Application(
     broker_address=config.kafka_broker_address,
-    consumer_group='master-form-4-',
-    auto_offset_reset='earliest',
+    consumer_group=config.consumer_group,
+    auto_offset_reset=config.auto_offset_reset,
 )
 
 input_topic = app.topic(
@@ -38,19 +38,22 @@ def consume_data() -> List[str]:
     
     urls = []
     with app.get_consumer() as consumer:
-
+    
         consumer.subscribe(topics = [input_topic.name])
-        #counter = 0
 
         while True:
-            message = consumer.poll(1)
+            
+            #If no new messages for config.timeout seconds, return the urls
+            message = consumer.poll(config.poll_timeout)
+            if message is None:
+                return urls
            
-            try:  
+            try:
+                # If the date is not suitable, keep consuming  
                 if int(message.timestamp()[1]) < last_n_days(config.timedelta):
-                    logger.debug('Finished scraping!')
-                    break
+                    continue
             except:
-                logger.debug('Coudln\'t get timestamp')
+                logger.error('Coudln\'t get timestamp')
                 pass
            
             try:
@@ -58,11 +61,9 @@ def consume_data() -> List[str]:
                 urls.append(url)
                 
             except:
-                break    
+                continue   
                 
-    return urls
-
-
+    
 def parse_and_produce_4Fs(urls: List[str], buffer_size: int) -> None:
 
     buffer = []
@@ -129,11 +130,21 @@ def batch_records(records: list, batch_size: int) -> Generator:
         yield records[i:i + batch_size]
 
 
+
 if __name__ == '__main__':
 
+    # Logs
+    logger.info(f'Scraper Microservice Started')
+    logger.info(f'Connected to redpanda broker at {config.kafka_broker_address}')
+    logger.info(f'Input topic: {config.kafka_input_topic}')
+    logger.info(f'Output topic: {config.kafka_output_topic}')
+    logger.info(f'ENV VARIABLES:\n ->TimeDelta: {config.timedelta}\n ->Form Type : {config.form_type} \n ->Test Size: {config.test_size} \n ->Buffer Size: {config.buffer_size} \n')
+    
+    # Main loop
     urls = consume_data()
     transactions = parse_and_produce_4Fs(urls, config.buffer_size)
-    
+
+    logger.info(f'Scraper Finished scraping!. Exiting...')
 
 
 

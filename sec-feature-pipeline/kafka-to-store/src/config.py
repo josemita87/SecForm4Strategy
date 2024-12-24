@@ -12,6 +12,9 @@ class Config(BaseSettings):
     kafka_broker_address: str = Field(..., env='KAFKA_BROKER_ADDRESS')
     kafka_input_topic: str = Field(..., env='KAFKA_INPUT_TOPIC') 
     buffer_size: int = Field(1000, env='BUFFER_SIZE')  # Default buffer size is 1000
+    poll_timeout: int = Field(10, env='POLL_TIMEOUT')  # Default timeout is 10 seconds
+    consumer_group: str = Field(..., env='CONSUMER_GROUP')
+    auto_offset_reset: str = Field(..., env='AUTO_OFFSET_RESET')
 
     # Hopsworks settings
     project_name: str = Field(..., env='PROJECT_NAME')

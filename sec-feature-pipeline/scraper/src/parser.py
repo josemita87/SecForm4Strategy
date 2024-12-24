@@ -21,9 +21,8 @@ class Form4Parser:
     DERIVATIVE_PATHS = derivative_paths
     HEADERS = headers
 
-    def __init__(self,  url, sleep_time=0.1):
+    def __init__(self,  url:str, sleep_time:int=0.1):
         self.url = self.BASE_URL + url
-        logger.info(self.url)
         time.sleep(sleep_time)
         self.xml = self.get_filing()
 
@@ -36,6 +35,7 @@ class Form4Parser:
             logger.error(f"\n\nFailed to get filing: {e}, {self.url}\n\n")
             time.sleep(5)
             return None
+        
     def create_txs(self) -> list[dict]:
         '''For a given filing, create a list of transactions.
         Initialize list to store transactions as dicts, and query the XML for 
@@ -57,7 +57,8 @@ class Form4Parser:
 
             # Find all transactions in the filing for the given root (derivative or non-derivative)
             for etree in self.xml.findall(root):
-
+                
+                # Populate the EssentialTrade object with the transaction data
                 self.transaction = EssentialTrade(link=self.url, xml=self.xml)
                 filing_data.append(
                     self._process_transaction(

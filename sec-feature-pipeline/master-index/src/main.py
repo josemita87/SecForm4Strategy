@@ -130,6 +130,16 @@ def batch_records(records: list, batch_size: int) -> Generator:
         yield records[i:i + batch_size]
 
 if __name__ == '__main__':
-    get_historic_data(config.form_type, config.years)
+    logger.info(f'Master Index Microservice Started')
+    logger.info(f'Connected to redpanda broker at {config.kafka_broker_address}')
+    logger.info(f'Output topic: {config.kafka_output_topic}')
+    logger.info(f'ENV variables:\n Years: {config.years}\n Form Type : {config.form_type}')
 
+    if config.mode == 'historical':
+        get_historic_data(config.form_type, config.years)
+    
+    elif config.mode == 'latest':
+        get_latest_data(config.form_type)
 
+    else:
+        logger.error('Invalid mode. Exiting...')

@@ -46,7 +46,7 @@ class ApiHandler():
             if len(buffer) >= self.buffer_size:  
                 yield from buffer  
                 buffer = []  
-                logger.debug('Buffer yielded')
+               
         #Yield the remaining transactions
         if buffer:
             yield from buffer
@@ -116,8 +116,8 @@ class ApiHandler():
 
 
     def _log_error(self, tx: dict, path: str, error: str) -> None:
-
-        logger.debug(f"Error: {error} for transaction")
+        """Log the error and append the transaction to the corresponding failed dataset."""
+        logger.error(f"Error: {error} for transaction")
         def append_to_parquet(path: str, data: pd.DataFrame) -> None:
             if os.path.exists(path) and os.path.getsize(path) > 0:
                 existing_data = pd.read_parquet(path)
