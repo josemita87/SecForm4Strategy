@@ -13,6 +13,7 @@ class Config(BaseSettings):
     consumer_group: str = Field(..., env='CONSUMER_GROUP')
     auto_offset_reset: str = Field(..., env='AUTO_OFFSET_RESET')
     poll_timeout: int = Field(..., env='POLL_TIMEOUT')
+    processing_guarantee: str = Field(..., env='PROCESSING_GUARANTEE')
     # Api  Paths
     mcaps_path: str = Field(..., env='MCAPS_PATH')
     mapper_path: str = Field(..., env='MAPPER_PATH')
@@ -23,5 +24,6 @@ class Config(BaseSettings):
     failed_sic_path: str = Field(..., env='FAILED_SIC_PATH')
     failed_exchange_path: str = Field(..., env='FAILED_EXCHANGE_PATH')
     
-    
+    #Docker Compose settings
+    delay: int = Field(..., env='DELAY')
 config = Config()

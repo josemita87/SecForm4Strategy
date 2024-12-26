@@ -6,11 +6,13 @@ from loguru import logger
 import json
 from datetime import datetime
 import xxhash
+import time
 
 app = Application(
     broker_address=config.kafka_broker_address,
     consumer_group=config.consumer_group,
     auto_offset_reset=config.auto_offset_reset,
+    processing_guarantee=config.processing_guarantee
 )
 
 input_topic = app.topic(
@@ -32,11 +34,12 @@ def consume_data() -> Generator[Dict, None, None]:
         consumer.subscribe(topics=[input_topic.name])
 
         while True:
-            message = consumer.poll(10)
+            message = consumer.poll(config.poll_timeout)
 
-            #If no new messages for 10 seconds break
             if message is None:
                 if buffer:
+                    #consumer.store_offsets(message)
+                    #consumer.commit_checkpoint()
                     yield from buffer
                     buffer.clear()  
                 
@@ -46,6 +49,8 @@ def consume_data() -> Generator[Dict, None, None]:
             
             #If buffer is full, yield the data
             if len(buffer) >= config.buffer_size:
+                #consumer.store_offsets(message)
+                #consumer.commit_checkpoint()
                 yield from buffer
                 buffer.clear()  
 
@@ -76,6 +81,7 @@ def produce_data(enriched_transactions: Generator[Dict, None, None]) -> None:
 
 if __name__ == '__main__':
     
+    time.sleep(config.delay * 2)
     logger.info(f'Enricher Microservice Started')
     logger.info(f'Connected to redpanda broker at {config.kafka_broker_address}')
     logger.info(f'Input topic: {config.kafka_input_topic}')
@@ -98,4 +104,4 @@ if __name__ == '__main__':
     # Pass the enriched generator directly to produce_data
     produce_data(enriched_generator)
 
-    logger.info(f'Enricher Microservice Produced Buffered Data. Exiting...')
+    #logger.info(f'Enricher Microservice Produced Buffered Data. Exiting...')

@@ -9,12 +9,13 @@ import xxhash
 import json
 from itertools import islice
 from datetime import timedelta
-
+import time
 
 app = Application(
     broker_address=config.kafka_broker_address,
     consumer_group=config.consumer_group,
     auto_offset_reset=config.auto_offset_reset,
+    processing_guarantee=config.processing_guarantee
 )
 
 input_topic = app.topic(
@@ -29,10 +30,8 @@ output_topic = app.topic(
     key_serializer='string'
 )
 
-
-
 def last_n_days(n: int) -> int:
-    return (datetime.now() - timedelta(days=n)).timestamp() * 1000
+    return (datetime.now() - timedelta(days=n*365)).timestamp() * 1000
 
 def consume_data() -> List[str]:
     
@@ -42,15 +41,13 @@ def consume_data() -> List[str]:
         consumer.subscribe(topics = [input_topic.name])
 
         while True:
-            
-            #If no new messages for config.timeout seconds, return the urls
             message = consumer.poll(config.poll_timeout)
             if message is None:
                 return urls
-           
+            
             try:
                 # If the date is not suitable, keep consuming  
-                if int(message.timestamp()[1]) < last_n_days(config.timedelta):
+                if int(message.timestamp()[1]) < last_n_days(config.years):
                     continue
             except:
                 logger.error('Coudln\'t get timestamp')
@@ -67,9 +64,10 @@ def consume_data() -> List[str]:
 def parse_and_produce_4Fs(urls: List[str], buffer_size: int) -> None:
 
     buffer = []
-    
-    for url in islice(urls, config.test_size):
-        
+    if config.test_trial == 'True':
+        urls = urls[:config.test_size]
+
+    for url in urls:
         filing_transactions = Form4Parser(url, config.sleep_time).create_txs()
         if filing_transactions:
             buffer.extend(filing_transactions)
@@ -133,12 +131,14 @@ def batch_records(records: list, batch_size: int) -> Generator:
 
 if __name__ == '__main__':
 
+    time.sleep(config.delay)
+    
     # Logs
     logger.info(f'Scraper Microservice Started')
     logger.info(f'Connected to redpanda broker at {config.kafka_broker_address}')
     logger.info(f'Input topic: {config.kafka_input_topic}')
     logger.info(f'Output topic: {config.kafka_output_topic}')
-    logger.info(f'ENV VARIABLES:\n ->TimeDelta: {config.timedelta}\n ->Form Type : {config.form_type} \n ->Test Size: {config.test_size} \n ->Buffer Size: {config.buffer_size} \n')
+    logger.info(f'ENV VARIABLES:\n ->TimeDelta: {config.years}\n ->Form Type : {config.form_type} \n ->Test Size: {config.test_size} \n ->Buffer Size: {config.buffer_size} \n')
     
     # Main loop
     urls = consume_data()

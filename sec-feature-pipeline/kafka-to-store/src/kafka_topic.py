@@ -8,12 +8,19 @@ from datetime import datetime
 
 
 class Connection:
-    def __init__(self, broker_address, input_topic_name, consumer_group, auto_offset_reset):
+    def __init__(
+        self, 
+        broker_address,
+        input_topic_name, 
+        consumer_group, 
+        auto_offset_reset, 
+        processing_guarantee):
         
         self.app = Application(
             broker_address=broker_address,
             consumer_group=consumer_group,
             auto_offset_reset=auto_offset_reset,
+            processing_guarantee=processing_guarantee
             )
 
         self.input_topic = self.app.topic(
@@ -35,6 +42,8 @@ class Connection:
                 
                 message = consumer.poll(timeout)
                 if not message:
+                    #consumer.store_offsets(message)
+                    #consumer.commit_checkpoint()
                     return True, buffer
             
                 if message:
@@ -52,8 +61,8 @@ class Connection:
                 
                 if len(buffer) >= buffer_size:
                     #Update offset for the last message consumed
-                    consumer.store_offsets(message)
-                    
+                    #consumer.store_offsets(message)
+                    #consumer.commit_checkpoint()
                     return False, buffer
                     
 

@@ -15,13 +15,16 @@ class Config(BaseSettings):
 
 
     form_type: str = Field(..., env='FORM_TYPE')
-    timedelta: int = Field(..., env='TIMEDELTA')
+    years: int = Field(..., env='YEARS')
     test_size: int = Field(..., env='TEST_SIZE')
+    test_trial:str = Field(..., env='TEST_TRIAL')
     buffer_size: int = Field(..., env='BUFFER_SIZE')
     sleep_time: float = Field(..., env='SLEEP_TIME')
     poll_timeout:int = Field(..., env='POLL_TIMEOUT')
-    # Dev settings
+    delay: int = Field(..., env='DELAY')
+    processing_guarantee: str = Field(..., env='PROCESSING_GUARANTEE')
     
+    # Dev settings
     """kafka_broker_address: str = 'localhost:19092'
     kafka_input_topic: str = 'master-form-4'
     kafka_output_topic: str = 'form_4_dictionary'

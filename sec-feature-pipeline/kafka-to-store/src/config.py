@@ -15,6 +15,8 @@ class Config(BaseSettings):
     poll_timeout: int = Field(10, env='POLL_TIMEOUT')  # Default timeout is 10 seconds
     consumer_group: str = Field(..., env='CONSUMER_GROUP')
     auto_offset_reset: str = Field(..., env='AUTO_OFFSET_RESET')
+    delay:int = Field(0, env='DELAY')  # Default delay is 0
+    processing_guarantee: str = Field(..., env='PROCESSING_GUARANTEE')
 
     # Hopsworks settings
     project_name: str = Field(..., env='PROJECT_NAME')
