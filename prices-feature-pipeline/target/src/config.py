@@ -27,6 +27,37 @@ class Config(BaseSettings):
     offset_buffer_size: int = Field(10, json_schema_extra={'env': 'DELTA_BUFFER_SIZE'})
     acquired_disposed: str = Field('A', json_schema_extra={'env': 'ACQUIRED_DISPOSED'})
 
+    #Aggregation
+    agg_dict:dict = Field({
+        # 'first' method aggregation
+        'company_cik': 'first',
+        'key': 'first',
+        'timestamp': 'first',
+        #'insider_cik': 'first',
+        #'insider_name': 'first',
+        #'acquired_disposed': 'first',
+        'date': 'first',
+        'market_cap': 'first',
+        
+        # 'sum' method aggregation
+        'shares': 'sum',
+        'remaining_shares': 'sum',
+        'direct_holding': 'sum',
+        'indirect_holding': 'sum',
+        
+        # 'any' method aggregation (for boolean columns)
+        'equity_swap': 'any',
+        'rule105b1': 'any',
+        
+        # 'mode' method aggregation
+        'derivative': lambda x: x.mode()[0],
+        'owner_code': lambda x: x.mode()[0],
+        'ownership': lambda x: x.mode()[0],
+        'coding': lambda x: x.mode()[0],
+        
+        # 'mean' method aggregation
+        'price': 'mean'
+    })
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

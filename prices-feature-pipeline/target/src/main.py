@@ -15,40 +15,34 @@ if __name__ == "__main__":
     # Initialize connection to Hopsworks
     feature_store = Connection()
 
-    # Get each transaction in the feature store
-    txs: pd.DataFrame = feature_store.fetch_4f_transactions()
-    
+    # Get transactions in the feature store
+    txs: pd.DataFrame = feature_store.fetch_4f_transactions(
+        key='acquired_disposed', value=config.acquired_disposed
+    )
+                         
     # Get the unique tickers to process
     tickers_to_process:list = sorted(txs['ticker'].unique())
 
-    dd_txs: dd.DataFrame = dd.from_pandas(
-        txs[txs['acquired_disposed'] == config.acquired_disposed], 
-        npartitions=config.npartitions
-    )
+    # Get the latest price data from the feature store
+    prices = feature_store.fetch_price_data(tickers_to_process)
 
-    # Get historical prices and convert to a Dask DataFrame
-    dd_prices: dd.DataFrame = dd.from_pandas(
-        feature_store.fetch_price_data(tickers_to_process), 
-        npartitions=config.npartitions
-    )
+    # Initialize mapper  
+    pct_change_mapper = returns_module.Mapper(prices)
 
-    #Initialize buffers
-    offset_buffer:dict = {}
-    offset_counter:int = 0
-
-    #Initialize mapper  
-    pct_change_mapper = returns_module.Mapper(dd_prices)
-    target_df = pct_change_mapper.compute_returns(dd_txs, config.delta_period)
-
+    # Aggregate data
+    aggregated_df = pct_change_mapper.data_aggregation(txs, config.agg_dict)
+    
+    #Get targets & price-related data
+    target_df = pct_change_mapper.compute_returns(txs, config.delta_period)
+    
     # Clean data & reduce memory space
     target_df = validate_and_reduce_mem_storage(
         data_cleaning(target_df)
     )
 
-    target_df.compute()
     # Push data to fs
-    if not updated_txs.empty:
-        feature_store.push_returns_data(updated_txs)
+    if not target_df.empty:
+        feature_store.push_returns_data(target_df)
 
     # Apply last materialization jobs
     feature_store.last_materialization_jobs()

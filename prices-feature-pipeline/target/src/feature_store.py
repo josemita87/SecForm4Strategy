@@ -69,9 +69,21 @@ class Connection:
         
 
     
-    def fetch_4f_transactions(self) -> pd.DataFrame:
-        txs = self.fg_form4.read(read_options={"use_hive": True})
-        return txs
+    def fetch_4f_transactions(self, key, value) -> pd.DataFrame:
+        
+        txs = self.fg_form4
+
+        # Filter transactions based on key and value
+        if key and value:
+            txs = self.fg_form4.filter(
+                self.fg_form4[key] == value
+            )
+            
+        data = txs.read(
+            read_options={"use_hive": True}
+            )
+        
+        return data
         
     
     def fetch_price_data(self, tickers:list[str]) -> pd.DataFrame:
@@ -207,14 +219,14 @@ def validate_and_reduce_mem_storage(data: pd.DataFrame) -> pd.DataFrame:
 
     # Convert numeric columns to more memory-efficient types
     numeric_columns = {
-        'shares': 'int32',
-        'price': 'float32',
-        'remaining_shares': 'int32',
+        'value': 'int32',
+        'remaining_value': 'int32',
         'direct_holding': 'int32',
         'indirect_holding': 'int32',
         'market_cap': 'int64',
         'timestamp': 'int64',
         'pct_change': 'float32',
+        'start_price': 'float32',   
     }
     for col, dtype in numeric_columns.items():
         if col in data.columns:
