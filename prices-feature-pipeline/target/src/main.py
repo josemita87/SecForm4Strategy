@@ -20,23 +20,28 @@ if __name__ == "__main__":
     # Get the unique tickers to process
     tickers_to_process:list = sorted(txs['ticker'].unique())
 
+    # Aggregate data
+    aggregated_df = computations.data_aggregation(txs, config.agg_dict)
+    
     # Get the latest price data from the feature store
     prices = feature_store.fetch_price_data(tickers_to_process)
 
-    # Initialize mapper  
-    pct_change_mapper = computations.Mapper(prices)
-
-    # Aggregate data
-    aggregated_df = pct_change_mapper.data_aggregation(txs, config.agg_dict)
+    # Get targets & avg-target price-related features
+    target_df = computations.compute_target(aggregated_df, prices, config.delta_period)
     
-    #Get targets & price-related data
-    target_df = pct_change_mapper.compute_returns(txs, config.delta_period)
+    # Compute the average target price
+    final_df = computations.compute_avg_target_price(
+        df=target_df, 
+        expanding=config.expanding_window
+    )
     
     # Clean data & reduce memory space
-    target_df = validate_and_reduce_mem_storage(
-        data_cleaning(target_df)
+    final_df = validate_and_reduce_mem_storage(
+        data_cleaning(final_df)
     )
 
     # Push data to fs
     if not target_df.empty:
-        feature_store.push_returns_data(target_df)
+        feature_store.push_returns_data(final_df)
+
+    breakpoint()

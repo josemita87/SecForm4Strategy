@@ -107,7 +107,10 @@ def validate_and_reduce_mem_storage(data: pd.DataFrame) -> pd.DataFrame:
     Reduce the memory usage of the DataFrame by downcasting the numeric columns.
     Invalid rows for each conversion will be dropped.
     """
-    data['link'] = data['link'].astype('str')
+
+
+    if 'link' in data.columns:
+        data['link'] = data['link'].astype('str')
 
     for col in ['company_cik', 'ticker', 'insider_cik', 'insider_name', 
                 'owner_code', 'exchange', 'acquired_disposed', 'coding', 'sic']:
@@ -128,7 +131,10 @@ def validate_and_reduce_mem_storage(data: pd.DataFrame) -> pd.DataFrame:
         'market_cap': 'int64',
         'timestamp': 'int64',
         'pct_change': 'float32',  
-        'price': 'float32',
+        'avg_target_expanding': 'float32',
+        'avg_target_rolling': 'float32',
+        'price': 'float32'
+        
     }
     for col, dtype in numeric_columns.items():
         if col in data.columns:

@@ -65,5 +65,7 @@ class Config(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
 
+    expanding_window: bool = Field(..., json_schema_extra={'env': 'EXPANDING_WINDOW'})
+    window_size: int = Field(..., json_schema_extra={'env': 'WINDOW_SIZE'})
 # Instantiate the configuration
 config = Config()
