@@ -1,73 +1,82 @@
-import pandas as pd
-import feature_store
+import h2o
+from h2o.automl import H2OAutoML
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import StandardScaler
-import loguru
-import matplotlib.pyplot as plt
-import seaborn as sns
+from sklearn.metrics import mean_absolute_error
+from models.automl import AutoML  
+from preprocessing import load_and_preprocess_data, scale_features
+from simulation import run_simulation, plot_predictions
+from loguru import logger
+import pandas as pd
+import os
 
-# Set pandas display option to show all rows
-pd.set_option('display.max_rows', None)
+def main():
 
-# Fetch data
-#fs = feature_store.Connection()
-#data = fs.fetch_training_data()
-data = pd.read_csv('/app/src/final_df.csv')
+    #Initialize AutoML model (init method initializes H2O cluster)
+    automl_model = AutoML(max_runtime_secs=180)
+    file_path = '/app/src/data_sources/final_df.csv'
+    
+    # Load and preprocess data
+    data:pd.DataFrame = load_and_preprocess_data(file_path)
 
-# Drop unnecessary columns (based on domain knowledge)
-data = data.drop(columns=['ticker', 'company_cik', 'key', 'timestamp', 'date', 'coding', 'price'])
+    # Define features and target
+    X = data.drop(columns=['pct_change'])
+    y = data['pct_change']
+
+    # Scale training features
+    X_scaled:pd.DataFrame = scale_features(X)
+    
+    logger.debug(X_scaled)
+    # Split the data into train and test sets
+    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.3, random_state=42)
+    
+    # Initialize H2O and convert to H2OFrame
+    train_data = h2o.H2OFrame(pd.concat([X_train, y_train], axis=1))
+    test_data = h2o.H2OFrame(X_test)
+    
+    # Define the target and features for H2O AutoML
+    target_regressor = 'pct_change'
+    #target_classifier = 'negative_returns'
+
+    features = X_train.columns.tolist()
+  
+    #Train the classifier using AutoML
+    #automl_model.train_classifier(train_data, target=target_classifier, features=features)
+
+    # Train regressor using AutoML
+    automl_model.train_regressor(train_data, target=target_regressor, features=features)
+    
+    #classification:pd.DataFrame = automl_model.classify(test_data)
+
+    # Run predictions on the test data using AutoML
+    predictions:pd.DataFrame = automl_model.predict_shorts(test_data).set_index(X_test.index)
+
+    # Set index of predictions to match y_test
+    y_pred = predictions['predict']
+    
+    # Extract predicted negative returns
+    y_pred_negative = y_pred[y_pred < 0]
+
+    # Find common index between predicted negative returns and returns (y_test)
+    common_index = y_pred_negative.index.intersection(y_test.index)
+   
+    # Align y_negative with y_pred_negative based on the common index
+    real_returns = y_test.loc[common_index]
 
 
-# Define features (X) and target (y)
-X = data.drop(columns=['pct_change'])
-y = data['pct_change']
+    # Run the financial simulation
+    capital_invested, final_capital, y_negative, y_pred_negative = run_simulation(
+        real_returns, 
+        y_pred_negative, 
+        threshold=0,
+        investment=100
+    )
+    
+    # Evaluate performance on negative returns
+    mae_negative = mean_absolute_error(y_negative, y_pred_negative)
+    logger.info(f"MAE for negative returns: {mae_negative:.4f}")
+    
+    # Plot actual vs predicted negative returns and financial result
+    plot_predictions(y_negative, y_pred_negative, final_capital, capital_invested)
 
-# Feature scaling
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
-
-# Feature selection: using Random Forest to check feature importance
-model = RandomForestRegressor()
-model.fit(X_scaled, y)
-importances = pd.Series(model.feature_importances_, index=X.columns)
-loguru.logger.info(f"Feature Importances: {importances.sort_values(ascending=False)}")
-
-# Train a linear regression model with the selected features
-X_selected = X[['avg_target_expanding', 'tx_value', 'market_cap']]  
-X_train, X_test, y_train, y_test = train_test_split(X_selected, y, test_size=0.3, random_state=42)
-
-regressor = LinearRegression()
-regressor.fit(X_train, y_train)
-
-# Make predictions
-y_pred = regressor.predict(X_test)
-
-# Evaluate the model
-mse = mean_squared_error(y_test, y_pred)
-r2 = r2_score(y_test, y_pred)
-
-loguru.logger.info(f"Mean Squared Error: {mse:.4f}")
-loguru.logger.info(f"R² Score: {r2:.4f}")
-
-# Merging predictions with actual pct_change for comparison
-merged_df = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred})
-
-# Debug: Log all rows of the merged DataFrame where predictions are negative
-loguru.logger.info(f"Merged DataFrame (Predicted Negative Returns):\n{merged_df[merged_df['Predicted'] < 0].head(150)}")
-
-# Plotting the correlation for predictions < 0
-negative_predictions = merged_df[merged_df['Predicted'] < 0]
-plt.figure(figsize=(10, 6))
-sns.scatterplot(x=negative_predictions['Actual'], y=negative_predictions['Predicted'])
-plt.title('Correlation of Actual vs Predicted for Negative Returns')
-plt.xlabel('Actual pct_change')
-plt.ylabel('Predicted pct_change')
-
-# Save the plot to a file (use a complete file path with the .png extension)
-plt.savefig('/app/src/plot.png') # Specify the full path, e.g., '/home/user/plot.png'
-plt.close()  # Close the plot to free up memory
-
-breakpoint()
+if __name__ == "__main__":
+    main()

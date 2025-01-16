@@ -42,20 +42,24 @@ def fetch_data_from_yahoo(prices: pd.DataFrame, tickers: list[str]) -> pd.DataFr
         else:
             new_data = yf.download(ticker)['Close']
 
-   
-        # Convert the Series into a DataFrame with custom column names
-        new_data.reset_index(inplace=True) 
-        new_data['ticker'] = ticker
-        new_data.columns = ['date', 'close', 'ticker'] 
-        
-        # Reduce memory usage of the dataframe before appending it
-        new_data = reduce_mem_storage(new_data)
-
-        if not all_prices.empty:
-            all_prices = pd.concat([all_prices, new_data], axis=0)
+        try:
+            # Convert the Series into a DataFrame with custom column names
+            new_data.reset_index(inplace=True) 
+            new_data['ticker'] = ticker
+            new_data.columns = ['date', 'close', 'ticker'] 
             
-        else:
-            all_prices = new_data
+            # Reduce memory usage of the dataframe before appending it
+            new_data = reduce_mem_storage(new_data)
+
+            if not all_prices.empty:
+                all_prices = pd.concat([all_prices, new_data], axis=0)
+                
+            else:
+                all_prices = new_data
+        
+        except Exception as e:
+            logger.error(f"Failed to fetch data for {ticker}: {e}")
+            continue
 
     all_prices.sort_values(by=['ticker', 'date'], inplace=True)
 

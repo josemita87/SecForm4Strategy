@@ -7,9 +7,10 @@ from numba import jit
 
 
        
-def data_aggregation(transactions: pd.DataFrame, agg_dict:dict) -> pd.DataFrame:
-    return transactions.groupby(
-        ['ticker', 'date'], as_index=False).agg(agg_dict)
+def data_aggregation(transactions: pd.DataFrame, agg_dict: dict) -> pd.DataFrame:
+    # Filter out columns that are not present in the transactions DataFrame
+    valid_agg_dict = {k: v for k, v in agg_dict.items() if k in transactions.columns}
+    return transactions.groupby(['ticker', 'date'], as_index=False).agg(valid_agg_dict)
 
 
 def compute_target(
@@ -19,15 +20,11 @@ def compute_target(
        
     # 0. Homogenize the date format
     transactions['date'] = pd.to_datetime(
-        transactions['date'], 
-        unit = 'ms', utc = True, 
-        errors='coerce').dt.normalize()
+        transactions['date'])
     
     prices['date'] = pd.to_datetime(
-        prices['date'], 
-        unit = 'ms', 
-        utc = True, 
-        errors='coerce').dt.normalize()
+        prices['date'] 
+    )
 
     # 1. Sort both dataframes by date
     transactions.sort_values(['date'], inplace=True)
@@ -96,23 +93,26 @@ def compute_target(
         columns=['start_price', 'end_price', 'remaining_shares', 'shares', 'date_y']
     )
 
+    logger.debug(f"Target computation completed. Shape: {end_state.shape}")
     return end_state
 
 def compute_avg_target_price(
         df: pd.DataFrame, timedelta:int) -> pd.DataFrame:
         
+    # Sort the dataframe by ticker and date
+    df.sort_values(['ticker', 'date'], inplace=True)
     # Constant period (days) covered (in milliseconds)
     delta_ms = timedelta * 24 * 60 * 60 * 1000 
 
     # Prepare an empty column to store the average pct_change
-    df['avg_pct_change'] = np.nan
+    df['avg_target_expanding'] = np.nan
 
     # Extract timestamps and pct_changes for easier access
     timestamps = df['timestamp'].values
     pct_changes = df['pct_change'].values
     tickers = df['ticker'].values
     
-
+  
     # Numba JIT-compiled function for computing expanding averages
     #@jit(nopython=True, parallel=True)
     def expanding_average(tickers, timestamps, pct_changes, delta_ms):
@@ -137,7 +137,7 @@ def compute_avg_target_price(
             if idx > offset:
                 # Get all pct_changes before the cutoff time for this ticker
                 valid_pct_changes = pct_changes[offset:idx]
-                avg_pct_changes[i] = np.mean(valid_pct_changes)  
+                avg_pct_changes[i] = np.nanmean(valid_pct_changes)  
             else:
                 avg_pct_changes[i] = np.nan  
             

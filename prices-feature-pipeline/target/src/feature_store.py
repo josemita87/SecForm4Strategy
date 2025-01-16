@@ -96,52 +96,23 @@ def data_cleaning(data: pd.DataFrame) -> pd.DataFrame:
     data.drop_duplicates(inplace=True)
     
     # Drop rows with NaN values (optional)
-    data.dropna(inplace=True)
+    data.dropna(subset=['pct_change', 'avg_target_expanding'], inplace=True)
+    
 
     return data
 
 
-#Auxiliary function
-def validate_and_reduce_mem_storage(data: pd.DataFrame) -> pd.DataFrame:
-    """
-    Reduce the memory usage of the DataFrame by downcasting the numeric columns.
-    Invalid rows for each conversion will be dropped.
-    """
-
-
-    if 'link' in data.columns:
-        data['link'] = data['link'].astype('str')
-
-    for col in ['company_cik', 'ticker', 'insider_cik', 'insider_name', 
-                'owner_code', 'exchange', 'acquired_disposed', 'coding', 'sic']:
-        if col in data.columns:
-            data[col] = data[col].astype('category')
-
-    # Convert booleans to actual boolean dtype
-    for col in ['rule105b1', 'derivative', 'equity_swap', 'ownership']:
-        if col in data.columns:
-            data[col] = data[col].astype('bool')
-
-    # Convert numeric columns to more memory-efficient types
-    numeric_columns = {
-        'tx_value': 'int32',
-        'remaining_value': 'int32',
-        'direct_holding': 'int32',
-        'indirect_holding': 'int32',
-        'market_cap': 'int64',
-        'timestamp': 'int64',
-        'pct_change': 'float32',  
-        'avg_target_expanding': 'float32',
-        'price': 'float32'
-        
-    }
-    for col, dtype in numeric_columns.items():
-        if col in data.columns:
-            data[col] = pd.to_numeric(data[col], errors='coerce').astype(dtype)
-            data = data.dropna(subset=[col])  # Drop rows where conversion failed
-
-    # Convert 'date' to datetime
-    data['date'] = pd.to_datetime(data['date'], errors='coerce')
-    data = data.dropna(subset=['date'])  # Drop rows where 'date' conversion failed
-
-    return data
+def assert_and_format_data(txs: pd.DataFrame, prices: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    # Capitalize the 'ticker' column for both txs and prices DataFrames
+    txs['ticker'] = txs['ticker'].str.upper()
+    prices['ticker'] = prices['ticker'].str.upper()
+    
+    # Assert all tickers are in capital letters for both txs and prices DataFrames
+    #assert txs['ticker'].str.isupper().all(), "Not all tickers in txs are in uppercase"
+    #assert prices['ticker'].str.isupper().all(), "Not all tickers in prices are in uppercase"
+    
+    # Ensure 'acquired_disposed' column is 'D'
+    txs['acquired_disposed'] = txs['acquired_disposed'].str.upper().str.strip()
+    assert (txs['acquired_disposed'] == 'D').all(), "Not all values in 'acquired_disposed' are 'D'"
+    
+    return txs, prices
