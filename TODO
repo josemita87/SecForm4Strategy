@@ -2,5 +2,8 @@
 1. Create connection logic to SEC's endpoint 
 2. Connect with the parsing microservice
 3. Monitor  newly added transactions
+
+*DEBUG DISTUTILS // HEADERS BUG
 4. Implement Alpaca connection
 5. Develop investment model w// Alpaca
+6. Create the automated system uniting all pieces together.

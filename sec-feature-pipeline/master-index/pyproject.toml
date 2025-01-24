@@ -15,6 +15,7 @@ autopep8 = "^2.3.1"
 xxhash = "^3.5.0"
 selenium = "^4.28.0"
 bs4 = "^0.0.2"
+undetected-chromedriver = "^3.5.5"
 
 [build-system]
 requires = ["poetry-core"]

@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Chromium and its dependencies (for arm64)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+#    python3-setuptools \
     chromium=132.0.6834.83-1~deb12u1 \
     chromium-driver=132.0.6834.83-1~deb12u1 \
     fonts-liberation \
