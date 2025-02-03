@@ -89,7 +89,7 @@ run-prod-feature: stop-feature build-feature
 	-it --network redpanda-network \
 	--env-file kafka-to-store/.env \
 	--env-file kafka-to-store/.credentials.env \
-	-v /Users/calcatscubedos.l./Desktop/prod_inside_out/sec-feature-pipeline/kafka-to-store/src:/app/src \
+	-v /Users/josemita87/Documents/prod_inside_out/sec-feature-pipeline/kafka-to-store/src:/src \
 	--name kafka-to-store kafka-to-store
 	
 

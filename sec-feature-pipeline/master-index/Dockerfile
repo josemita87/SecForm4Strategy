@@ -48,4 +48,4 @@ COPY . /app
 RUN poetry install --no-interaction --no-ansi --verbose
 
 # Default command
-CMD ["poetry", "run", "python", "src/bots.py"]
+CMD ["poetry", "run", "python", "src/main.py"]

@@ -8,13 +8,13 @@ from datetime import datetime
 import xxhash
 from io import BytesIO
 from monitor_live import SECLinkMonitor
+import time
 
 headers = {
     'User-Agent': 'CompanyE InvestmentServices admin@companye.com',
     'Accept-Encoding': 'gzip, deflate',
     'Host': 'www.sec.gov'
 }
-
 
 # Create a connection to the redpanda broker
 app = Application(config.kafka_broker_address, loglevel='CRITICAL')
@@ -23,10 +23,6 @@ output_topic = app.topic(
     value_serializer='json',
     key_serializer='string'
 )
-
-logger.debug(f'Connected to redpanda broker at {config.kafka_broker_address}')
-logger.debug(f'Output topic: {config.kafka_output_topic}')
-
 
 def fetch_parse_data(year, quarter):
 
@@ -59,7 +55,6 @@ def fetch_parse_data(year, quarter):
             encoding='utf-8'
         )
 
-        import time
         time.sleep(1)
         logger.debug(f'Fetched data for {year} {quarter}')
         return df
@@ -70,7 +65,11 @@ def produce_data(data: pd.DataFrame) -> None:
     data = data.copy()
 
     # Convert the date to a timestamp in milliseconds
-    data['timestamp'] = pd.to_datetime(data['date']).astype(int) // 10**6
+    if config.mode == 'live':
+        data['timestamp'] = int(datetime.now().timestamp() * 1000)
+    
+    else:
+        data['timestamp'] = pd.to_datetime(data['date']).astype(int) // 10**6
 
     # Convert the file path to a unique key
     data['key'] = data['file_path'].apply(lambda x: xxhash.xxh64(x).hexdigest())
@@ -81,7 +80,7 @@ def produce_data(data: pd.DataFrame) -> None:
     with app.get_producer() as producer:
         
         # Split the records into batches
-        batch:Generator = batch_records(records, config.batch_size)
+        batch:Generator = batch_records(records, config.buffer_size)
         
         for records in batch:
             for record in records:
@@ -123,33 +122,46 @@ def get_last_quarter_data(form_type: str) -> None:
             filings = df[df['form_type'] == form_type]
             produce_data(filings)
 
+
 def get_live_data(form_type: str) -> None:
 
-    # Generator object updated with the latest links
-    links = SECLinkMonitor().monitor()
+    # Instantiate the SECLinkMonitor
+    monitor = SECLinkMonitor(
+        config.num_pages,
+    )
 
-    # The generator is executed in this line, where links need to be iterated over.
-    # Once it is executed, the generator will try to yield values indefinedly, due
-    # to the while True loop in the monitor method.
-    
-    df = pd.DataFrame(links, columns=['file_path'])
-    produce_data(df)
-
+    # Refresh the links every `time_between_iterations` seconds
+    for _ in range(config.live_iterations):
+        
+        df = pd.DataFrame(
+            monitor.parse_links(), 
+            columns=['file_path']
+        )
+        
+        logger.debug(df)
+        produce_data(df)
+        time.sleep(config.secs_between_iterations)
 
 
 #Auxiliary function to batch records when producing data
-def batch_records(records: list, batch_size: int) -> Generator:
-    """Yield successive batches of size `batch_size` from `records`."""
-    for i in range(0, len(records), batch_size):
-        yield records[i:i + batch_size]
+def batch_records(records: list, buffer_size: int) -> Generator:
+    """Yield successive batches of size `buffer_size` from `records`."""
+    for i in range(0, len(records), buffer_size):
+        yield records[i:i + buffer_size]
 
 if __name__ == '__main__':
-    logger.info(f'Master Index Microservice Started')
-    logger.info(f'Connected to redpanda broker at {config.kafka_broker_address}')
+
+    # Log the configuration
+    logger.info('Master Index Microservice Started')
+    logger.info(f'Connected to Kafka broker at {config.kafka_broker_address}')
     logger.info(f'Output topic: {config.kafka_output_topic}')
-    logger.info(f'ENV variables:\n Years: {config.years}\n Form Type : {config.form_type}')
+    logger.info(f'Buffer size: {config.buffer_size}')
+    logger.info(f'Form type: {config.form_type}')
+    logger.info(f'Mode: {config.mode}')
+
 
     if config.mode == 'historical':
+        logger.info(f'Years: {config.years}')
         get_historic_data(config.form_type, config.years)
 
 
@@ -157,7 +169,9 @@ if __name__ == '__main__':
         get_last_quarter_data(config.form_type)
         
     elif config.mode == 'live':
-       
+        logger.info(f'Number of pages: {config.num_pages}')
+        logger.info(f'Live iterations: {config.live_iterations}')
+        logger.info(f'Seconds between iterations: {config.secs_between_iterations}')
         get_live_data(config.form_type)
 
     else:

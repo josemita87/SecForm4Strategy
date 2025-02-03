@@ -1,6 +1,3 @@
-
-
-
 run-dev:
 	@echo "Running the development environment"
 	cd yahoo_connect && poetry run python -m src.main
@@ -41,8 +38,9 @@ run-prod-yahoo: stop-yahoo build-yahoo
 	docker run \
 	-it --network redpanda-network \
 	--env-file yahoo_connect/.env \
+	--env-file yahoo_connect/.credentials.env \
+	-v /Users/josemita87/Documents/prod_inside_out/prices-feature-pipeline/yahoo_connect/src/data:/src/data \
 	--name yahoo_connect yahoo_connect
-
 
 run-prod-target: stop-target build-target
 	docker run \
@@ -50,5 +48,5 @@ run-prod-target: stop-target build-target
 	--network redpanda-network \
 	--env-file target/.env \
 	--name target \
-	-v /Users/calcatscubedos.l./Desktop/prod_inside_out/prices-feature-pipeline/target/src:/app/src \
+	-v /Users/josemita87/Documents/prod_inside_out/prices-feature-pipeline/target/src:/app/src \
 	target
