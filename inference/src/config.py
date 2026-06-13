@@ -1,5 +1,9 @@
 """Application configuration loaded from environment variables and .env files."""
 
+from functools import lru_cache
+from pathlib import Path
+
+import yaml
 from dotenv import load_dotenv
 from paths import CSV_PATH, LOG_PATH, MODEL_PATH
 from pydantic import Field
@@ -7,6 +11,12 @@ from pydantic_settings import BaseSettings
 
 load_dotenv('.env')
 load_dotenv('.credentials.env')
+
+
+@lru_cache
+def _specs() -> dict:
+    """Load the static feature-selection spec (column lists) from specs.yaml."""
+    return yaml.safe_load((Path(__file__).parent / 'specs.yaml').read_text())
 
 
 class Config(BaseSettings):
@@ -24,9 +34,9 @@ class Config(BaseSettings):
     hopsworks_api_key: str = Field(..., json_schema_extra={'env': 'HOPSWORKS_API_KEY'})
     csv_path: str = Field(default=CSV_PATH.str, json_schema_extra={'env': 'CSV_PATH'})
 
-    # Feature Selection
-    columns_to_drop: list = Field(default=['key', 'timestamp', 'coding'])
-    identification_features: list = Field(default=['ticker', 'date', 'company_cik', 'price'])
+    # Feature Selection (column lists loaded from specs.yaml)
+    columns_to_drop: list = Field(default_factory=lambda: _specs()['columns_to_drop'])
+    identification_features: list = Field(default_factory=lambda: _specs()['identification_features'])
     target_feature: str = Field(..., json_schema_extra={'env': 'TARGET_FEATURE'})
     # Trading settings
     qty: str = Field(..., json_schema_extra={'env': 'QTY'})

@@ -1,0 +1,5 @@
+# Feature-selection spec for training.
+# columns_to_drop: removed before the model sees the frame.
+# identification_features: kept for traceability but excluded from the model inputs.
+columns_to_drop: [key, timestamp, coding, insider_cik]
+identification_features: [ticker, insider_name, date, company_cik, price]

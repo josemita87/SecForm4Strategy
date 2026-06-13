@@ -1,7 +1,21 @@
 """Pydantic settings for the target microservice."""
 
+from pathlib import Path
+
+import yaml
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+
+def _agg_dict() -> dict:
+    """Resolve the aggregation policy from specs.yaml.
+
+    Pandas aggregation names pass through unchanged; the ``mode_first`` token is
+    mapped to ``lambda x: x.mode()[0]`` (most frequent value, first on ties).
+    """
+    ops = {'mode_first': lambda x: x.mode()[0]}
+    spec = yaml.safe_load((Path(__file__).parent / 'specs.yaml').read_text())['agg_dict']
+    return {col: ops.get(op, op) for col, op in spec.items()}
 
 
 class Config(BaseSettings):
@@ -13,59 +27,13 @@ class Config(BaseSettings):
     feature_group_version: int = Field(..., json_schema_extra={'env': 'FEATURE_GROUP_VERSION'})
     event_time: str = Field(..., json_schema_extra={'env': 'EVENT_TIME'})
 
-    headers: list = Field(
-        default=[
-            'company_cik',
-            'ticker',
-            'insider_cik',
-            'insider_name',
-            'owner_code',
-            'rule105b1',
-            'derivative',
-            'link',
-            'shares',
-            'acquired_disposed',
-            'price',
-            'date',
-            'remaining_shares',
-            'ownership',
-            'coding',
-            'direct_holding',
-            'indirect_holding',
-            'equity_swap',
-            'timestamp',
-            'key',
-        ],
-        json_schema_extra={'env': 'CSV_HEADERS'},
-    )
-    prices_headers: list = Field(default=['date', 'close', 'ticker'], json_schema_extra={'env': 'PRICES_HEADERS'})
-
     # Investment settings
     delta_period: int = Field(..., json_schema_extra={'env': 'DELTA_PERIOD'})
     filter_key: str = Field(..., json_schema_extra={'env': 'FILTER_KEY'})
     acquired_disposed: str = Field(..., json_schema_extra={'env': 'ACQUIRED_DISPOSED'})
 
-    # Aggregation settings
-    agg_dict: dict = Field(
-        {
-            'company_cik': 'first',
-            'key': 'first',
-            'timestamp': 'first',
-            'date': 'first',
-            'market_cap': 'first',
-            'shares': 'sum',
-            'remaining_shares': 'sum',
-            'direct_holding': 'sum',
-            'indirect_holding': 'sum',
-            'equity_swap': 'any',
-            'rule105b1': 'any',
-            'derivative': lambda x: x.mode()[0],
-            'owner_code': lambda x: x.mode()[0],
-            'ownership': lambda x: x.mode()[0],
-            'coding': lambda x: x.mode()[0],
-            'price': 'mean',
-        }
-    )
+    # Aggregation policy, loaded and resolved from specs.yaml at instantiation
+    agg_dict: dict = Field(default_factory=_agg_dict)
 
     # System settings
     system_training: bool = Field(False, json_schema_extra={'env': 'SYSTEM_TRAINING'})

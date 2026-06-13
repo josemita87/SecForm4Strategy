@@ -1,0 +1,21 @@
+# Per-column aggregation policy for collapsing same-ticker, same-day transactions
+# into one daily row (see computations.data_aggregation). Values are pandas
+# aggregation names, except the 'mode_first' token which the config resolves to
+# `lambda x: x.mode()[0]` (most frequent value, first on ties).
+agg_dict:
+  company_cik: first
+  key: first
+  timestamp: first
+  date: first
+  market_cap: first
+  shares: sum
+  remaining_shares: sum
+  direct_holding: sum
+  indirect_holding: sum
+  equity_swap: any
+  rule105b1: any
+  derivative: mode_first
+  owner_code: mode_first
+  ownership: mode_first
+  coding: mode_first
+  price: mean

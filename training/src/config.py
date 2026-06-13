@@ -1,5 +1,9 @@
 """Application settings loaded from environment variables via Pydantic."""
 
+from functools import lru_cache
+from pathlib import Path
+
+import yaml
 from dotenv import load_dotenv
 from paths import DATA_SOURCE_PATH, LOG_PATH, MODELS_DIR, PLOT_PATH
 from pydantic import Field
@@ -8,6 +12,12 @@ from pydantic_settings import BaseSettings
 # Load the main .env file and then the credentials.env file
 load_dotenv('.env')
 load_dotenv('.credentials.env')
+
+
+@lru_cache
+def _specs() -> dict:
+    """Load the static feature-selection spec (column lists) from specs.yaml."""
+    return yaml.safe_load((Path(__file__).parent / 'specs.yaml').read_text())
 
 
 class Config(BaseSettings):
@@ -30,10 +40,10 @@ class Config(BaseSettings):
     train_test_ratio: float = Field(..., json_schema_extra={'env': 'TRAIN_TEST_RATIO'})
     random_state: int = Field(..., json_schema_extra={'env': 'RANDOM_STATE'})
 
-    # Feature Selection
+    # Feature Selection (column lists loaded from specs.yaml)
     target_feature: str = Field(..., json_schema_extra={'env': 'TARGET_FEATURE'})
-    columns_to_drop: list = Field(default=['key', 'timestamp', 'coding', 'insider_cik'])
-    identification_features: list = Field(default=['ticker', 'insider_name', 'date', 'company_cik', 'price'])
+    columns_to_drop: list = Field(default_factory=lambda: _specs()['columns_to_drop'])
+    identification_features: list = Field(default_factory=lambda: _specs()['identification_features'])
 
     class Config:
         """Pydantic configuration for environment file loading."""

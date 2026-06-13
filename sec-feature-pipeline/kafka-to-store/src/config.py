@@ -1,8 +1,5 @@
 """Environment-driven configuration settings for the kafka-to-store service."""
 
-from datetime import datetime
-from typing import ClassVar
-
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
@@ -27,31 +24,6 @@ class Config(BaseSettings):
     system_training: bool = Field(False, json_schema_extra={'env': 'SYSTEM_TRAINING'})
     system_inference: bool = Field(False, json_schema_extra={'env': 'SYSTEM_INFERENCE'})
     delay: int = Field(0, env='DELAY')
-
-    # Expected schema as a class-level constant
-    expected_schema: ClassVar[dict[str, type]] = {
-        'key': str,
-        'company_cik': str,
-        'ticker': str,
-        'insider_cik': str,
-        'insider_name': str,
-        'owner_code': str,
-        'rule105b1': str,
-        'derivative': str,
-        'link': str,
-        'shares': str,
-        'acquired_disposed': str,
-        'price': str,
-        'date': datetime,
-        'remaining_shares': str,
-        'ownership': str,
-        'coding': str,
-        'direct_holding': str,
-        'indirect_holding': str,
-    }
-
-    class Config:
-        pass
 
 
 config = Config()
