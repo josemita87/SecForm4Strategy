@@ -19,7 +19,6 @@ class Config(BaseSettings):
     # Hopsworks / CSV Settings
     hopsworks_connect: bool = Field(..., json_schema_extra={'env': 'HOPSWORKS_CONNECT'})
     project_name: str = Field(..., json_schema_extra={'env': 'PROJECT_NAME'})
-    feature_group_trades: str = Field(..., json_schema_extra={'env': 'FEATURE_GROUP_TRADES'})
     feature_group_version: int = Field(..., json_schema_extra={'env': 'FEATURE_GROUP_VERSION'})
     hopsworks_api_key: str = Field(..., json_schema_extra={'env': 'HOPSWORKS_API_KEY'})
     csv_path: str = Field(..., json_schema_extra={'env': 'CSV_PATH'})

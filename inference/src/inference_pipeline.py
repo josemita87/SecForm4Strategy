@@ -1,26 +1,21 @@
 """Inference pipeline for loading data, scaling features and generating trades."""
 
 import logging
+from pathlib import Path
 
 import h2o
 import pandas as pd
 from config import config
+from constants import FeatureGroup
 from inside_out_clients.broker import AlpacaClient
-from inside_out_clients.feature_store import HopsworksClient
+from inside_out_clients.feature_store import HopsworksClient, load_feature_group_catalog
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 logger = logging.getLogger(__name__)
 
-# Catalog mapping this service's references to feature-group specs.
-FEATURE_GROUPS = {
-    'trades': {
-        'name': config.feature_group_trades,
-        'version': config.feature_group_version,
-        'primary_key': ['key'],
-        'event_time': 'date',
-    },
-}
+# Catalog of feature groups this service touches, loaded from the YAML spec template.
+FEATURE_GROUPS = load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version)
 
 
 class InferencePipeline:
@@ -61,7 +56,7 @@ class InferencePipeline:
             A cleaned DataFrame of trades, or an empty DataFrame on failure.
         """
         try:
-            data = pd.DataFrame(self.feature_store.read('trades'))
+            data = pd.DataFrame(self.feature_store.read(FeatureGroup.BIR4))
             return data.drop_duplicates().dropna()
         except Exception as e:
             logger.error(f'Failed to fetch new trades: {e}')

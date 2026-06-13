@@ -2,15 +2,17 @@
 
 import logging
 import time
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
-from inside_out_clients.feature_store import HopsworksClient
+from inside_out_clients.feature_store import HopsworksClient, load_feature_group_catalog
+from inside_out_clients.market_data import MarketDataClient
 from tqdm import tqdm
 
 from src.clean import reduce_mem_storage
 from src.config import config
+from src.constants import FeatureGroup
 
 logger = logging.getLogger(__name__)
 
@@ -19,26 +21,8 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(message)s',
 )
 
-# Catalog mapping this service's references to feature-group specs.
-FEATURE_GROUPS = {
-    'p': {
-        'name': 'p',
-        'version': config.feature_group_version,
-        'primary_key': ['ticker', 'date'],
-        'event_time': 'date',
-        'online_enabled': False,
-        'stream': False,
-    },
-    'bt4': {'name': 'bt4', 'version': config.feature_group_version, 'primary_key': ['key'], 'event_time': 'date'},
-    'bi4': {
-        'name': 'bi4',
-        'version': config.feature_group_version,
-        'primary_key': ['key'],
-        'event_time': 'date',
-        'online_enabled': False,
-        'stream': False,
-    },
-}
+# Catalog of feature groups this service touches, loaded from the YAML spec template.
+FEATURE_GROUPS = load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version)
 
 
 class YahooDataFetcher:
@@ -49,8 +33,9 @@ class YahooDataFetcher:
     """
 
     def __init__(self):
-        """Initialize the fetcher with a feature store connection."""
+        """Initialize the fetcher with feature-store and market-data clients."""
         self.feature_store = HopsworksClient(config.project_name, config.hopsworks_api_key, FEATURE_GROUPS)
+        self.market_data = MarketDataClient()
 
     def fetch_data_from_yahoo(self, prices: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:
         """Fetches the latest data from Yahoo Finance for the given tickers.
@@ -67,16 +52,10 @@ class YahooDataFetcher:
         for ticker in tickers:
             try:
                 offset = prices.loc[prices['ticker'] == ticker]['date'].max() if not prices.empty else None
+                start = pd.to_datetime(offset) + pd.Timedelta(days=1) if offset else None
 
-                if offset:
-                    offset = pd.to_datetime(offset)
-                    new_data = yf.download(ticker, start=offset + pd.Timedelta(days=1))['Close']
-                else:
-                    new_data = yf.download(ticker)['Close']
-
-                new_data.reset_index(inplace=True)
+                new_data = self.market_data.close_history(ticker, start=start)
                 new_data['ticker'] = ticker
-                new_data.columns = ['date', 'close', 'ticker']
                 new_data = reduce_mem_storage(new_data)
 
                 all_prices = pd.concat([all_prices, new_data], axis=0) if not all_prices.empty else new_data
@@ -92,10 +71,10 @@ class YahooDataFetcher:
         """Process the tickers in batches and fetch data from Yahoo Finance."""
         # Route to the correct feature group
         if config.system_inference:
-            data = self.feature_store.read('bi4', read_options={'use_hive': True})
+            data = self.feature_store.read(FeatureGroup.BI4, read_options={'use_hive': True})
         elif config.system_training:
             data = self.feature_store.read(
-                'bt4',
+                FeatureGroup.BT4,
                 where=lambda fg: fg.filter(fg[config.filter_key] == config.acquired_disposed),
                 read_options={'use_hive': True},
             )
@@ -109,14 +88,14 @@ class YahooDataFetcher:
             processing_tickers = tickers[i : i + config.buffer_size]
             try:
                 current_data = self.feature_store.read(
-                    'p',
+                    FeatureGroup.PRICES,
                     where=lambda fg: fg.filter(fg['ticker'].isin(processing_tickers)),
                     read_options={'use_hive': True},
                 )
             except Exception:
                 current_data = pd.DataFrame()
             new_data = self.fetch_data_from_yahoo(current_data, processing_tickers)
-            self.feature_store.push('p', new_data)
+            self.feature_store.push(FeatureGroup.PRICES, new_data)
 
         logger.debug('Finished processing all tickers')
 

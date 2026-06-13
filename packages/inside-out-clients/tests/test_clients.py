@@ -250,5 +250,55 @@ def test_market_data_reads_info_fields(monkeypatch):
     assert client.exchange('ZZZ') is None
 
 
+def test_market_data_close_history_returns_tidy_frame(monkeypatch):
+    import pandas as pd
+
+    captured = {}
+
+    def _download(symbol, start=None):
+        captured['symbol'] = symbol
+        captured['start'] = start
+        idx = pd.to_datetime(['2024-01-01', '2024-01-02'])
+        return pd.DataFrame({'Close': [10.0, 11.0]}, index=idx)
+
+    fake = types.ModuleType('yfinance')
+    fake.download = _download
+    monkeypatch.setitem(sys.modules, 'yfinance', fake)
+
+    from inside_out_clients.market_data import MarketDataClient
+
+    out = MarketDataClient().close_history('AAPL', start='2024-01-01')
+    # Caller's symbol and start thread straight through to yfinance.download.
+    assert captured == {'symbol': 'AAPL', 'start': '2024-01-01'}
+    # The yfinance 'Close' column is reshaped into a tidy (date, close) frame.
+    assert list(out.columns) == ['date', 'close']
+    assert out['close'].tolist() == [10.0, 11.0]
+
+
+# --------------------------------------------------------------------------- #
+# load_feature_group_catalog
+# --------------------------------------------------------------------------- #
+def test_load_feature_group_catalog_injects_version_and_defaults_name(tmp_path):
+    from inside_out_clients.feature_store import load_feature_group_catalog
+
+    spec = tmp_path / 'feature_groups.yaml'
+    spec.write_text(
+        'bi4:\n'
+        '  primary_key: [key]\n'
+        '  event_time: date\n'
+        'custom:\n'
+        '  name: override_name\n'
+        '  primary_key: [id]\n'
+        '  event_time: ts\n'
+    )
+
+    catalog = load_feature_group_catalog(spec, version=3)
+    # name defaults to the reference key; version is injected from the argument.
+    assert catalog['bi4'] == {'name': 'bi4', 'version': 3, 'primary_key': ['key'], 'event_time': 'date'}
+    # an explicit name in the template is preserved.
+    assert catalog['custom']['name'] == 'override_name'
+    assert catalog['custom']['version'] == 3
+
+
 if __name__ == '__main__':
     raise SystemExit(pytest.main([__file__, '-q']))

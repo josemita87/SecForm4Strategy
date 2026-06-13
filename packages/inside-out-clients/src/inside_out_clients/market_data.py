@@ -24,3 +24,22 @@ class MarketDataClient:
     def exchange(self, symbol: str):
         """Return the listing exchange for ``symbol`` (or None if absent)."""
         return self._yf.Ticker(symbol).info.get('exchange')
+
+    def close_history(self, symbol: str, start=None):
+        """Return the daily close-price history for ``symbol``.
+
+        Hides the yfinance specifics (``download`` and the ``Close`` column)
+        behind a tidy two-column frame.
+
+        Args:
+            symbol: Ticker symbol to download.
+            start: Optional inclusive start date; when None, the full available
+                history is returned.
+
+        Returns:
+            A DataFrame with ``date`` and ``close`` columns.
+        """
+        raw = self._yf.download(symbol, start=start) if start is not None else self._yf.download(symbol)
+        close = raw['Close'].reset_index()
+        close.columns = ['date', 'close']
+        return close

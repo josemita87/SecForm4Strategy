@@ -1,0 +1,26 @@
+# Feature-group catalog for the target microservice.
+# `name` defaults to the reference key; `version` is injected at load time from
+# config.feature_group_version. See inside_out_clients.feature_store.load_feature_group_catalog.
+p:
+  primary_key: [ticker, date]
+  event_time: date
+  online_enabled: false
+  stream: false
+bt4:
+  primary_key: [key]
+  event_time: date
+bi4:
+  primary_key: [key]
+  event_time: date
+  online_enabled: false
+  stream: false
+rt4:
+  primary_key: [key]
+  event_time: date
+  online_enabled: false
+  stream: false
+bir4:
+  primary_key: [key]
+  event_time: date
+  online_enabled: false
+  stream: false

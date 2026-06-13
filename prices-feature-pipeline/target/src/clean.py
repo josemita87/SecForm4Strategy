@@ -5,6 +5,8 @@ import logging
 import numpy as np
 import pandas as pd
 
+from src.constants import Direction
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,8 +68,8 @@ def normalize_data(
             txs['acquired_disposed'] = txs['acquired_disposed'].str.upper().str.strip()
 
             # Verify that all values in 'acquired_disposed' are 'D'
-            if not (txs['acquired_disposed'] == 'D').all():
-                raise ValueError("Not all values in 'acquired_disposed' are 'D'")
+            if not (txs['acquired_disposed'] == Direction.DISPOSED).all():
+                raise ValueError(f"Not all values in 'acquired_disposed' are '{Direction.DISPOSED.value}'")
 
         if not prices.empty:
             prices['ticker'] = prices['ticker'].str.upper().str.strip()

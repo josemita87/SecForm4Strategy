@@ -1,0 +1,7 @@
+# Feature-group catalog for the inference microservice.
+# The scorer reads the enriched inference output (bir4) written by the target service.
+# `name` defaults to the reference key; `version` is injected at load time from
+# config.feature_group_version. See inside_out_clients.feature_store.load_feature_group_catalog.
+bir4:
+  primary_key: [key]
+  event_time: date

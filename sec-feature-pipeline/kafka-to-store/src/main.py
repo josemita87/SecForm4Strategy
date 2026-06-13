@@ -1,25 +1,16 @@
 """Entry point that consumes Kafka transactions and pushes them to the feature store."""
 
 import logging
+from pathlib import Path
 
 import pandas as pd
 from config import config
-from inside_out_clients.feature_store import HopsworksClient
+from constants import FeatureGroup
+from inside_out_clients.feature_store import HopsworksClient, load_feature_group_catalog
 from inside_out_clients.messaging import KafkaClient
 
-# Catalog mapping this service's references to feature-group specs. The generic
-# client maps a reference to the right group; only this service knows the specs.
-FEATURE_GROUPS = {
-    'bt4': {'name': 'bt4', 'version': config.feature_group_version, 'primary_key': ['key'], 'event_time': 'date'},
-    'bi4': {
-        'name': 'bi4',
-        'version': config.feature_group_version,
-        'primary_key': ['key'],
-        'event_time': 'date',
-        'online_enabled': False,
-        'stream': False,
-    },
-}
+# Catalog of feature groups this service touches, loaded from the YAML spec template.
+FEATURE_GROUPS = load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -139,10 +130,10 @@ if __name__ == '__main__':
 
             # Route to the correct feature group (inference / training)
             if config.system_inference:
-                feature_store.push('bi4', data)
+                feature_store.push(FeatureGroup.BI4, data)
 
             elif config.system_training:
-                feature_store.push('bt4', data)
+                feature_store.push(FeatureGroup.BT4, data)
 
         else:
             logger.info('No more messages to consume. Exiting kafka-to-store...')

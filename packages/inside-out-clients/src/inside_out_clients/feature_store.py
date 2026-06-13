@@ -8,7 +8,34 @@ about what the references mean — the catalog is the caller's domain input.
 """
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
+
+
+def load_feature_group_catalog(spec_path: str | Path, version: int) -> dict[str, dict[str, Any]]:
+    """Build a feature-group catalog from a YAML spec template.
+
+    The YAML maps each reference (e.g. ``bi4``) to its spec fields
+    (``primary_key``, ``event_time``, and any extra Hopsworks options). Two
+    fields are supplied here rather than in the template: ``version`` is injected
+    from ``version`` so one template serves every feature-store version, and
+    ``name`` defaults to the reference key unless the entry overrides it.
+
+    Args:
+        spec_path: Path to the YAML catalog template.
+        version: Feature-group version injected into every entry.
+
+    Returns:
+        A catalog dict suitable for :class:`HopsworksClient`, keyed by reference.
+    """
+    # Lazy import: only pulled in when a catalog is actually loaded.
+    import yaml
+
+    raw = yaml.safe_load(Path(spec_path).read_text()) or {}
+    return {
+        ref: {'name': spec.get('name', ref), 'version': version, **{k: v for k, v in spec.items() if k != 'name'}}
+        for ref, spec in raw.items()
+    }
 
 
 class HopsworksClient:

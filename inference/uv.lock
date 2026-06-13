@@ -648,20 +648,25 @@ broker = [
 feature-store = [
     { name = "hopsworks" },
     { name = "pyarrow" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "alpaca-trade-api", marker = "extra == 'broker'", specifier = ">=3.2,<4" },
+    { name = "beautifulsoup4", marker = "extra == 'edgar-live'", specifier = ">=4,<5" },
     { name = "confluent-kafka", marker = "extra == 'messaging'", specifier = ">=2.6,<3" },
     { name = "hopsworks", marker = "extra == 'feature-store'", specifier = ">=4.1,<5" },
     { name = "pandas", marker = "extra == 'edgar'", specifier = ">=2.1" },
+    { name = "pandas", marker = "extra == 'market-data'", specifier = ">=2.1" },
     { name = "pyarrow", marker = "extra == 'feature-store'", specifier = ">=18" },
+    { name = "pyyaml", marker = "extra == 'feature-store'", specifier = ">=6,<7" },
     { name = "quixstreams", marker = "extra == 'messaging'", specifier = ">=3.1,<4" },
     { name = "requests", marker = "extra == 'edgar'", specifier = ">=2.32,<3" },
+    { name = "selenium", marker = "extra == 'edgar-live'", specifier = ">=4.28,<5" },
     { name = "yfinance", marker = "extra == 'market-data'", specifier = ">=0.2.48,<0.3" },
 ]
-provides-extras = ["feature-store", "broker", "messaging", "edgar", "market-data"]
+provides-extras = ["feature-store", "broker", "messaging", "edgar", "edgar-live", "market-data"]
 
 [[package]]
 name = "javaobj-py3"
