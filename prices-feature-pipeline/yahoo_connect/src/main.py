@@ -100,12 +100,8 @@ class YahooDataFetcher:
         logger.debug('Finished processing all tickers')
 
 
-def main():
-    """Main function to initiate the YahooDataFetcher."""
+if __name__ == '__main__':
+    # Fetch the latest Yahoo Finance prices and update the prices (P) feature group.
     time.sleep(config.delay)
     fetcher = YahooDataFetcher()
     fetcher.process_tickers()
-
-
-if __name__ == '__main__':
-    main()

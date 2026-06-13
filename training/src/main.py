@@ -27,8 +27,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main():
-    """Run the end-to-end training, prediction, simulation, and save pipeline."""
+if __name__ == '__main__':
+    # Run the end-to-end training, prediction, simulation, and save pipeline.
     # Connect to the feature store
     feature_store = Connection()
     logger.info('Connected to the feature store')
@@ -106,7 +106,3 @@ def main():
     logger.info(f'Model saved at: {config.models_directory}')
 
     logger.info('Training process completed')
-
-
-if __name__ == '__main__':
-    main()

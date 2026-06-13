@@ -87,15 +87,11 @@ def run_inference(feature_store: HopsworksClient) -> None:
     feature_store.push(FeatureGroup.BIR4, BIR4)
 
 
-def main():
-    """Entry point: connect to the feature store and route by system configuration."""
+if __name__ == '__main__':
+    # Connect to the feature store and route by system configuration.
     time.sleep(config.delay)
     feature_store = HopsworksClient(config.project_name, config.hopsworks_api_key, FEATURE_GROUPS)
     if config.system_training:
         run_training(feature_store)
     elif config.system_inference:
         run_inference(feature_store)
-
-
-if __name__ == '__main__':
-    main()
