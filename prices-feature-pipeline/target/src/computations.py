@@ -47,12 +47,13 @@ def compute_target(transactions: pd.DataFrame, prices: pd.DataFrame, period: int
     transactions['date'] = pd.to_datetime(transactions['date']).dt.tz_convert('UTC').dt.tz_localize(None)
     prices['date'] = pd.to_datetime(prices['date']).dt.tz_convert('UTC').dt.tz_localize(None)
 
-    # Sort both dataframes by date
+    # Sort both dataframes by date (merge_asof requires the key sorted)
     transactions.sort_values(['date'], inplace=True)
     prices.sort_values(['date'], inplace=True)
 
-    assert transactions['date'].is_monotonic_increasing, 'Transaction dates not sorted'
-    assert prices['date'].is_monotonic_increasing, 'Price dates not sorted'
+    # NaT dates survive sorting and would silently misalign the as-of joins
+    assert transactions['date'].notna().all(), 'Transaction dates contain NaT'
+    assert prices['date'].notna().all(), 'Price dates contain NaT'
 
     # Backward merge_asof to get the start price
     start_state = pd.merge_asof(
