@@ -4,16 +4,15 @@ version = "0.1.0"
 description = "Pure infrastructure clients (Hopsworks, Kafka, Alpaca) shared across the SecForm4Strategy microservices."
 readme = "README.md"
 authors = [{ name = "Josep Cubedo Macian", email = "josep.cubedo@cabsa.es" }]
-# Permissive range: each service resolves this package against its own interpreter
-requires-python = ">=3.10,<4.0"
+requires-python = ">=3.14"
 # No hard dependencies: every SDK sits behind an extra (docs/development.md)
 dependencies = []
 
 [project.optional-dependencies]
 # pydantic validates the feature_groups.yaml catalog.
-feature-store = ["hopsworks>=4.1,<5", "pyarrow>=18", "pyyaml>=6,<7", "pydantic>=2,<3"]
+feature-store = ["hopsworks>=5,<6", "pyarrow>=18", "pyyaml>=6,<7", "pydantic>=2,<3"]
 model-store = ["joblib>=1.4,<2"]
-broker = ["alpaca-trade-api>=3.2,<4"]
+broker = ["alpaca-py>=0.44,<1"]
 messaging = ["quixstreams>=3.1,<4", "confluent-kafka>=2.6,<3"]
 edgar = ["requests>=2.32,<3"]
 # Selenium for EdgarClient.fetch_live_links only, so HTTP-only services skip it

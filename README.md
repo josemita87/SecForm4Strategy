@@ -116,7 +116,7 @@ Each service is its own `uv` project (own `pyproject.toml` + `uv.lock`) and Dock
 
 ## Tech stack
 
-- **Python 3.10-3.12**, managed with [`uv`](https://docs.astral.sh/uv/) (per-service lockfiles, `uv sync --frozen` in Docker).
+- **Python 3.14** everywhere, managed with [`uv`](https://docs.astral.sh/uv/) (per-service lockfiles, `uv sync --frozen` in Docker).
 - **Streaming:** Redpanda (Kafka API) via `quixstreams`.
 - **Feature store:** Hopsworks.
 - **ML:** scikit-learn `HistGradientBoostingRegressor` in a `Pipeline` with its preprocessing (regression on forward returns).

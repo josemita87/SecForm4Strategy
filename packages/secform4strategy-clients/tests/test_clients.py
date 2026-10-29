@@ -14,40 +14,40 @@ import pytest
 
 # --- AlpacaClient ---
 def test_alpaca_threads_credentials_and_places_order(monkeypatch):
-    rest_calls = {}
-    order_calls = {}
+    client_calls = {}
+    orders = []
 
-    class _FakeREST:
-        def __init__(self, key, secret, base_url, api_version):
-            rest_calls.update(key=key, secret=secret, base_url=base_url, api_version=api_version)
+    class _FakeTradingClient:
+        def __init__(self, api_key, secret_key, paper, url_override):
+            client_calls.update(api_key=api_key, secret_key=secret_key, paper=paper, url_override=url_override)
 
-        def submit_order(self, **kwargs):
-            order_calls.update(kwargs)
+        def submit_order(self, order_data):
+            orders.append(order_data)
             return 'order'
 
-    fake = types.ModuleType('alpaca_trade_api')
-    fake.REST = _FakeREST
-    monkeypatch.setitem(sys.modules, 'alpaca_trade_api', fake)
+    def _module(name, **attrs):
+        module = types.ModuleType(name)
+        module.__dict__.update(attrs)
+        monkeypatch.setitem(sys.modules, name, module)
+
+    _module('alpaca')
+    _module('alpaca.trading')
+    _module('alpaca.trading.client', TradingClient=_FakeTradingClient)
+    _module('alpaca.trading.enums', OrderSide=str, OrderType=str, TimeInForce=str)
+    _module('alpaca.trading.requests', OrderRequest=lambda **fields: fields)
 
     from secform4strategy_clients.broker import AlpacaClient
 
-    client = AlpacaClient(api_key='k', api_secret='s', base_url='http://x')
-    assert rest_calls == {
-        'key': 'k',
-        'secret': 's',
-        'base_url': 'http://x',
-        'api_version': 'v2',
+    client = AlpacaClient(api_key='k', api_secret='s', base_url='https://paper-api.alpaca.markets')
+    assert client_calls == {
+        'api_key': 'k',
+        'secret_key': 's',
+        'paper': True,
+        'url_override': 'https://paper-api.alpaca.markets',
     }
 
-    result = client.place_order('AAPL', 1, 'sell', 'market', 'gtc')
-    assert result == 'order'
-    assert order_calls == {
-        'symbol': 'AAPL',
-        'qty': 1,
-        'side': 'sell',
-        'type': 'market',
-        'time_in_force': 'gtc',
-    }
+    assert client.place_order('AAPL', '1', 'sell', 'market', 'gtc') == 'order'
+    assert orders == [{'symbol': 'AAPL', 'qty': 1.0, 'side': 'sell', 'type': 'market', 'time_in_force': 'gtc'}]
 
 
 # --- KafkaConsumer ---

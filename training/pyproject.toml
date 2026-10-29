@@ -4,22 +4,20 @@ version = "0.1.0"
 description = "Trains a scikit-learn regressor from feature-store data, runs a trading simulation, and persists the model."
 readme = "README.md"
 authors = [{ name = "Josep Cubedo Macian", email = "136491450+josemita87@users.noreply.github.com" }]
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     # Hopsworks feature store and the model store come from the shared clients package.
     "secform4strategy-clients[feature-store,model-store]",
-    "pandas==2.2.3",
-    # scikit-learn and numpy must match inference, which unpickles the saved model.
-    "scikit-learn==1.7.2",
-    "numpy==1.26.*",
+    "pandas>=2.3.3,<2.4",
+    "numpy>=2.3,<2.5",
+    # scikit-learn must match between training and inference, which unpickles the saved model.
+    "scikit-learn==1.9.1",
     "joblib>=1.4,<2",
-    "pyarrow>=19.0.0,<20.0.0",
-    "scipy>=1.15.1,<2.0.0",
-    "requests==2.32.3",
-    "matplotlib==3.10.0",
-    "seaborn==0.13.2",
-    "pydantic==2.7.0",
-    "pydantic-settings==2.6.1",
+    "matplotlib>=3.10.6,<4",
+    "seaborn>=0.13.2,<0.14",
+    "pydantic>=2.12,<3",
+    "pydantic-settings>=2.10,<3",
+    "python-dotenv>=1,<2",
     "pyyaml>=6,<7",
 ]
 

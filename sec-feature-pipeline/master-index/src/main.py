@@ -2,13 +2,17 @@
 
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+from itertools import batched
+from typing import TYPE_CHECKING
 
 import xxhash
 from config import config
 from secform4strategy_clients.edgar import EdgarClient
 from secform4strategy_clients.messaging import KafkaClient
+
+if TYPE_CHECKING:
+    from typing import Any
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -34,11 +38,11 @@ def build_messages(filings: list[dict[str, str]], received_now: bool) -> list[tu
     Returns:
         One message per filing, keyed by a hash of its file path.
     """
-    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    now_ms = int(datetime.now(UTC).timestamp() * 1000)
     timestamps = [
         now_ms
         if received_now
-        else int(datetime.strptime(filing['date'].strip(), '%Y-%m-%d').replace(tzinfo=timezone.utc).timestamp()) * 1000
+        else int(datetime.strptime(filing['date'].strip(), '%Y-%m-%d').replace(tzinfo=UTC).timestamp()) * 1000
         for filing in filings
     ]
     return [
@@ -53,9 +57,8 @@ if __name__ == '__main__':
 
     def produce(data: list[dict[str, str]], received_now: bool) -> None:
         """Publish filings to the output topic one batch at a time (each produce call flushes)."""
-        messages = build_messages(data, received_now)
-        for i in range(0, len(messages), config.buffer_size):
-            kafka.produce(config.kafka_output_topic, messages[i : i + config.buffer_size])
+        for batch in batched(build_messages(data, received_now), config.buffer_size, strict=False):
+            kafka.produce(config.kafka_output_topic, batch)
 
     logger.info(f'Master index started in {config.mode} mode -> {config.kafka_output_topic}')
 
@@ -64,7 +67,7 @@ if __name__ == '__main__':
             produce([{'file_path': path} for path in filings.fetch_live_links(config.num_pages)], received_now=True)
             time.sleep(config.secs_between_iterations)
     else:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         quarters = (
             [(year, f'QTR{q}') for year in range(now.year - config.years, now.year + 1) for q in range(1, 5)]
             if config.mode == 'historical'

@@ -1,7 +1,5 @@
 """Parse SEC Form 4 filings: fetch a filing and extract transaction dicts from its XML."""
 
-from __future__ import annotations
-
 import logging
 import re
 import time

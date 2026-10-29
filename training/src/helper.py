@@ -1,7 +1,5 @@
 """Data loading helpers for training."""
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING
 

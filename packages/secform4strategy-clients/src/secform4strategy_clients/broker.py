@@ -1,7 +1,7 @@
-"""Alpaca brokerage client for account access and order placement.
+"""Alpaca brokerage client for account access and order placement (a ``Broker`` adapter).
 
-Pure infrastructure: credentials are passed in by the caller; this module holds
-no configuration and no trading-strategy logic.
+Pure infrastructure on ``alpaca-py``: credentials are passed in by the caller;
+this module holds no configuration and no trading-strategy logic.
 """
 
 import logging
@@ -10,25 +10,24 @@ logger = logging.getLogger(__name__)
 
 
 class AlpacaClient:
-    """Client wrapper around the Alpaca REST trading API.
+    """Client wrapper around the Alpaca trading API.
 
     Attributes:
-        api: The authenticated Alpaca REST client.
+        api: The authenticated Alpaca trading client.
     """
 
-    def __init__(self, api_key: str, api_secret: str, base_url: str, api_version: str = 'v2') -> None:
-        """Initialize the Alpaca REST client from explicit credentials.
+    def __init__(self, api_key: str, api_secret: str, base_url: str) -> None:
+        """Initialize the Alpaca trading client from explicit credentials.
 
         Args:
             api_key: Alpaca API key.
             api_secret: Alpaca API secret.
-            base_url: Alpaca REST base URL.
-            api_version: Alpaca API version (defaults to ``"v2"``).
+            base_url: Alpaca trading base URL; a paper URL selects the paper account.
         """
         # Lazy import so the SDK is only required when this client is built.
-        import alpaca_trade_api as tradeapi
+        from alpaca.trading.client import TradingClient
 
-        self.api = tradeapi.REST(api_key, api_secret, base_url, api_version=api_version)
+        self.api = TradingClient(api_key, api_secret, paper='paper' in base_url, url_override=base_url)
         logger.info('Initialized Alpaca API')
 
     def get_account(self) -> object:
@@ -37,8 +36,8 @@ class AlpacaClient:
         Returns:
             The Alpaca account object.
         """
-        account = self.api.get_account()
-        logger.info(f'Account status: {account.status}')
+        account: object = self.api.get_account()
+        logger.info(f'Account: {account}')
         return account
 
     def place_order(self, symbol: str, qty: str, side: str, order_type: str, time_in_force: str) -> object | None:
@@ -54,13 +53,21 @@ class AlpacaClient:
         Returns:
             The submitted order object, or ``None`` if submission failed.
         """
+        from alpaca.trading.enums import OrderSide, OrderType, TimeInForce
+        from alpaca.trading.requests import OrderRequest
+
         try:
             order: object = self.api.submit_order(
-                symbol=symbol, qty=qty, side=side, type=order_type, time_in_force=time_in_force
+                OrderRequest(
+                    symbol=symbol,
+                    qty=float(qty),
+                    side=OrderSide(side),
+                    type=OrderType(order_type),
+                    time_in_force=TimeInForce(time_in_force),
+                )
             )
-            logger.info(f'Order submitted: {order}')
-            return order
-
         except Exception as e:
             logger.error(f'Failed to place order: {e}')
             return None
+        logger.info(f'Order submitted: {order}')
+        return order

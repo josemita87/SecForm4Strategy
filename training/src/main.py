@@ -2,7 +2,7 @@
 
 import logging
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -84,12 +84,12 @@ if __name__ == '__main__':
             config.git_sha
             or subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
         )
-    except (OSError, subprocess.CalledProcessError):
+    except OSError, subprocess.CalledProcessError:
         git_sha = 'unknown'
     LocalModelStore(config.model_path).save(
         pipeline,
         {
-            'trained_at': datetime.now(timezone.utc).isoformat(),
+            'trained_at': datetime.now(UTC).isoformat(),
             'git_sha': git_sha,
             'sklearn_version': sklearn.__version__,
             'feature_group_version': config.feature_group_version,

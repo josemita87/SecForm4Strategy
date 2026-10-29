@@ -2,13 +2,16 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import yaml
 from dotenv import load_dotenv
 from paths import DATA_SOURCE_PATH, LOG_PATH, MODEL_PATH, PLOT_PATH
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+if TYPE_CHECKING:
+    from typing import Any
 
 # Load the main .env file and then the credentials.env file
 load_dotenv('.env')

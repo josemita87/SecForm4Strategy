@@ -5,9 +5,12 @@ The model is a joblib file and its metadata a JSON file beside it
 """
 
 import json
-from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from typing import Any
 
 
 class LocalModelStore:

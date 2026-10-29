@@ -1,6 +1,6 @@
 # SecForm4Strategy
 
-SEC Form 4 insider-trading ML system: Python microservices (one uv project each) plus the shared `packages/secform4strategy-clients`. Design notes live in `docs/` (`configuration.md`, `development.md`).
+SEC Form 4 insider-trading ML system: Python 3.14 microservices (one uv project each) plus the shared `packages/secform4strategy-clients`. Design notes live in `docs/` (`configuration.md`, `development.md`).
 
 ## Commands
 

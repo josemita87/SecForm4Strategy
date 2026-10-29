@@ -2,10 +2,13 @@
 
 # import dask.dataframe as dd
 import logging
-from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
 
 logger = logging.getLogger(__name__)
 

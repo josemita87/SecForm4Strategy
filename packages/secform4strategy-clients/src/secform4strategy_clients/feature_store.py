@@ -7,8 +7,6 @@ needing to know a group's name, keys or event time. The client knows nothing
 about what the references mean — the catalog is the caller's domain input.
 """
 
-from __future__ import annotations
-
 import functools
 import operator
 from pathlib import Path

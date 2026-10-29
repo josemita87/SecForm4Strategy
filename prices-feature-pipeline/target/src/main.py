@@ -2,15 +2,19 @@
 
 import logging
 import time
-from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from secform4strategy_clients.feature_store import HopsworksClient, load_feature_group_catalog
-from secform4strategy_clients.ports import FeatureStore, Filters
 
 from src import clean, computations
 from src.config import config
 from src.constants import FeatureGroup
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
+    from secform4strategy_clients.ports import FeatureStore, Filters
 
 logger = logging.getLogger(__name__)
 

@@ -10,8 +10,6 @@ skipping a symbol that fails to download (delisted, renamed) is itself a
 market-data concern and the only sensible way to keep a multi-symbol pull alive.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING
 

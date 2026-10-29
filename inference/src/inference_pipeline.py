@@ -1,7 +1,5 @@
 """Inference pipeline: score the latest transactions and short the predicted losers."""
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING

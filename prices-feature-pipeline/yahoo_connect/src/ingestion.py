@@ -5,8 +5,6 @@ close history through the market-data port, and upserts it into the price
 feature group.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING
 

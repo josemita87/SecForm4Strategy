@@ -2,8 +2,8 @@
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import xxhash
 from config import config
@@ -11,6 +11,9 @@ from const import headers
 from parser import parse_filing
 from secform4strategy_clients.edgar import EdgarClient
 from secform4strategy_clients.messaging import KafkaClient
+
+if TYPE_CHECKING:
+    from typing import Any
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -32,12 +35,12 @@ def select_urls(records: list[tuple[dict[str, Any], int]], max_age: timedelta | 
     urls = []
     for msg, offset in records:
         try:
-            date = datetime.fromtimestamp(msg['timestamp'] / 1000, tz=timezone.utc)
-            if max_age is not None and date < datetime.now(timezone.utc) - max_age:
+            date = datetime.fromtimestamp(msg['timestamp'] / 1000, tz=UTC)
+            if max_age is not None and date < datetime.now(UTC) - max_age:
                 logger.info(f'Filing too old: {date}')
                 continue
             urls.append((msg['file_path'], offset))
-        except (KeyError, TypeError, ValueError, OverflowError, OSError):
+        except KeyError, TypeError, ValueError, OverflowError, OSError:
             logger.error(f"Couldn't extract URL from message: {msg}")
     return urls
 
@@ -57,8 +60,8 @@ def build_messages(records: list[dict[str, Any]]) -> list[tuple[str, dict[str, A
     for record in records:
         # Dates may carry a timezone suffix ('2024-01-05-05:00'); the first 10 chars are the day
         try:
-            day = datetime.strptime(record['date'][:10], '%Y-%m-%d').replace(tzinfo=timezone.utc)
-        except (TypeError, ValueError):
+            day = datetime.strptime(record['date'][:10], '%Y-%m-%d').replace(tzinfo=UTC)
+        except TypeError, ValueError:
             logger.error(f'Unparseable date, skipping record: {record}')
             continue
         record['timestamp'] = int(day.timestamp()) * 1000

@@ -7,13 +7,16 @@ to bool and ``NUMERIC`` to the listed dtypes. ``ownership`` holds 'D'/'I'
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from config import config
 from constants import FeatureGroup
 from secform4strategy_clients.feature_store import HopsworksClient, load_feature_group_catalog
 from secform4strategy_clients.messaging import KafkaClient
+
+if TYPE_CHECKING:
+    from typing import Any
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(

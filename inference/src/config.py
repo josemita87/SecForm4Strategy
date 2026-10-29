@@ -2,13 +2,16 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import yaml
 from dotenv import load_dotenv
 from paths import CSV_PATH, LOG_PATH, MODEL_PATH
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+if TYPE_CHECKING:
+    from typing import Any
 
 load_dotenv('.env')
 load_dotenv('.credentials.env')

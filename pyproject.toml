@@ -4,7 +4,7 @@ version = "0.2.0"
 description = "Repo-root dev tooling and shared lint/type/docstring configuration. Not a runtime package — each microservice has its own pyproject.toml and uv.lock for independent Docker builds."
 readme = "Readme.md"
 authors = [{ name = "Josep Cubedo Macian", email = "136491450+josemita87@users.noreply.github.com" }]
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.14,<3.15"
 
 [tool.uv]
 package = false
@@ -21,15 +21,15 @@ dev = [
     # Type information for what the services import, so mypy checks real types instead of Any
     "pydantic-settings>=2.6,<3",
     "python-dotenv>=1,<2",
-    "numpy>=1.26,<2",
-    "pandas-stubs>=2.2,<2.3",
+    "numpy>=2.3,<2.5",
+    "pandas-stubs>=2.3,<2.4",
     "xxhash>=3.5,<4",
     "types-PyYAML>=6",
     "types-requests>=2.32",
 ]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.14"
 strict = true
 plugins = ["pydantic.mypy"]
 warn_return_any = true
@@ -64,7 +64,7 @@ line-length = 120
 unsafe-fixes = false
 preview = false
 show-fixes = true
-target-version = "py310"
+target-version = "py314"
 # api-enricher is orphaned (not wired into the pipeline); its enrichment is rebuilt in the AWS migration
 exclude = ["lab", "sec-feature-pipeline/api-enricher"]
 
@@ -142,9 +142,7 @@ skip-checking-raises = false
 allow-init-docstring = true  # constructors document their own arguments
 require-return-section-when-returning-nothing = false
 check-class-attributes = false
-should-document-private-class-attributes = false
 treat-property-methods-as-class-attributes = true
-ignore-underscore-args = true
 ignore-private-args = false
 should-document-star-arguments = true
 check-style-mismatch = true

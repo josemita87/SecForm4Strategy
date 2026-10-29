@@ -19,7 +19,7 @@ consuming and producing — not separate consumer/producer classes):
 | Client | Module | Extra | SDK |
 | --- | --- | --- | --- |
 | `HopsworksClient` | `secform4strategy_clients.feature_store` | `feature-store` | `hopsworks` |
-| `AlpacaClient` | `secform4strategy_clients.broker` | `broker` | `alpaca-trade-api` |
+| `AlpacaClient` | `secform4strategy_clients.broker` | `broker` | `alpaca-py` |
 | `KafkaClient` | `secform4strategy_clients.messaging` | `messaging` | `quixstreams` |
 | `EdgarClient` | `secform4strategy_clients.edgar` | `edgar` (+ `edgar-live` for `fetch_live_links`) | `requests` / `selenium` |
 | `MarketDataClient` | `secform4strategy_clients.market_data` | `market-data` | `yfinance` |
@@ -50,9 +50,9 @@ secform4strategy-clients = { path = "../../packages/secform4strategy-clients" } 
 ```python
 from secform4strategy_clients.feature_store import HopsworksClient, load_feature_group_catalog
 
-fs = HopsworksClient("my_project", api_key, load_feature_group_catalog("feature_groups.yaml", version=1))
-bt4 = fs.read("bt4", where={"acquired_disposed": "D", "ticker": ["AAPL", "MSFT"]})
-fs.push("rt4", labelled)
+fs = HopsworksClient('my_project', api_key, load_feature_group_catalog('feature_groups.yaml', version=1))
+bt4 = fs.read('bt4', where={'acquired_disposed': 'D', 'ticker': ['AAPL', 'MSFT']})
+fs.push('rt4', labelled)
 ```
 
 `load_feature_group_catalog` validates every entry of the YAML catalog

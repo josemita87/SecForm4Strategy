@@ -6,8 +6,6 @@ the quarterly master index). It does NOT hold service business logic — filteri
 by form type, deriving keys/timestamps, and publishing are the caller's domain.
 """
 
-from __future__ import annotations
-
 import logging
 import time
 from http import HTTPStatus

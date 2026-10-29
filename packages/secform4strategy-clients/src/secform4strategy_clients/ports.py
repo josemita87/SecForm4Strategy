@@ -5,8 +5,6 @@ client, so swapping a backend (Hopsworks for S3, local disk for a bucket) is a n
 adapter and no service change. The clients satisfy them structurally.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Protocol
 
