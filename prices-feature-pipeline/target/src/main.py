@@ -5,7 +5,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from secform4strategy_clients.feature_store import HopsworksClient, load_feature_group_catalog
+from pyiceberg.catalog import load_catalog
+from secform4strategy_clients.feature_store import IcebergFeatureStore, load_feature_group_catalog
 
 from src import clean, computations
 from src.config import config
@@ -47,9 +48,9 @@ def run_training(
     # Without prices no target can be computed, so a failed read fails the run
     BT4, P = clean.normalize_data(BT4, feature_store.read(FeatureGroup.PRICES, where={'ticker': tickers}))
 
-    # Aggregate daily, add company context, attach the forward return, then the leakage-free expanding average
+    # Aggregate daily, add company context and value features, attach the forward return, then the expanding average
     daily = computations.add_company_context(computations.data_aggregation(BT4, agg_dict), reference)
-    semiRT4 = computations.compute_target(daily, P, delta_period)
+    semiRT4 = computations.compute_target(computations.add_value_features(daily, P), P, delta_period)
     # Only labelled rows feed the expanding average; `label_known_at` stays for training's purged split
     labelled = semiRT4.dropna(subset=['label_known_at'])
     RT4 = clean.data_cleaning(computations.compute_RT4(labelled), ['pct_change', 'avg_target_expanding'])
@@ -65,14 +66,18 @@ def run_inference(
     """Map the trained per-ticker targets onto new transactions (BIR4) and store them.
 
     Args:
-        feature_store: Source of BI4 and RT4; destination of BIR4.
+        feature_store: Source of BI4, prices and RT4; destination of BIR4.
         where: Filter selecting the transactions to score.
         agg_dict: Per-column aggregation collapsing same-ticker, same-day transactions.
         reference: Market caps and company table joined onto each daily row.
     """
-    BI4, _ = clean.normalize_data(feature_store.read(FeatureGroup.BI4, where=where))
+    BI4 = feature_store.read(FeatureGroup.BI4, where=where)
+    # The same features as training: company context and USD values from prices known at acceptance
+    BI4, P = clean.normalize_data(
+        BI4, feature_store.read(FeatureGroup.PRICES, where={'ticker': clean.get_unique_tickers(BI4)})
+    )
     daily = computations.add_company_context(computations.data_aggregation(BI4, agg_dict), reference)
-    BIR4 = computations.map_RT4_to_BIR4(feature_store.read(FeatureGroup.RT4), daily)
+    BIR4 = computations.map_RT4_to_BIR4(feature_store.read(FeatureGroup.RT4), computations.add_value_features(daily, P))
     # BIR4 has no realized return yet, only the mapped expanding average
     feature_store.push(FeatureGroup.BIR4, clean.data_cleaning(BIR4, ['avg_target_expanding']))
 
@@ -80,9 +85,9 @@ def run_inference(
 if __name__ == '__main__':
     # Connect to the feature store and route by system configuration.
     time.sleep(config.delay)
-    feature_store = HopsworksClient(
-        config.project_name,
-        config.hopsworks_api_key,
+    feature_store = IcebergFeatureStore(
+        load_catalog('default'),
+        config.feature_store_namespace,
         load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version),
     )
     where = {config.filter_key: config.acquired_disposed}

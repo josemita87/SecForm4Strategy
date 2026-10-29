@@ -1,7 +1,7 @@
 """Ports: the contracts services depend on.
 
 Services annotate their dependencies with these Protocols, never with a concrete
-client, so swapping a backend (Hopsworks for S3, local disk for a bucket) is a new
+client, so swapping a backend (a local catalog for AWS Glue, local disk for a bucket) is a new
 adapter and no service change. The clients satisfy them structurally.
 """
 

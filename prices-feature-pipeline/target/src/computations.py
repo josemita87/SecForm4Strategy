@@ -35,30 +35,76 @@ def data_aggregation(transactions: pd.DataFrame, agg_dict: Mapping[str, str | Ca
     return transactions.groupby(['ticker', 'date'], as_index=False).agg(valid_agg_dict)
 
 
+def _normalize_prices(prices: pd.DataFrame) -> pd.DataFrame:
+    """Return daily bars with naive-UTC ns ``date`` (naive read as UTC) and string tickers, sorted by date."""
+    prices = prices.assign(
+        date=pd.to_datetime(prices['date'], utc=True).dt.tz_localize(None).dt.as_unit('ns'),
+        ticker=prices['ticker'].astype(str),
+    ).sort_values('date')
+    assert prices['date'].notna().all(), 'Price dates contain NaT'
+    return prices
+
+
+def add_value_features(transactions: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
+    """Price each transaction and value its share counts in USD, using only prices known at acceptance.
+
+    Training and inference both run this step, so the model sees the same features in
+    both. A transaction without a reported ``price`` (0) takes its ticker's last close
+    strictly before acceptance. ``tx_value``, ``remaining_value``, ``direct_holding``
+    and ``indirect_holding`` become USD values; ``shares`` and ``remaining_shares`` go.
+
+    Args:
+        transactions: Transactions with ``ticker``, acceptance ``timestamp``, ``price`` and share columns.
+        prices: Daily bars with ``ticker``, ``date`` and ``close``.
+
+    Returns:
+        The transactions with USD value columns.
+    """
+    prices = _normalize_prices(prices)
+    closes = pd.DataFrame(
+        {
+            'ticker': prices['ticker'],
+            'last_close': prices['close'],
+            'closed_at': (prices['date'].dt.tz_localize(MARKET_TZ) + MARKET_CLOSE).astype('int64') // 10**6,
+        }
+    ).sort_values('closed_at')
+    valued = pd.merge_asof(
+        transactions.assign(
+            ticker=transactions['ticker'].astype(str), timestamp=transactions['timestamp'].astype('int64')
+        ).sort_values('timestamp'),
+        closes,
+        left_on='timestamp',
+        right_on='closed_at',
+        by='ticker',
+        direction='backward',
+        allow_exact_matches=False,
+    )
+    valued['price'] = valued['price'].where(valued['price'] != 0, valued['last_close'])
+    valued[['tx_value', 'remaining_value', 'direct_holding', 'indirect_holding']] = valued[
+        ['shares', 'remaining_shares', 'direct_holding', 'indirect_holding']
+    ].mul(valued['price'], axis=0)
+    return valued.drop(columns=['last_close', 'closed_at', 'shares', 'remaining_shares'])
+
+
 def compute_target(transactions: pd.DataFrame, prices: pd.DataFrame, period: int) -> pd.DataFrame:
-    """Forward return from the first price a trader could act on after each filing's acceptance.
+    """Label each transaction with the forward return from the first price a trader could act on.
 
     Every trading day offers two prices, its 09:30 open and its 16:00 close (US/Eastern).
     A filing accepted at ``timestamp`` (epoch ms) enters at the first of them strictly
     after acceptance: the same day's close when accepted in session, the next open
     otherwise. It exits at the first close ``period`` days after the entry day;
-    ``label_known_at`` (epoch ms) is that exit close. Share counts become USD values.
+    ``label_known_at`` (epoch ms) is that exit close.
 
     Args:
-        transactions: Transactions with ``ticker``, ``date``, ``timestamp`` and share columns.
+        transactions: Transactions with ``ticker``, ``date`` and ``timestamp``.
         prices: Daily bars with ``ticker``, ``date``, ``open`` and ``close``.
         period: Days between the entry day and the exit.
 
     Returns:
-        Transactions with ``pct_change`` and ``label_known_at``, and USD value columns.
+        Transactions with ``pct_change`` and ``label_known_at``.
     """
-    # Trade dates and price days as naive UTC midnights; tickers as plain strings for the as-of joins
-    transactions['date'] = pd.to_datetime(transactions['date']).dt.tz_convert('UTC').dt.tz_localize(None)
-    prices = prices.assign(
-        date=pd.to_datetime(prices['date']).dt.tz_convert('UTC').dt.tz_localize(None),
-        ticker=prices['ticker'].astype(str),
-    ).sort_values('date')
-    assert prices['date'].notna().all(), 'Price dates contain NaT'
+    transactions['date'] = pd.to_datetime(transactions['date'], utc=True).dt.tz_localize(None).dt.as_unit('ns')
+    prices = _normalize_prices(prices)
     assert transactions['timestamp'].notna().all(), 'Acceptance timestamps contain NaN'
 
     # One row per tradable price: each day's open and close, stamped at the moment it prints
@@ -105,17 +151,7 @@ def compute_target(transactions: pd.DataFrame, prices: pd.DataFrame, period: int
     exit_close = (es['exit_date'] + MARKET_CLOSE).dt.tz_localize(MARKET_TZ)
     es['label_known_at'] = exit_close.dropna().astype('int64') // 10**6
 
-    # Collapse price columns into one: this way we increase likelihood of having a price to work with
-    es['price'] = np.where(es['price'] == 0, es['start_price'], es['price'])
-
-    # Convert the shares-related counts to USD value
-    es[['tx_value', 'remaining_value', 'direct_holding', 'indirect_holding']] = es[
-        ['shares', 'remaining_shares', 'direct_holding', 'indirect_holding']
-    ].mul(es['price'], axis=0)
-
-    es = es.drop(
-        columns=['at', 'entry_day', 'exit_due', 'exit_date', 'start_price', 'end_price', 'remaining_shares', 'shares']
-    )
+    es = es.drop(columns=['at', 'entry_day', 'exit_due', 'exit_date', 'start_price', 'end_price'])
     logger.debug(f'Target computation completed. Shape: {es.shape}')
     return es
 

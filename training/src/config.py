@@ -27,10 +27,9 @@ def _specs() -> dict[str, Any]:
 class Config(BaseSettings):
     """Typed application settings sourced from environment variables."""
 
-    # Hopsworks settings
-    project_name: str = Field(..., json_schema_extra={'env': 'PROJECT_NAME'})
+    # Iceberg feature store; the catalog itself is configured by PYICEBERG_CATALOG__DEFAULT__* (docs/configuration.md)
+    feature_store_namespace: str = Field('secform4strategy', json_schema_extra={'env': 'FEATURE_STORE_NAMESPACE'})
     feature_group_version: int = Field(..., json_schema_extra={'env': 'FEATURE_GROUP_VERSION'})
-    hopsworks_api_key: str = Field(..., json_schema_extra={'env': 'HOPSWORKS_API_KEY'})
 
     # Paths (defaults anchored on the repo layout via paths.py; env overridable)
     model_path: Path = Field(default=MODEL_PATH, json_schema_extra={'env': 'MODEL_PATH'})

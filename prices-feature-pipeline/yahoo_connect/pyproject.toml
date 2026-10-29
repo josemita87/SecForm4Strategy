@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Fetches price history from Yahoo Finance and incrementally updates the prices (P) feature group."
 readme = "README.md"
 authors = [{ name = "Josep Cubedo Macian", email = "136491450+josemita87@users.noreply.github.com" }]
-# Compatible range for hopsworks and hsfs
 requires-python = ">=3.14,<3.15"
 dependencies = [
     # Feature store and market data come from the shared clients package.

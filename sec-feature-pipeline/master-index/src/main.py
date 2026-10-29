@@ -86,4 +86,11 @@ if __name__ == '__main__':
             if (index := filings.fetch_master_index(year, quarter)) is None:
                 logger.warning(f'No master index for {year} {quarter}')
                 continue
-            produce([filing for filing in index if filing['form_type'] == FORM_TYPE])
+            # The index lists a filing once per filer (issuer and each reporting owner): keep one per accession
+            unique = {
+                accession: filing | {'accession': accession}
+                for filing in index
+                if filing['form_type'] == FORM_TYPE
+                and (accession := filing['file_path'].rsplit('/', 1)[-1].removesuffix('.txt'))
+            }
+            produce(list(unique.values()))

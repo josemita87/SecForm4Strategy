@@ -22,11 +22,9 @@ def _agg_dict() -> dict[str, str | Callable[..., object]]:
 class Config(BaseSettings):
     """Configuration settings for the target microservice."""
 
-    # Hopsworks settings
-    project_name: str = Field(..., json_schema_extra={'env': 'PROJECT_NAME'})
-    hopsworks_api_key: str = Field(..., json_schema_extra={'env': 'HOPSWORKS_API_KEY'})
+    # Iceberg feature store; the catalog itself is configured by PYICEBERG_CATALOG__DEFAULT__* (docs/configuration.md)
+    feature_store_namespace: str = Field('secform4strategy', json_schema_extra={'env': 'FEATURE_STORE_NAMESPACE'})
     feature_group_version: int = Field(..., json_schema_extra={'env': 'FEATURE_GROUP_VERSION'})
-    event_time: str = Field(..., json_schema_extra={'env': 'EVENT_TIME'})
 
     # Investment settings
     delta_period: int = Field(..., json_schema_extra={'env': 'DELTA_PERIOD'})

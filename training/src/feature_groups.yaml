@@ -2,5 +2,3 @@
 rt4:
   primary_key: [key]
   event_time: date
-  online_enabled: false
-  stream: false

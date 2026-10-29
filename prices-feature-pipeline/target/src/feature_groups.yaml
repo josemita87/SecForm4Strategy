@@ -2,23 +2,15 @@
 p:
   primary_key: [ticker, date]
   event_time: date
-  online_enabled: false
-  stream: false
 bt4:
   primary_key: [key]
   event_time: date
 bi4:
   primary_key: [key]
   event_time: date
-  online_enabled: false
-  stream: false
 rt4:
   primary_key: [key]
   event_time: date
-  online_enabled: false
-  stream: false
 bir4:
   primary_key: [key]
   event_time: date
-  online_enabled: false
-  stream: false

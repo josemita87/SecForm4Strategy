@@ -7,13 +7,9 @@ from pydantic_settings import BaseSettings
 class Config(BaseSettings):
     """Configuration settings for the Yahoo Connect microservice."""
 
-    # Hopsworks Settings
-    project_name: str = Field(..., json_schema_extra={'env': 'PROJECT_NAME'})
+    # Iceberg feature store; the catalog itself is configured by PYICEBERG_CATALOG__DEFAULT__* (docs/configuration.md)
+    feature_store_namespace: str = Field('secform4strategy', json_schema_extra={'env': 'FEATURE_STORE_NAMESPACE'})
     feature_group_version: int = Field(..., json_schema_extra={'env': 'FEATURE_GROUP_VERSION'})
-    feature_view_version: int = Field(..., json_schema_extra={'env': 'FEATURE_VIEW_VERSION'})
-    feature_view_name: str = Field(..., json_schema_extra={'env': 'FEATURE_VIEW_NAME'})
-    event_time: str = Field(..., json_schema_extra={'env': 'EVENT_TIME'})
-    hopsworks_api_key: str = Field(..., json_schema_extra={'env': 'HOPSWORKS_API_KEY'})
 
     # System Settings
     buffer_size: int = Field(..., json_schema_extra={'env': 'BUFFER_SIZE'})

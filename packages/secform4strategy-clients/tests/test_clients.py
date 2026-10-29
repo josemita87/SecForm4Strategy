@@ -247,8 +247,8 @@ def test_market_data_daily_bars_returns_tidy_frame(monkeypatch):
 
     captured = {}
 
-    def _download(symbol, start=None, multi_level_index=True):
-        captured.update(symbol=symbol, start=start, multi_level_index=multi_level_index)
+    def _download(symbol, **kwargs):
+        captured.update(symbol=symbol, **kwargs)
         idx = pd.to_datetime(['2024-01-01', '2024-01-02'])
         return pd.DataFrame({'Open': [9.5, 10.5], 'High': [10.5, 11.5], 'Close': [10.0, 11.0]}, index=idx)
 
@@ -260,7 +260,11 @@ def test_market_data_daily_bars_returns_tidy_frame(monkeypatch):
 
     out = MarketDataClient().daily_bars('AAPL', start='2024-01-01')
     # Caller's symbol and start thread straight through to yfinance.download, with flat columns.
-    assert captured == {'symbol': 'AAPL', 'start': '2024-01-01', 'multi_level_index': False}
+    assert captured == {'symbol': 'AAPL', 'start': '2024-01-01', 'auto_adjust': True, 'multi_level_index': False}
+    # Without a start, the full history is requested rather than yfinance's one-month default.
+    captured.clear()
+    MarketDataClient().daily_bars('AAPL')
+    assert captured['period'] == 'max' and 'start' not in captured
     # The yfinance 'Open'/'Close' columns are reshaped into a tidy (date, open, close) frame.
     assert list(out.columns) == ['date', 'open', 'close']
     assert out['open'].tolist() == [9.5, 10.5]
@@ -272,7 +276,7 @@ def test_market_data_price_histories_tags_skips_and_downcasts(monkeypatch):
 
     starts_seen = {}
 
-    def _download(symbol, start=None, multi_level_index=True):
+    def _download(symbol, start=None, **kwargs):
         starts_seen[symbol] = start
         if symbol == 'BAD':
             raise ValueError('delisted')
@@ -300,7 +304,7 @@ def test_market_data_price_histories_tags_skips_and_downcasts(monkeypatch):
 
 
 def test_market_data_price_histories_empty_when_all_fail(monkeypatch):
-    def _download(symbol, start=None, multi_level_index=True):
+    def _download(symbol, **kwargs):
         raise ValueError('nope')
 
     fake = types.ModuleType('yfinance')

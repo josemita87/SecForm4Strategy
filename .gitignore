@@ -38,3 +38,6 @@ site-packages/
 
 # Trained model artifacts (produced by training, not versioned)
 *.joblib
+
+# Local Iceberg feature store (catalog + warehouse)
+.lakehouse/

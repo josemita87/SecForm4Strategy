@@ -50,12 +50,16 @@ class MarketDataClient:
         Args:
             symbol: Ticker symbol to download.
             start: Optional inclusive start date; when None, the full available
-                history is returned.
+                history is returned (``period='max'``).
+
+        Prices are split- and dividend-adjusted (``auto_adjust``).
 
         Returns:
             A DataFrame with ``date``, ``open`` and ``close`` columns.
         """
-        bars: pd.DataFrame = self._yf.download(symbol, start=start, multi_level_index=False)[
+        # Without a start yfinance returns only its default one-month period, so ask for all of it
+        window = {'start': start} if start is not None else {'period': 'max'}
+        bars: pd.DataFrame = self._yf.download(symbol, **window, auto_adjust=True, multi_level_index=False)[
             ['Open', 'Close']
         ].reset_index()
         bars.columns = ['date', 'open', 'close']

@@ -5,9 +5,11 @@ networks:
     name: redpanda-network
     driver: bridge
 
-# Yaml anchor for shared variables
+# Iceberg feature store on a local SQLite catalog, shared by the services through the lakehouse volume
 x-shared-environment: &shared-env
-  SHARED_ENV_VAR1: value1
+  PYICEBERG_CATALOG__DEFAULT__TYPE: sql
+  PYICEBERG_CATALOG__DEFAULT__URI: sqlite:////lakehouse/catalog.db
+  PYICEBERG_CATALOG__DEFAULT__WAREHOUSE: file:///lakehouse/warehouse
 
 services:
   master-index:
@@ -54,11 +56,12 @@ services:
     networks:
       - redpanda-network
     env_file:
-      - .credentials.env
       - inference-feature.env
       - .env
     environment:
       <<: *shared-env
+    volumes:
+      - ../../.lakehouse:/lakehouse
     ports:
       - "8002:8002"
     restart:
@@ -74,9 +77,10 @@ services:
       - redpanda-network
     env_file:
       - inference-yahoo.env
-      - .credentials.env
     environment:
       <<: *shared-env
+    volumes:
+      - ../../.lakehouse:/lakehouse
     ports:
       - "8003:8003"
     restart:
@@ -92,9 +96,10 @@ services:
       - redpanda-network
     env_file:
       - inference-target.env
-      - .credentials.env
     environment:
       <<: *shared-env
+    volumes:
+      - ../../.lakehouse:/lakehouse
     ports:
       - "8005:8005"
     restart:

@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [{ name = "Josep Cubedo Macian", email = "136491450+josemita87@users.noreply.github.com" }]
 requires-python = ">=3.14,<3.15"
 dependencies = [
-    # Hopsworks feature store and the model store come from the shared clients package.
+    # Feature store and model store come from the shared clients package.
     "secform4strategy-clients[feature-store,model-store]",
     "pandas>=2.3.3,<2.4",
     "numpy>=2.3,<2.5",

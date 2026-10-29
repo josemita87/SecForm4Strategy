@@ -12,7 +12,8 @@ import pandas as pd
 import simulation
 import sklearn
 from config import config
-from secform4strategy_clients.feature_store import HopsworksClient, load_feature_group_catalog
+from pyiceberg.catalog import load_catalog
+from secform4strategy_clients.feature_store import IcebergFeatureStore, load_feature_group_catalog
 from secform4strategy_clients.model_store import LocalModelStore
 
 # Configure structured logging (the handler needs the log directory to exist)
@@ -29,9 +30,9 @@ logger = logging.getLogger(__name__)
 
 
 if __name__ == '__main__':
-    feature_store = HopsworksClient(
-        config.project_name,
-        config.hopsworks_api_key,
+    feature_store = IcebergFeatureStore(
+        load_catalog('default'),
+        config.feature_store_namespace,
         load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version),
     )
     data = helper.load_and_preprocess_data(feature_store, config.columns_to_drop)

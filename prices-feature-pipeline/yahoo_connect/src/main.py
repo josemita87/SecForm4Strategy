@@ -4,7 +4,8 @@ import logging
 import time
 from pathlib import Path
 
-from secform4strategy_clients.feature_store import HopsworksClient, load_feature_group_catalog
+from pyiceberg.catalog import load_catalog
+from secform4strategy_clients.feature_store import IcebergFeatureStore, load_feature_group_catalog
 from secform4strategy_clients.market_data import MarketDataClient
 
 from src.config import config
@@ -28,9 +29,9 @@ if __name__ == '__main__':
 
     time.sleep(config.delay)
     PriceIngestor(
-        feature_store=HopsworksClient(
-            config.project_name,
-            config.hopsworks_api_key,
+        feature_store=IcebergFeatureStore(
+            load_catalog('default'),
+            config.feature_store_namespace,
             load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version),
         ),
         market_data=MarketDataClient(),

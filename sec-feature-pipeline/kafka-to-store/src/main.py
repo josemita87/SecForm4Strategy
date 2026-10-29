@@ -12,7 +12,8 @@ from typing import TYPE_CHECKING
 import pandas as pd
 from config import config
 from constants import FeatureGroup
-from secform4strategy_clients.feature_store import HopsworksClient, load_feature_group_catalog
+from pyiceberg.catalog import load_catalog
+from secform4strategy_clients.feature_store import IcebergFeatureStore, load_feature_group_catalog
 from secform4strategy_clients.messaging import KafkaClient
 
 if TYPE_CHECKING:
@@ -90,9 +91,9 @@ if __name__ == '__main__':
         consumer_group=config.consumer_group,
         auto_offset_reset=config.auto_offset_reset,
     )
-    feature_store = HopsworksClient(
-        config.project_name,
-        config.hopsworks_api_key,
+    feature_store = IcebergFeatureStore(
+        load_catalog('default'),
+        config.feature_store_namespace,
         load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version),
     )
     # Route to the correct feature group (inference / training)
@@ -100,8 +101,7 @@ if __name__ == '__main__':
 
     logger.info(f'Connected to Kafka broker at {config.kafka_broker_address}')
     logger.info(f'Connected to input topic at {config.kafka_input_topic}')
-    logger.info(f'Connected to Hopsworks project at {config.project_name}')
-    logger.info(f'Connected to Hopsworks feature store at {target.name}')
+    logger.info(f'Writing to feature group {target.name} in namespace {config.feature_store_namespace}')
 
     is_finished = False
     while not is_finished:

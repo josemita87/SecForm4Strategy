@@ -49,16 +49,17 @@ def build_messages(records: list[dict[str, Any]]) -> list[tuple[str, dict[str, A
     """Key transaction records as ``(key, record, timestamp)`` Kafka messages, stamped at acceptance.
 
     Args:
-        records: Transaction records with ``link``, ``remaining_shares``, ``derivative``
+        records: Transaction records with ``link`` (ending in ``<accession>.txt``), ``remaining_shares``, ``derivative``
             and the filing's acceptance ``timestamp`` (epoch ms).
 
     Returns:
         The messages, with ``key`` also stored on each record.
     """
     for record in records:
-        # Key on link + remaining shares + derivative flag
+        # Key on accession (the link's directory depends on the filer) + remaining shares + derivative flag
+        accession = (record.get('link') or '').rsplit('/', 1)[-1].removesuffix('.txt')
         record['key'] = xxhash.xxh64(
-            f'{record.get("link") or ""}{record["remaining_shares"]:.15g}{int(record["derivative"])}'
+            f'{accession}{record["remaining_shares"]:.15g}{int(record["derivative"])}'
         ).hexdigest()
     return [(record['key'], record, record['timestamp']) for record in records]
 
