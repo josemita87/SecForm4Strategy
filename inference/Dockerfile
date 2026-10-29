@@ -14,12 +14,11 @@ ENV PYTHONUNBUFFERED=1
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 
-# Install necessary dependencies (openjdk required by H2O)
+# Install necessary build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     build-essential \
     curl \
-    openjdk-17-jre-headless \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust and Cargo (needed to build some native wheels)

@@ -1,0 +1,9 @@
+# Feature-group catalog for the training microservice.
+# The trainer reads the labelled training output (rt4) written by the target service.
+# `name` defaults to the reference key; `version` is injected at load time from
+# config.feature_group_version. See secform4strategy_clients.feature_store.load_feature_group_catalog.
+rt4:
+  primary_key: [key]
+  event_time: date
+  online_enabled: false
+  stream: false

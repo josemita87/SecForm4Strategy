@@ -2,6 +2,7 @@
 
 # import dask.dataframe as dd
 import logging
+from collections.abc import Callable, Mapping
 
 import numpy as np
 import pandas as pd
@@ -9,7 +10,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def data_aggregation(transactions: pd.DataFrame, agg_dict: dict) -> pd.DataFrame:
+def data_aggregation(transactions: pd.DataFrame, agg_dict: Mapping[str, str | Callable[..., object]]) -> pd.DataFrame:
     """Aggregate transaction data using the provided aggregation dictionary.
 
     Aggregations are grouped by ``ticker`` and ``date``; keys in ``agg_dict``
@@ -56,13 +57,9 @@ def compute_target(transactions: pd.DataFrame, prices: pd.DataFrame, period: int
     assert prices['date'].notna().all(), 'Price dates contain NaT'
 
     # Backward merge_asof to get the start price
-    start_state = pd.merge_asof(
-        left=transactions,
-        right=prices,
-        on='date',
-        by='ticker',
-        direction='backward'
-    ).rename(columns={'close': 'start_price'})
+    start_state = pd.merge_asof(left=transactions, right=prices, on='date', by='ticker', direction='backward').rename(
+        columns={'close': 'start_price'}
+    )
 
     # Create future_date column and filter out dates in the future
     latest_date = prices['date'].max()
@@ -71,21 +68,14 @@ def compute_target(transactions: pd.DataFrame, prices: pd.DataFrame, period: int
 
     # Perform forward merge_asof to get the end price
     end_state = pd.merge_asof(
-        left=start_state,
-        right=prices,
-        left_on='future_date',
-        right_on='date',
-        by='ticker',
-        direction='forward'
+        left=start_state, right=prices, left_on='future_date', right_on='date', by='ticker', direction='forward'
     ).rename(columns={'close': 'end_price', 'date_x': 'date'})
 
     # Drop the future_date column
     es = end_state.drop(columns=['future_date'])
 
     # Calculate % change of end_state (es)
-    es['pct_change'] = (
-        (es['end_price'] - es['start_price']) / es['start_price']
-    ).round(5)
+    es['pct_change'] = ((es['end_price'] - es['start_price']) / es['start_price']).round(5)
 
     # Collapse price columns into one: this way we increase likelihood of having a price to work with
     es['price'] = np.where(es['price'] == 0, es['start_price'], es['price'])
@@ -96,16 +86,18 @@ def compute_target(transactions: pd.DataFrame, prices: pd.DataFrame, period: int
     ].mul(es['price'], axis=0)
 
     # Drop unnecessary columns
-    es = es.drop(
-        columns=['start_price', 'end_price', 'remaining_shares', 'shares', 'date_y']
-    )
+    es = es.drop(columns=['start_price', 'end_price', 'remaining_shares', 'shares', 'date_y'])
 
     logger.debug(f'Target computation completed. Shape: {es.shape}')
     return es
 
 
 def compute_RT4(df: pd.DataFrame, timedelta: int) -> pd.DataFrame:
-    """Compute the expanding average target over a specified time period.
+    """Add ``avg_target_expanding``: each row's mean of its ticker's already-known targets.
+
+    A transaction's forward return is only known ``timedelta`` days after it
+    happens, so for a row at time ``t`` the average covers the same ticker's rows
+    dated at or before ``t - timedelta``. Later rows never leak into the average.
 
     Args:
         df: DataFrame containing transaction data with ``ticker``,
@@ -113,81 +105,22 @@ def compute_RT4(df: pd.DataFrame, timedelta: int) -> pd.DataFrame:
         timedelta: Look-back window in days for the expanding average.
 
     Returns:
-        The DataFrame with an added ``avg_target_expanding`` column.
+        The DataFrame sorted by ticker and time, with an added ``avg_target_expanding`` column.
     """
-    # Sort the dataframe by ticker and date
-    df.sort_values(['ticker', 'date'], inplace=True)
-
-    # Constant period (days) covered (in milliseconds)
     delta_ms = timedelta * 24 * 60 * 60 * 1000
 
-    # Prepare an empty column to store the average pct_change
-    df['avg_target_expanding'] = np.nan
+    def known_target_mean(group: pd.DataFrame) -> pd.Series:
+        ts, pct = group['timestamp'].to_numpy(np.int64), group['pct_change'].to_numpy(np.float64)
+        # Number of this ticker's rows whose target had materialized at each row's time
+        known = np.searchsorted(ts, ts - delta_ms, side='right')
+        sums, counts = (np.concatenate([[0], np.cumsum(a)]) for a in (np.nan_to_num(pct), ~np.isnan(pct)))
+        return pd.Series(sums[known] / np.where(counts[known] > 0, counts[known], np.nan), index=group.index)
 
-    # Extract timestamps and pct_changes for easier access
-    timestamps = df['timestamp'].astype(np.int64).values
-    pct_changes = df['pct_change'].astype(np.float64).values
-    tickers = df['ticker'].astype(str).values
-
-    # Numba JIT-compiled function for computing expanding averages
-    # @jit(nopython=True, parallel=True)
-    def expanding_average(tickers, timestamps, pct_changes, delta_ms):
-        """Compute the expanding average of percentage changes per ticker.
-
-        The algorithm works the following way:
-            1. For each ticker, get the timestamp of the current row.
-            2. Find the offset, which is the row that is delta_ms milliseconds
-               before the row timestamp.
-            3. Compute the average of all percentage changes belonging to the
-               same ticker (after the recorded offset and before the timestamp
-               found in step 2).
-
-        Step 3 ensures the average target resulting from this function is not
-        biased by the percentage changes of the same ticker that happened
-        after the current row.
-
-        Args:
-            tickers: Sorted array of ticker symbols.
-            timestamps: Sorted array of timestamps in milliseconds.
-            pct_changes: Sorted array of percentage changes.
-            delta_ms: Look-back window for the expanding average in milliseconds.
-
-        Returns:
-            An array of computed expanding averages.
-        """
-        avg_pct_changes = np.empty_like(pct_changes)
-
-        # Initialize offset tracker
-        offset = 0
-        last_ticker = tickers[0]
-
-        for i in range(len(tickers)):
-            current_ticker = tickers[i]
-            current_timestamp = timestamps[i]
-            cutoff_time = current_timestamp - delta_ms
-
-            # Reset offset if we move to a new ticker
-            if current_ticker != last_ticker:
-                offset = i
-
-            # Perform binary search to find the cutoff index for this ticker
-            idx = np.searchsorted(timestamps[offset:], cutoff_time, side='right') + offset
-
-            if idx > offset:
-                # Get all pct_changes before the cutoff time for this ticker
-                valid_pct_changes = pct_changes[offset:idx]
-                avg_pct_changes[i] = np.nanmean(valid_pct_changes)
-            else:
-                avg_pct_changes[i] = np.nan
-
-            # Update the last_ticker for the next iteration
-            last_ticker = current_ticker
-
-        return avg_pct_changes
-
-    # Call the Numba-accelerated function
-    df['avg_target_expanding'] = expanding_average(tickers, timestamps, pct_changes, delta_ms)
-
+    # The search is per ticker: timestamps are only sorted within each ticker's block
+    df = df.sort_values(['ticker', 'timestamp'])
+    df['avg_target_expanding'] = df.groupby('ticker', group_keys=False)[['timestamp', 'pct_change']].apply(
+        known_target_mean
+    )
     return df
 
 

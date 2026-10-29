@@ -1,6 +1,6 @@
 [project]
 name = "secform4strategy"
-version = "0.1.0"
+version = "0.2.0"
 description = "Repo-root dev tooling and shared lint/type/docstring configuration. Not a runtime package — each microservice has its own pyproject.toml and uv.lock for independent Docker builds."
 readme = "Readme.md"
 authors = [{ name = "Josep Cubedo Macian", email = "136491450+josemita87@users.noreply.github.com" }]
@@ -17,6 +17,8 @@ dev = [
     "docstring-parser-fork>=0.0.14",
     "bandit>=1.8.6,<2",
     "pydantic>=2.10.0",
+    "pre-commit>=4,<5",
+    "types-PyYAML>=6",
 ]
 
 [tool.mypy]
@@ -56,7 +58,8 @@ unsafe-fixes = false
 preview = false
 show-fixes = true
 target-version = "py310"
-exclude = ["lab"]
+# api-enricher is orphaned (not wired into the pipeline); its enrichment is rebuilt in the AWS migration
+exclude = ["lab", "sec-feature-pipeline/api-enricher"]
 
 [tool.ruff.lint]
 select = [
@@ -86,6 +89,12 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "D104"]  # Allow re-export imports and missing package docstrings
 "**/config.py" = ["N805"]  # pydantic-settings validators take cls/values, not self
+"packages/secform4strategy-clients/src/**" = ["PLC0415"]  # SDKs are lazy-imported so each extra stays optional
+"**/tests/**" = ["D103", "PLC0415", "ARG001", "ARG002", "PLR2004"]  # Test names are their docs; SDK fakes are installed before the client import and mirror SDK signatures; assertions compare literals
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"unittest.mock".msg = "Substitute a typed in-memory implementation of the port; mock only true external SDKs."
+"pytest_mock".msg = "Substitute a typed in-memory implementation of the port; mock only true external SDKs."
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -116,13 +125,14 @@ docstring-code-format = true
 
 [tool.pydoclint]
 style = "google"
-exclude = "\\.git|\\.venv|build|dist|lab"
+exclude = "\\.git|\\.venv|build|dist|lab|api-enricher"
 check-arg-order = true
-check-return-types = true
+check-return-types = false  # types live in the signatures, not repeated in docstrings
+arg-type-hints-in-docstring = false
 check-yield-types = true
-skip-checking-short-docstrings = false
+skip-checking-short-docstrings = true  # a one-line docstring is a complete contract
 skip-checking-raises = false
-allow-init-docstring = false
+allow-init-docstring = true  # constructors document their own arguments
 require-return-section-when-returning-nothing = false
 check-class-attributes = false
 should-document-private-class-attributes = false
@@ -134,5 +144,5 @@ check-style-mismatch = true
 check-arg-defaults = true
 
 [tool.bandit]
-exclude_dirs = ["build", "dist", "lab", ".venv"]
+exclude_dirs = ["build", "dist", "lab", ".venv", "sec-feature-pipeline/api-enricher"]
 skips = ["B101", "B601"]

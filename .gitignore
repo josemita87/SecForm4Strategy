@@ -48,3 +48,6 @@ site-packages/
 # Ignore any other unnecessary files (generated files)
 *.swp
 *.tmp
+
+# Trained model artifacts (produced by training, not versioned)
+*.joblib

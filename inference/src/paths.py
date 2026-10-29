@@ -26,8 +26,8 @@ SERVICE_ROOT = Path(__file__).resolve().parents[1]
 LOGS_DIR = SERVICE_ROOT / 'logs'
 DATA_DIR = SERVICE_ROOT / 'data'
 
-# Saved H2O AutoML model directory.
-MODEL_PATH = SERVICE_ROOT / 'automl_30_day_short'
+# Fitted scikit-learn pipeline produced by the training service.
+MODEL_PATH = SERVICE_ROOT / 'models' / 'model.joblib'
 # CSV fallback used when the feature store is disabled.
 CSV_PATH = DATA_DIR / 'inference_data.csv'
 LOG_PATH = LOGS_DIR / 'inference.log'

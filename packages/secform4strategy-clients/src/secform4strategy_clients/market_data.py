@@ -10,7 +10,15 @@ skipping a symbol that fails to download (delisted, renamed) is itself a
 market-data concern and the only sensible way to keep a multi-symbol pull alive.
 """
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -25,15 +33,15 @@ class MarketDataClient:
 
         self._yf = yf
 
-    def market_cap(self, symbol: str):
+    def market_cap(self, symbol: str) -> int | None:
         """Return the market capitalization for ``symbol`` (or None if absent)."""
         return self._yf.Ticker(symbol).info.get('marketCap')
 
-    def exchange(self, symbol: str):
+    def exchange(self, symbol: str) -> str | None:
         """Return the listing exchange for ``symbol`` (or None if absent)."""
         return self._yf.Ticker(symbol).info.get('exchange')
 
-    def close_history(self, symbol: str, start=None):
+    def close_history(self, symbol: str, start: object = None) -> pd.DataFrame:
         """Return the daily close-price history for ``symbol``.
 
         Hides the yfinance specifics (``download`` and the ``Close`` column)
@@ -47,12 +55,11 @@ class MarketDataClient:
         Returns:
             A DataFrame with ``date`` and ``close`` columns.
         """
-        raw = self._yf.download(symbol, start=start) if start is not None else self._yf.download(symbol)
-        close = raw['Close'].reset_index()
+        close = self._yf.download(symbol, start=start)['Close'].reset_index()
         close.columns = ['date', 'close']
         return close
 
-    def close_histories(self, symbols, starts=None):
+    def close_histories(self, symbols: Iterable[str], starts: Mapping[str, object] | None = None) -> pd.DataFrame:
         """Return concatenated daily close history for many symbols, tagged by ticker.
 
         Best-effort: a symbol whose download fails (delisted, renamed) is logged
@@ -74,18 +81,17 @@ class MarketDataClient:
         frames = []
         for symbol in symbols:
             try:
-                history = self.close_history(symbol, start=starts.get(symbol))
+                frames.append(self.close_history(symbol, start=starts.get(symbol)).assign(ticker=symbol))
             except Exception as exc:
                 logger.warning('Skipping %s: %s', symbol, exc)
-                continue
-            history['ticker'] = symbol
-            frames.append(history)
 
         if not frames:
+            logger.warning('No close history downloaded for any symbol')
             return pd.DataFrame(columns=['date', 'close', 'ticker'])
 
-        combined = pd.concat(frames, axis=0, ignore_index=True)
-        combined['date'] = pd.to_datetime(combined['date'])
-        combined['close'] = combined['close'].astype('float32')
-        combined['ticker'] = combined['ticker'].astype('category')
-        return combined.sort_values(['ticker', 'date']).reset_index(drop=True)
+        return (
+            pd.concat(frames, ignore_index=True)
+            .astype({'close': 'float32', 'ticker': 'category'})
+            .assign(date=lambda df: pd.to_datetime(df['date']))
+            .sort_values(['ticker', 'date'], ignore_index=True)
+        )

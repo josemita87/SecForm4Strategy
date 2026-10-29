@@ -1,11 +1,12 @@
-"""Entry point for the target microservice training and inference flows."""
+"""Entry point: wires the feature store from config and runs the target training or inference flow."""
 
 import logging
 import time
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
-import pandas as pd
 from secform4strategy_clients.feature_store import HopsworksClient, load_feature_group_catalog
+from secform4strategy_clients.ports import FeatureStore, Filters
 
 from src import clean, computations
 from src.config import config
@@ -18,80 +19,61 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(message)s',
 )
 
-# Catalog of feature groups this service touches, loaded from the YAML spec template.
-FEATURE_GROUPS = load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version)
 
+def run_training(
+    feature_store: FeatureStore, where: Filters, agg_dict: Mapping[str, str | Callable[..., object]], delta_period: int
+) -> None:
+    """Build RT4 (transactions joined with their forward-return target) and store it.
 
-def run_training(feature_store: HopsworksClient) -> None:
-    """Build RT4 (transactions joined with their forward-return target) and store it."""
-    # Fetch transactions data
-    BT4 = feature_store.read(
-        FeatureGroup.BT4,
-        where=lambda fg: fg.filter(fg[config.filter_key] == config.acquired_disposed),
-        read_options={'use_hive': True},
+    Args:
+        feature_store: Source of BT4 and prices; destination of RT4.
+        where: Filter selecting the transactions to label.
+        agg_dict: Per-column aggregation collapsing same-ticker, same-day transactions.
+        delta_period: Days ahead the forward return is measured.
+    """
+    BT4 = feature_store.read(FeatureGroup.BT4, where=where)
+    tickers = clean.get_unique_tickers(BT4)
+    logger.info(f'{len(tickers)} tickers to label')
+
+    # Without prices no target can be computed, so a failed read fails the run
+    BT4, P = clean.normalize_data(BT4, feature_store.read(FeatureGroup.PRICES, where={'ticker': tickers}))
+
+    # Aggregate daily, attach the forward return, then the leakage-free expanding average
+    semiRT4 = computations.compute_target(computations.data_aggregation(BT4, agg_dict), P, delta_period)
+    RT4 = clean.data_cleaning(
+        computations.compute_RT4(df=semiRT4, timedelta=delta_period), ['pct_change', 'avg_target_expanding']
     )
-    # Get unique tickers
-    tickers_to_process = clean.get_unique_tickers(BT4)
-
-    logger.warning(tickers_to_process)
-    # Fetch P (price data)
-    try:
-        P = feature_store.read(
-            FeatureGroup.PRICES,
-            where=lambda fg: fg.filter(fg['ticker'].isin(tickers_to_process)),
-            read_options={'use_hive': True},
-        )
-    except Exception:
-        P = pd.DataFrame()
-    logger.warning(P)
-
-    # Assert and format data
-    BT4, P = clean.normalize_data(BT4, P)
-
-    # Aggregate the data on a daily basis, as defined by config.adg_dict
-    BT4_AGG = computations.data_aggregation(BT4, config.agg_dict)
-
-    # Compute percentage change in price after config.delta_period days
-    semiRT4 = computations.compute_target(BT4_AGG, P, config.delta_period)
-
-    # Compute RT4 (form4 + computations)
-    RT4 = computations.compute_RT4(df=semiRT4, timedelta=config.delta_period)
-    RT4 = clean.data_cleaning(RT4)
-
-    # Push RT4 to the feature store
     feature_store.push(FeatureGroup.RT4, RT4)
 
 
-def run_inference(feature_store: HopsworksClient) -> None:
-    """Map the trained per-ticker targets onto new transactions (BIR4) and store them."""
-    # Fetch transactions data
-    BI4 = feature_store.read(
-        FeatureGroup.BI4,
-        where=lambda fg: fg.filter(fg[config.filter_key] == config.acquired_disposed),
-        read_options={'use_hive': True},
+def run_inference(
+    feature_store: FeatureStore, where: Filters, agg_dict: Mapping[str, str | Callable[..., object]]
+) -> None:
+    """Map the trained per-ticker targets onto new transactions (BIR4) and store them.
+
+    Args:
+        feature_store: Source of BI4 and RT4; destination of BIR4.
+        where: Filter selecting the transactions to score.
+        agg_dict: Per-column aggregation collapsing same-ticker, same-day transactions.
+    """
+    BI4, _ = clean.normalize_data(feature_store.read(FeatureGroup.BI4, where=where))
+    BIR4 = computations.map_RT4_to_BIR4(
+        feature_store.read(FeatureGroup.RT4), computations.data_aggregation(BI4, agg_dict)
     )
-    # Normalize tickers
-    BI4, _ = clean.normalize_data(BI4)
-
-    # Aggregate the data on a daily basis, as defined by config.adg_dict
-    BI4_AGG = computations.data_aggregation(BI4, config.agg_dict)
-
-    # Fetch RT4 (form4 + computations)
-    RT4 = feature_store.read(FeatureGroup.RT4, read_options={'use_hive': True})
-
-    # Map the average pct_change to BIR4
-    BIR4 = computations.map_RT4_to_BIR4(RT4, BI4_AGG)
-    BIR4 = clean.data_cleaning(BIR4)
-
-    # Push BIR4 to the feature store
-    feature_store.push(FeatureGroup.BIR4, BIR4)
+    # BIR4 has no realized return yet, only the mapped expanding average
+    feature_store.push(FeatureGroup.BIR4, clean.data_cleaning(BIR4, ['avg_target_expanding']))
 
 
 if __name__ == '__main__':
     # Connect to the feature store and route by system configuration.
     time.sleep(config.delay)
-    feature_store = HopsworksClient(config.project_name, config.hopsworks_api_key, FEATURE_GROUPS)
+    feature_store = HopsworksClient(
+        config.project_name,
+        config.hopsworks_api_key,
+        load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version),
+    )
+    where = {config.filter_key: config.acquired_disposed}
     if config.system_training:
-        run_training(feature_store)
+        run_training(feature_store, where, config.agg_dict, config.delta_period)
     elif config.system_inference:
-        run_inference(feature_store)
+        run_inference(feature_store, where, config.agg_dict)

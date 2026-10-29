@@ -23,6 +23,19 @@ consuming and producing — not separate consumer/producer classes):
 | `KafkaClient` | `secform4strategy_clients.messaging` | `messaging` | `quixstreams` |
 | `EdgarClient` | `secform4strategy_clients.edgar` | `edgar` (+ `edgar-live` for `fetch_live_links`) | `requests` / `selenium` |
 | `MarketDataClient` | `secform4strategy_clients.market_data` | `market-data` | `yfinance` |
+| `LocalModelStore` | `secform4strategy_clients.model_store` | `model-store` | `joblib` |
+
+## Ports
+
+`secform4strategy_clients.ports` defines the Protocols services depend on:
+`FeatureStore`, `ModelStore`, `Broker`, `MarketData` and `Filings`. Services
+annotate their dependencies with a port, never a concrete client, and each
+service's `main.py` is the one place that builds the clients from config and
+passes them in. Swapping a backend (Hopsworks for S3, local disk for a bucket)
+is a new adapter that satisfies the port, with no service change.
+
+`FeatureStore.read` filters with a plain mapping, `{column: value}`, where an
+iterable value means "any of". Each adapter translates it to its own query.
 
 ```toml
 # in a service pyproject.toml
@@ -35,9 +48,13 @@ secform4strategy-clients = { path = "../../packages/secform4strategy-clients" } 
 ## Usage
 
 ```python
-from secform4strategy_clients.feature_store import HopsworksClient
+from secform4strategy_clients.feature_store import HopsworksClient, load_feature_group_catalog
 
-fs = HopsworksClient(project_name="my_project", api_key="...")
-bt4 = fs.feature_group(name="bt4", version=1, primary_key=["key"], event_time="date")
-fs.insert(bt4, dataframe)
+fs = HopsworksClient("my_project", api_key, load_feature_group_catalog("feature_groups.yaml", version=1))
+bt4 = fs.read("bt4", where={"acquired_disposed": "D", "ticker": ["AAPL", "MSFT"]})
+fs.push("rt4", labelled)
 ```
+
+`load_feature_group_catalog` validates every entry of the YAML catalog
+(`primary_key`, `event_time`, optional `name`, `online_enabled`, `stream`) and
+rejects unknown keys; `make validate-config` runs it over every service's catalog.

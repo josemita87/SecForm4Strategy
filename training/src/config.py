@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
-from paths import DATA_SOURCE_PATH, LOG_PATH, MODELS_DIR, PLOT_PATH
+from paths import DATA_SOURCE_PATH, LOG_PATH, MODEL_PATH, PLOT_PATH
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
@@ -25,25 +25,29 @@ class Config(BaseSettings):
 
     # Hopsworks settings
     project_name: str = Field(..., json_schema_extra={'env': 'PROJECT_NAME'})
-    feature_group_training: str = Field(..., json_schema_extra={'env': 'FEATURE_GROUP_TRAINING'})
     feature_group_version: int = Field(..., json_schema_extra={'env': 'FEATURE_GROUP_VERSION'})
-    api_key: str = Field(..., json_schema_extra={'env': 'API_KEY'})
+    hopsworks_api_key: str = Field(..., json_schema_extra={'env': 'HOPSWORKS_API_KEY'})
 
     # Paths (defaults anchored on the repo layout via paths.py; env overridable)
-    models_directory: str = Field(default=MODELS_DIR.str, json_schema_extra={'env': 'MODELS_DIRECTORY'})
+    model_path: str = Field(default=MODEL_PATH.str, json_schema_extra={'env': 'MODEL_PATH'})
     data_source_path: str = Field(default=DATA_SOURCE_PATH.str, json_schema_extra={'env': 'DATA_SOURCE_PATH'})
     plot_path: str = Field(default=PLOT_PATH.str, json_schema_extra={'env': 'PLOT_PATH'})
     log_path: str = Field(default=LOG_PATH.str, json_schema_extra={'env': 'LOG_PATH'})
 
     # Training settings
-    max_runtime_secs: int = Field(..., json_schema_extra={'env': 'MAX_RUNTIME_SECS'})
     train_test_ratio: float = Field(..., json_schema_extra={'env': 'TRAIN_TEST_RATIO'})
     random_state: int = Field(..., json_schema_extra={'env': 'RANDOM_STATE'})
 
     # Feature Selection (column lists loaded from specs.yaml)
     target_feature: str = Field(..., json_schema_extra={'env': 'TARGET_FEATURE'})
-    columns_to_drop: list = Field(default_factory=lambda: _specs()['columns_to_drop'])
-    identification_features: list = Field(default_factory=lambda: _specs()['identification_features'])
+    columns_to_drop: list[str] = Field(default_factory=lambda: _specs()['columns_to_drop'])
+    identification_features: list[str] = Field(default_factory=lambda: _specs()['identification_features'])
+
+    # Model hyperparameters (loaded from specs.yaml)
+    model_params: dict[str, int | float] = Field(default_factory=lambda: _specs()['model_params'])
+
+    # Commit recorded in the model metadata (set in CI/Docker; falls back to `git rev-parse`)
+    git_sha: str | None = Field(None, json_schema_extra={'env': 'GIT_SHA'})
 
     class Config:
         """Pydantic configuration for environment file loading."""

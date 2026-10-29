@@ -1,6 +1,44 @@
-Debugged feature store microservice . Could not handle "-" in the feature group name
-Tested sec profile functionality and adjusted all env variables to match desired workings.
+# TODO
 
+## 1. Disclosure-time pipeline (next)
 
-TODO:
-handle target microservice feature store connections
+The edge is speed from disclosure, so disclosure time is the one timestamp everywhere.
+
+- [ ] Live discovery: replace the Selenium scraper (`EdgarClient.fetch_live_links`) with EDGAR's current-filings Atom feed (`...&action=getcurrent&type=4&output=atom`), polled about once a minute; verify the entry fields against the live endpoint
+- [ ] Remove the `edgar-live` extra (selenium, beautifulsoup4) and the Chromium dependency; update the `Filings` port
+- [ ] Single timestamp: the scraper parses `ACCEPTANCE-DATETIME` from each filing header and stamps every transaction with it, in backfill and live mode alike
+- [ ] master-index: drop `received_now`; discovery (quarterly master index or Atom feed) only selects which filings to fetch
+- [ ] Scraper age filter compares acceptance times (today it is a no-op in live mode)
+- [ ] Look-ahead bias: `compute_target` takes the start price at the first close after acceptance, not at the trade date; every label changes, so rebuild BT4/RT4
+- [ ] AWS plan: split into an event-driven live path (EventBridge poll -> dedupe -> SQS + DLQ -> scorer Lambda -> Alpaca) and the batch path (backfill, RT4 labelling, training)
+
+## 2. Python 3.15
+
+- [ ] Check release status and wheel availability for 3.15: hopsworks, numpy, pandas, scikit-learn, pyarrow, pydantic, confluent-kafka (some pins block it today, e.g. numpy 1.26 and pandas <2.2 in inference)
+- [ ] One interpreter for every service; align `requires-python`, Dockerfile base images, `.python-version`, ruff `target-version` and mypy `python_version` (mypy targets 3.10 today, which is why `datetime.UTC` and `itertools.batched` are avoided)
+- [ ] Explicit lazy imports (PEP 810): `lazy import` replaces the function-level SDK imports in the clients package and the `TYPE_CHECKING` blocks
+- [ ] Deferred annotations (3.14, PEP 649/749): drop `from __future__ import annotations`
+- [ ] Unpacking in comprehensions (PEP 798) where it removes nested loops
+- [ ] Newer stdlib already available: `datetime.UTC`, `itertools.batched`, `except A, B` without parentheses (PEP 758)
+- [ ] Evaluate the free-threaded build for the scraper's I/O-bound fetches
+
+## 3. pandas -> numpy on the hot path
+
+Latency matters on the live path (filing -> score -> order), not in batch backfill or training.
+
+- [ ] Live scorer: build the feature vector for one filing with numpy, no DataFrame per filing
+- [ ] Model input: a fixed, ordered feature array instead of a name-based `ColumnTransformer` over a DataFrame (one-hot categories frozen at training time)
+- [ ] Message shaping (scraper/master-index `build_messages`) on plain dicts and arrays
+- [ ] Ticker history feature (`avg_target_expanding`) served as a precomputed per-ticker lookup, not recomputed with pandas per request
+- [ ] Measure first: profile the live path end to end and keep pandas where it is not on the critical path
+
+## Backlog
+
+- [ ] Tests (deferred): unit tests for `compute_RT4`, `compute_target`, kafka-to-store cleaning, Form 4 parsing, simulation and model save/load; typed fakes per port with mypy conformance lines
+- [ ] mypy backlog (~125 errors, older code): then add `type-check` to the pre-commit hook
+- [ ] CI: GitHub Actions running `make quality-static`
+- [ ] Hopsworks: rebuild RT4/BIR4 (corrupted `avg_target_expanding`) and BT4/BI4 (`ownership`, `rule105b1`); new feature-group versions for the `ownership` dtype change
+- [ ] api-enricher: rebuild market cap, exchange and SIC enrichment as a pure step on the `MarketData` port; keep `mcaps.parquet` and `mapper.json` as reference data
+- [ ] Training: time-based train/test split instead of random
+- [ ] Scraper: `_holdings` only sets holdings when both direct and indirect are present; confirm the intent
+- [ ] AWS migration: branch from `master` once the items above land

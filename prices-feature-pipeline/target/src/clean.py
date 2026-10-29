@@ -10,7 +10,7 @@ from src.constants import Direction
 logger = logging.getLogger(__name__)
 
 
-def get_unique_tickers(df: pd.DataFrame) -> list:
+def get_unique_tickers(df: pd.DataFrame) -> list[str]:
     """Return a list of unique tickers from the given DataFrame.
 
     Args:
@@ -22,26 +22,23 @@ def get_unique_tickers(df: pd.DataFrame) -> list:
     return df['ticker'].unique().tolist()
 
 
-def data_cleaning(data: pd.DataFrame) -> pd.DataFrame:
-    """Clean the data by normalizing missing values and dropping invalid rows.
+def data_cleaning(data: pd.DataFrame, required: list[str]) -> pd.DataFrame:
+    """Normalize missing values, drop duplicates, and drop rows missing any ``required`` column.
 
-    Replaces ``'None'`` and ``'---'`` with NaN, drops duplicate rows, and
-    removes rows with NaN in ``pct_change`` and ``avg_target_expanding``.
+    ``'None'`` and ``'---'`` count as missing.
 
     Args:
         data: DataFrame to be cleaned.
+        required: Columns that must be present on every kept row.
 
     Returns:
         The cleaned DataFrame.
     """
-    data.replace(['None', '---'], np.nan, inplace=True)
-    data.drop_duplicates(inplace=True)
-    data.dropna(subset=['pct_change', 'avg_target_expanding'], inplace=True)
-    return data
+    return data.replace(['None', '---'], np.nan).drop_duplicates().dropna(subset=required)
 
 
 def normalize_data(
-    txs: pd.DataFrame = pd.DataFrame(), prices: pd.DataFrame = pd.DataFrame()
+    txs: pd.DataFrame | None = None, prices: pd.DataFrame | None = None
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Normalize ticker casing and validate the transaction direction.
 
@@ -55,28 +52,22 @@ def normalize_data(
 
     Returns:
         The updated ``txs`` and ``prices`` DataFrames with consistent
-        formatting.
+        formatting (empty DataFrames for the ones not given).
 
     Raises:
         ValueError: If not all ``acquired_disposed`` values are ``'D'``.
     """
-    try:
-        if not txs.empty:
-            # Convert 'ticker' columns to uppercase and strip whitespace
-            txs['ticker'] = txs['ticker'].str.upper().str.strip()
-            # Convert 'acquired_disposed' column to uppercase, strip whitespace, and fill missing values
-            txs['acquired_disposed'] = txs['acquired_disposed'].str.upper().str.strip()
+    txs = pd.DataFrame() if txs is None else txs
+    prices = pd.DataFrame() if prices is None else prices
 
-            # Verify that all values in 'acquired_disposed' are 'D'
-            if not (txs['acquired_disposed'] == Direction.DISPOSED).all():
-                raise ValueError(f"Not all values in 'acquired_disposed' are '{Direction.DISPOSED.value}'")
+    if not txs.empty:
+        txs['ticker'] = txs['ticker'].str.upper().str.strip()
+        txs['acquired_disposed'] = txs['acquired_disposed'].str.upper().str.strip()
+        if not (txs['acquired_disposed'] == Direction.DISPOSED).all():
+            raise ValueError(f"Not all values in 'acquired_disposed' are '{Direction.DISPOSED.value}'")
 
-        if not prices.empty:
-            prices['ticker'] = prices['ticker'].str.upper().str.strip()
+    if not prices.empty:
+        prices['ticker'] = prices['ticker'].str.upper().str.strip()
 
-        logger.info('Data cleaning and formatting successful.')
-        return txs, prices
-
-    except Exception as e:
-        logger.error(f'Error in assert_and_format_data: {e}')
-        raise
+    logger.info('Data cleaning and formatting successful.')
+    return txs, prices

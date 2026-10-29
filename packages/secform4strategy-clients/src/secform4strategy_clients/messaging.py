@@ -43,19 +43,16 @@ class KafkaClient:
         # Lazy import so the SDK is only required when this client is built.
         from quixstreams import Application
 
-        app_kwargs: dict = {'broker_address': broker_address}
-        if consumer_group is not None:
-            app_kwargs['consumer_group'] = consumer_group
-        if auto_offset_reset is not None:
-            app_kwargs['auto_offset_reset'] = auto_offset_reset
-        if loglevel is not None:
-            app_kwargs['loglevel'] = loglevel
-        if consumer_extra_config is not None:
-            app_kwargs['consumer_extra_config'] = consumer_extra_config
-        elif consumer_group is not None:
-            app_kwargs['consumer_extra_config'] = {'enable.auto.offset.store': True}
-
-        self.app = Application(**app_kwargs)
+        if consumer_extra_config is None and consumer_group is not None:
+            consumer_extra_config = {'enable.auto.offset.store': True}
+        app_kwargs = {
+            'consumer_group': consumer_group,
+            'auto_offset_reset': auto_offset_reset,
+            'loglevel': loglevel,
+            'consumer_extra_config': consumer_extra_config,
+        }
+        # Only forward the options given, so quixstreams keeps its own defaults for the rest
+        self.app = Application(broker_address=broker_address, **{k: v for k, v in app_kwargs.items() if v is not None})
         self._produce_topics: dict = {}
         # Lazily created persistent manual-commit consumer (see consume_with_offsets).
         self._consumer = None
@@ -88,8 +85,7 @@ class KafkaClient:
             consumer.subscribe(topics=[topic.name])
 
             while True:
-                message = consumer.poll(timeout)
-                if not message:
+                if not (message := consumer.poll(timeout)):
                     return True, buffer
 
                 buffer.append(json.loads(message.value().decode('utf-8')))
@@ -115,16 +111,13 @@ class KafkaClient:
             A list of ``(record, offset)`` tuples.
         """
         if self._consumer is None:
-            self._input_topic = self.app.topic(
-                name=topic_name, value_deserializer='json', key_deserializer='string'
-            )
+            self._input_topic = self.app.topic(name=topic_name, value_deserializer='json', key_deserializer='string')
             self._consumer = self.app.get_consumer(auto_commit_enable=False)
             self._consumer.subscribe(topics=[self._input_topic.name])
 
         buffer: list = []
         while True:
-            message = self._consumer.poll(timeout)
-            if message is None:
+            if (message := self._consumer.poll(timeout)) is None:
                 if buffer:
                     return buffer
                 continue
@@ -165,11 +158,10 @@ class KafkaClient:
                 ``value`` is the record dict and ``timestamp`` is epoch millis (or
                 ``None`` to let the broker assign one).
         """
-        if topic_name not in self._produce_topics:
-            self._produce_topics[topic_name] = self.app.topic(
+        if (topic := self._produce_topics.get(topic_name)) is None:
+            topic = self._produce_topics[topic_name] = self.app.topic(
                 name=topic_name, value_serializer='json', key_serializer='string'
             )
-        topic = self._produce_topics[topic_name]
 
         with self.app.get_producer() as producer:
             for key, value, timestamp in messages:

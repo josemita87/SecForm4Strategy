@@ -232,9 +232,7 @@ def test_kafka_consume_with_offsets_and_commit(monkeypatch):
 def test_market_data_reads_info_fields(monkeypatch):
     class _FakeTicker:
         def __init__(self, symbol):
-            self.info = (
-                {'marketCap': 123, 'exchange': 'NMS'} if symbol == 'AAPL' else {}
-            )
+            self.info = {'marketCap': 123, 'exchange': 'NMS'} if symbol == 'AAPL' else {}
 
     fake = types.ModuleType('yfinance')
     fake.Ticker = _FakeTicker

@@ -6,8 +6,15 @@ the quarterly master index). It does NOT hold service business logic — filteri
 by form type, deriving keys/timestamps, and publishing are the caller's domain.
 """
 
+from __future__ import annotations
+
 import logging
 import time
+from http import HTTPStatus
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +50,15 @@ class EdgarClient:
         import requests
 
         self._requests = requests
-        if headers is not None:
-            self.headers = dict(headers)
-        else:
-            self.headers = {'Accept-Encoding': 'gzip, deflate', 'Host': 'www.sec.gov'}
-            if user_agent:
-                self.headers['User-Agent'] = user_agent
+        self.headers = (
+            dict(headers)
+            if headers is not None
+            else {
+                'Accept-Encoding': 'gzip, deflate',
+                'Host': 'www.sec.gov',
+                **({'User-Agent': user_agent} if user_agent else {}),
+            }
+        )
         self.timeout = timeout
 
     def get(self, url: str, timeout: int | None = None):
@@ -63,7 +73,7 @@ class EdgarClient:
         """
         return self._requests.get(url, headers=self.headers, timeout=self.timeout if timeout is None else timeout)
 
-    def fetch_master_index(self, year, quarter, throttle: float = 1.0):
+    def fetch_master_index(self, year: int, quarter: str, throttle: float = 1.0) -> pd.DataFrame | None:
         """Fetch and parse an EDGAR quarterly master index.
 
         Knows the master.idx URL pattern and the file's pipe-delimited format
@@ -80,32 +90,23 @@ class EdgarClient:
         Returns:
             A DataFrame of filing records, or ``None`` if the request was not 200.
         """
-        from io import BytesIO
+        from io import StringIO
 
         import pandas as pd
 
-        url = f'https://www.sec.gov/Archives/edgar/full-index/{year}/{quarter}/master.idx'
-        response = self.get(url)
-        if response.status_code != 200:
+        response = self.get(f'https://www.sec.gov/Archives/edgar/full-index/{year}/{quarter}/master.idx')
+        if response.status_code != HTTPStatus.OK:
             return None
 
-        lines = response.content.decode('utf-8').splitlines()
-
         # Crop the preamble: data starts two lines after the header row.
-        start_index = 0
-        for i, line in enumerate(lines):
-            if '|' in line:
-                start_index = i + 2
-                break
-
-        data = BytesIO('\n'.join(lines[start_index:]).encode('utf-8'))
+        lines = response.content.decode('utf-8').splitlines()
+        start_index = next((i + 2 for i, line in enumerate(lines) if '|' in line), 0)
         df = pd.read_csv(
-            data,
+            StringIO('\n'.join(lines[start_index:])),
             sep='|',
             header=None,
             names=['cik', 'company', 'form_type', 'date', 'file_path'],
             dtype=str,
-            encoding='utf-8',
         )
 
         if throttle:
@@ -135,14 +136,15 @@ class EdgarClient:
         from selenium.webdriver.support.ui import WebDriverWait
 
         driver = self._configure_driver()
-        driver.get(self.LIVE_FILINGS_URL)
-        logger.debug('Opened SEC EDGAR current-filings page')
-
         wait = WebDriverWait(driver, wait_time)
         all_links: set = set()
 
-        for _ in range(num_pages):
-            try:
+        # Always quit the browser, including when a page fails mid-pagination.
+        try:
+            driver.get(self.LIVE_FILINGS_URL)
+            logger.debug('Opened SEC EDGAR current-filings page')
+
+            for _ in range(num_pages):
                 wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'a[href]')))
 
                 # Light human-like scrolling to reduce bot detection.
@@ -151,22 +153,21 @@ class EdgarClient:
                     time.sleep(random.uniform(0.5, 1.5))
 
                 soup = BeautifulSoup(driver.page_source, 'html.parser')
-                links = {
-                    a['href'].replace('/Archives/', '') if a['href'].startswith('/Archives') else a['href']
+                all_links |= {
+                    href.removeprefix('/Archives/')
                     for a in soup.find_all('a', href=True)
-                    if a['href'].endswith('.txt')
+                    if (href := a['href']).endswith('.txt')
                 }
-                all_links.update(links)
 
-                next_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@value='Next 100']")))
-                next_button.click()
+                wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@value='Next 100']"))).click()
                 logger.debug("Clicked 'Next 100' button")
 
-            except Exception as e:
-                logger.debug(f'Collected {len(all_links)} links. Exception: {e}')
-                return all_links
+        except Exception as e:
+            logger.debug(f'Collected {len(all_links)} links. Exception: {e}')
 
-        driver.quit()
+        finally:
+            driver.quit()
+
         return all_links
 
     def _configure_driver(self):

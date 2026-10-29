@@ -1,13 +1,18 @@
-"""Entry point that runs the inference pipeline end to end."""
+"""Entry point: wires the ports from config and runs the inference pipeline end to end."""
 
 import logging
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
+import pandas as pd
 from config import config
+from inference_pipeline import InferencePipeline, OrderSpec
+from secform4strategy_clients.broker import AlpacaClient
+from secform4strategy_clients.feature_store import HopsworksClient, load_feature_group_catalog
+from secform4strategy_clients.model_store import LocalModelStore
 
-# import alpaca
-from inference_pipeline import InferencePipeline
-
+# Configure logging (the file handler needs the log directory to exist)
+Path(config.log_path).parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s %(levelname)s %(message)s',
@@ -16,42 +21,25 @@ logging.basicConfig(
         RotatingFileHandler(config.log_path, maxBytes=10 * 1024 * 1024, backupCount=5),
     ],
 )
-logger = logging.getLogger(__name__)
-
-COLUMNS_TO_DROP = config.columns_to_drop
-IDENTIFICATION_FEATURES = config.identification_features
-TARGET_FEATURE = config.target_feature
 
 if __name__ == '__main__':
-    # Instantiate the inference pipeline
-    inference_pipeline = InferencePipeline()
-
-    # Get account information
-    # account = alpaca.get_account()
-
-    # Load the saved model for inference
-    model = inference_pipeline.load_model(model_path=config.model_path)
-
-    # Fetch data from source (if hopsworks_connect = True, csv path is ignored)
-    inference_data = inference_pipeline.fetch_inference_data(inference_data_path=config.csv_path)
-
-    # Drop unnecessary columns
-    predictive_data = inference_pipeline.preprocess_data(
-        inference_data=inference_data, columns_to_drop=config.columns_to_drop
+    pipeline = InferencePipeline(
+        feature_store=HopsworksClient(
+            config.project_name,
+            config.hopsworks_api_key,
+            load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version),
+        ),
+        broker=AlpacaClient(config.alpaca_api_key, config.alpaca_api_secret, config.alpaca_base_url),
+        model_store=LocalModelStore(config.model_path),
     )
+    model = pipeline.load_model()
 
-    # Define the scaling features
-    features = [col for col in predictive_data.columns.tolist() if col not in config.identification_features]
-    # Scale the inference data
-    scaled_data = inference_pipeline.scale_features(data=predictive_data, features_to_scale=features)
+    # The CSV source stands in for the feature store when it is disabled
+    data = pipeline.fetch_new_trades() if config.hopsworks_connect else pd.read_csv(config.csv_path)
 
-    # Generate predictions using the loaded model
-    predictions_df = inference_pipeline.generate_predictions(
-        model=model, scaled_data=scaled_data, original_data=inference_data
+    predictions = pipeline.generate_predictions(model, data.drop(columns=config.columns_to_drop))
+    pipeline.execute_trades(
+        predictions,
+        config.prediction_threshold,
+        OrderSpec(config.qty, config.side, config.order_type, config.time_in_force),
     )
-
-    assert predictions_df.drop(columns=['predictions']).equals(predictive_data.reset_index(drop=True)), (
-        'Rows are not perfectly aligned'
-    )
-    # Execute short trades based on predictions and config.threshold
-    inference_pipeline.execute_trades(predictions_df, config.prediction_threshold)

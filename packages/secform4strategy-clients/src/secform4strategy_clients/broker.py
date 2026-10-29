@@ -41,7 +41,7 @@ class AlpacaClient:
         logger.info(f'Account status: {account.status}')
         return account
 
-    def place_order(self, symbol, qty, side, order_type, time_in_force):
+    def place_order(self, symbol: str, qty: str, side: str, order_type: str, time_in_force: str) -> object | None:
         """Submit an order to Alpaca.
 
         Args:

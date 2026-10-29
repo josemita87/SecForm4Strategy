@@ -1,171 +1,105 @@
-"""Pydantic model representing an essential SEC Form 4 trade and its derivations."""
+"""Validated model of one SEC Form 4 transaction, built from the raw XML text of its filing."""
 
+import contextlib
 import xml.etree.ElementTree as ET
 
 from const import derivative_hold, hold, holding_amounts, holding_ownership
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+
+# Output transaction field -> its derivative-table counterpart on the model.
+TX_FIELDS = {
+    'shares': 'd_shares',
+    'acquired_disposed': 'd_acquired_disposed',
+    'price': 'd_acquired_price',
+    'date': 'd_execution_date',
+    'remaining_shares': 'd_remaining_shares',
+    'ownership': 'd_ownership',
+    'coding': 'd_coding',
+}
 
 
 class EssentialTrade(BaseModel):
-    """Hold the essential fields of a Form 4 trade and derive computed fields."""
+    """One Form 4 transaction; Pydantic coerces the XML text ('1', 'false', '100.5') into the field types."""
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
-    # Insider paths
+    # Filing-level (insider) fields
     link: str
     xml: ET.Element
-    company_cik: int | None = None
+    company_cik: str | None = None
     ticker: str | None = None
-    insider_cik: int | None = None
+    insider_cik: str | None = None
     insider_name: str | None = None
-    director: bool | None = False
-    officer: bool | None = False
-    ten_percent_owner: bool | None = False
-    other: bool | None = False
-    rule105b1: bool | None = False
+    director: bool = False
+    officer: bool = False
+    ten_percent_owner: bool = False
+    other: bool = False
+    rule105b1: bool = False
 
-    # Transaction paths
-    shares: int | None = 0
+    # Non-derivative transaction fields
+    shares: float = 0
     acquired_disposed: str | None = None
     price: float = 0.0
     date: str | None = None
-    remaining_shares: int | None = 0
-    ownership: str | None = 'D'
+    remaining_shares: float = 0
+    ownership: str = 'D'
     coding: str | None = None
     equity_swap: bool = False
     footnote_id: str | None = None
 
-    # Derivative paths
-    d_shares: int | None = 0
+    # Derivative transaction fields
+    d_shares: float = 0
     d_acquired_disposed: str | None = None
-    d_acquired_price: float | None = 0.0
+    d_acquired_price: float = 0.0
     d_execution_date: str | None = None
-    d_remaining_shares: int | None = 0
-    d_ownership: str | None = 'D'
+    d_remaining_shares: float = 0
+    d_ownership: str = 'D'
     d_coding: str | None = None
     d_footnote_id: str | None = None
 
-    # Derived Fields
-    is_derivative: bool = False
-    is_equity_swap: bool = False
-    direct_holding: int | None = 0
-    indirect_holding: int | None = 0
-    d_direct_holding: int | None = 0
-    d_indirect_holding: int | None = 0
-    owner_code: str = None
+    @property
+    def is_derivative(self) -> bool:
+        """Whether the trade came from the derivative table (it carries no non-derivative shares)."""
+        return self.shares == 0
 
-    def _set_is_derivative(self) -> None:
-        """Determine if this is a derivative trade."""
-        self.is_derivative = self.shares == 0
-
-    def _set_equity_swap(self) -> None:
-        """Set various flags based on attributes."""
-        self.is_equity_swap = str(self.equity_swap).lower() in ['true', '1']
-
-    def _set_rule105b1(self) -> str:
-        """Determine whether this is a Rule 10b5-1 trade.
-
-        This method first checks whether the rule105b1 attribute is set to True.
-        If it is not, it checks the footnotes for the presence of '10b5-1' for
-        the footnote corresponding to the transaction.
-        """
-        if str(self.rule105b1).lower() in ['true', '1']:
-            self.rule105b1 = True
-
-        else:
-            id = self.d_footnote_id if self.is_derivative else self.footnote_id
-            for footnote in self.xml.findall('footnotes/footnote'):
-                if footnote.get('id') == id and '10b5-1' in footnote.text:
-                    self.rule105b1 = True
-                    break
-
-    def _handle_multiple_ownerships(self):
-        """Compute and set direct and indirect holdings from the filing XML."""
-        # Determine if using derivative path or regular path
-        path = derivative_hold if self.is_derivative else hold
-        holdings = self.xml.findall(path)
-
-        # Initialize holding amounts
-        direct_amount = 0
-        indirect_amount = 0
-
-        # Iterate through elements and accumulate holdings
-        for h in holdings:
-            try:
-                amount = float(h.find(holding_amounts).text)
-                ownership = str(h.find(holding_ownership).text)
-            except:
-                continue
-            if ownership == 'D':
-                direct_amount += amount
-            elif ownership == 'I':
-                indirect_amount += amount
-
-        # Set holdings if both are present
-        if direct_amount and indirect_amount:
-            if not self.is_derivative:
-                self.direct_holding, self.indirect_holding = direct_amount, indirect_amount
-
-            else:
-                self.d_direct_holding, self.d_indirect_holding = direct_amount, indirect_amount
-
-    def _handle_owner_code(self):
-        """Build the owner code from the insider relationship flags."""
-        self.owner_code = ''.join(
-            '1' if str(pos).lower() in ['1', 'true'] else '0'
-            for pos in [self.director, self.officer, self.ten_percent_owner, self.other]
+    def _is_10b5_1(self) -> bool:
+        """Whether the trade is flagged Rule 10b5-1, directly or in its own footnote."""
+        footnote_id = self.d_footnote_id if self.is_derivative else self.footnote_id
+        return self.rule105b1 or any(
+            footnote.get('id') == footnote_id and '10b5-1' in (footnote.text or '')
+            for footnote in self.xml.findall('footnotes/footnote')
         )
 
-    def to_dict(self) -> dict:
-        """Derive computed fields and convert the trade to a dictionary.
+    def _holdings(self) -> tuple[float, float]:
+        """Sum the direct and indirect holdings listed in the filing; both stay 0 unless both are present."""
+        amounts = {'D': 0.0, 'I': 0.0}
+        for holding in self.xml.findall(derivative_hold if self.is_derivative else hold):
+            ownership, amount = holding.findtext(holding_ownership), holding.findtext(holding_amounts)
+            if ownership is not None and ownership in amounts and amount:
+                with contextlib.suppress(ValueError):
+                    amounts[ownership] += float(amount)
+        return (amounts['D'], amounts['I']) if amounts['D'] and amounts['I'] else (0.0, 0.0)
+
+    def to_dict(self) -> dict[str, object]:
+        """Flatten the trade into one record, choosing the derivative or non-derivative fields.
 
         Returns:
             A dictionary merging insider data with the relevant transaction data.
         """
-        self._set_is_derivative()
-        self._set_equity_swap()
-        self._set_rule105b1()
-        self._handle_owner_code()
-        self._handle_multiple_ownerships()
-
-        insider_data = {
+        direct_holding, indirect_holding = self._holdings()
+        return {
             'company_cik': self.company_cik,
             'ticker': self.ticker,
             'insider_cik': self.insider_cik,
             'insider_name': self.insider_name,
-            'owner_code': self.owner_code,
-            'rule105b1': self.rule105b1,
+            'owner_code': ''.join(
+                str(int(flag)) for flag in (self.director, self.officer, self.ten_percent_owner, self.other)
+            ),
+            'rule105b1': self._is_10b5_1(),
             'derivative': self.is_derivative,
             'link': self.link,
+            **{field: getattr(self, d_field if self.is_derivative else field) for field, d_field in TX_FIELDS.items()},
+            'direct_holding': direct_holding,
+            'indirect_holding': indirect_holding,
+            'equity_swap': self.equity_swap,
         }
-
-        if self.is_derivative:
-            tx_data = {
-                'shares': self.d_shares,
-                'acquired_disposed': self.d_acquired_disposed,
-                'price': self.d_acquired_price,
-                'date': self.d_execution_date,
-                'remaining_shares': self.d_remaining_shares,
-                'ownership': self.d_ownership,
-                'coding': self.d_coding,
-                'direct_holding': self.d_direct_holding,
-                'indirect_holding': self.d_indirect_holding,
-                'equity_swap': self.is_equity_swap,
-            }
-
-        else:
-            tx_data = {
-                'shares': self.shares,
-                'acquired_disposed': self.acquired_disposed,
-                'price': self.price,
-                'date': self.date,
-                'remaining_shares': self.remaining_shares,
-                'ownership': self.ownership,
-                'coding': self.coding,
-                'direct_holding': self.direct_holding,
-                'indirect_holding': self.indirect_holding,
-                'equity_swap': self.is_equity_swap,
-            }
-
-        return {**insider_data, **tx_data}

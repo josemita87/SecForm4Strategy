@@ -1,8 +1,9 @@
 
 
 
+# Built from the repo root so the shared clients package is in the build context
 build-training:
-	docker build -t training .
+	docker build -f Dockerfile -t training ..
 
 
 stop-training:
@@ -18,6 +19,6 @@ run-prod-training: stop-training build-training
 	--env-file .env \
 	--env-file .credentials.env \
 	--name training \
-	-v /Users/josemita87/Documents/prod_inside_out/training/src:/app/src \
+	-v $(CURDIR)/src:/repo/training/src \
 	training
 

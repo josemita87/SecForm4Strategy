@@ -1,18 +1,22 @@
 [project]
 name = "training"
 version = "0.1.0"
-description = "Trains an H2O AutoML regressor from feature-store data, runs a trading simulation, and persists the model."
+description = "Trains a scikit-learn regressor from feature-store data, runs a trading simulation, and persists the model."
 readme = "README.md"
 authors = [{ name = "Josep Cubedo Macian", email = "136491450+josemita87@users.noreply.github.com" }]
 requires-python = ">=3.11,<3.13"
 dependencies = [
-    "h2o==3.46.0.6",
+    # Hopsworks feature store and the model store come from the shared clients package.
+    "secform4strategy-clients[feature-store,model-store]",
     "pandas==2.2.3",
-    "scikit-learn==1.6.1",
-    "scipy==1.15.1",
+    # scikit-learn and numpy must match inference, which unpickles the saved model.
+    "scikit-learn==1.7.2",
+    "numpy==1.26.*",
+    "joblib>=1.4,<2",
+    "pyarrow>=19.0.0,<20.0.0",
+    "scipy>=1.15.1,<2.0.0",
     "requests==2.32.3",
     "matplotlib==3.10.0",
-    "numpy==2.2.1",
     "seaborn==0.13.2",
     "pydantic==2.7.0",
     "pydantic-settings==2.6.1",
@@ -21,3 +25,6 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+secform4strategy-clients = { path = "../packages/secform4strategy-clients" }

@@ -35,8 +35,7 @@ class Config(BaseSettings):
     csv_path: str = Field(default=CSV_PATH.str, json_schema_extra={'env': 'CSV_PATH'})
 
     # Feature Selection (column lists loaded from specs.yaml)
-    columns_to_drop: list = Field(default_factory=lambda: _specs()['columns_to_drop'])
-    identification_features: list = Field(default_factory=lambda: _specs()['identification_features'])
+    columns_to_drop: list[str] = Field(default_factory=lambda: _specs()['columns_to_drop'])
     target_feature: str = Field(..., json_schema_extra={'env': 'TARGET_FEATURE'})
     # Trading settings
     qty: str = Field(..., json_schema_extra={'env': 'QTY'})

@@ -1,99 +1,80 @@
 """Price-ingestion domain logic: refresh the prices (P) feature group.
 
-Reads the tickers referenced by the transaction feature groups, pulls their
-latest close history through the market-data client, and upserts it into the
-price feature group. The market-data vendor (currently yfinance) is an
-implementation detail hidden behind ``MarketDataClient``.
+Reads the tickers referenced by a transaction feature group, pulls their latest
+close history through the market-data port, and upserts it into the price
+feature group.
 """
 
+from __future__ import annotations
+
 import logging
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
-from secform4strategy_clients.feature_store import HopsworksClient, load_feature_group_catalog
-from secform4strategy_clients.market_data import MarketDataClient
 from tqdm import tqdm
 
-from src.config import config
 from src.constants import FeatureGroup
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from secform4strategy_clients.ports import FeatureStore, Filters, MarketData
 
-# Catalog of feature groups this service touches, loaded from the YAML spec template.
-FEATURE_GROUPS = load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version)
+logger = logging.getLogger(__name__)
 
 
 class PriceIngestor:
     """Pull close-price history and upsert it into the price feature group.
 
     Attributes:
-        feature_store: Connection to the feature store backend.
-        market_data: Vendor-agnostic market-data client.
+        feature_store: Where transactions are read and prices upserted.
+        market_data: Source of close-price history.
     """
 
-    def __init__(self):
-        """Wire the feature-store and market-data clients."""
-        self.feature_store = HopsworksClient(config.project_name, config.hopsworks_api_key, FEATURE_GROUPS)
-        self.market_data = MarketDataClient()
+    def __init__(self, feature_store: FeatureStore, market_data: MarketData):
+        """Bind the ingestor to its ports.
+
+        Args:
+            feature_store: Where transactions are read and prices upserted.
+            market_data: Source of close-price history.
+        """
+        self.feature_store = feature_store
+        self.market_data = market_data
 
     def fetch_new_prices(self, prices: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:
         """Fetch close history for ``tickers``, resuming each from its latest stored date.
 
         Args:
-            prices (pd.DataFrame): Current prices data for the buffer of tickers.
-            tickers (list[str]): List of tickers to fetch data for.
+            prices: Current prices data for the batch of tickers.
+            tickers: Tickers to fetch data for.
 
         Returns:
-            pd.DataFrame: New close-price rows, tagged by ticker.
+            New close-price rows, tagged by ticker.
         """
-        # Resume each known ticker from the day after its latest stored price; the
-        # rest fall back to full history. The per-ticker loop, downcast and
-        # skip-on-failure now live in MarketDataClient.close_histories.
-        starts = {}
-        if not prices.empty:
-            latest = prices.groupby('ticker')['date'].max()
-            # Skip NaT maxima: an unresumable ticker falls back to full history
-            # (start absent → None) rather than feeding NaT into the download.
-            starts = {
-                ticker: pd.to_datetime(date) + pd.Timedelta(days=1)
-                for ticker, date in latest.items()
-                if pd.notna(date)
-            }
-
+        # Skip NaT maxima: an unresumable ticker falls back to full history
+        # (start absent → None) rather than feeding NaT into the download.
+        latest = pd.Series() if prices.empty else prices.groupby('ticker')['date'].max().dropna()
+        starts = {ticker: pd.to_datetime(date) + pd.Timedelta(days=1) for ticker, date in latest.items()}
         return self.market_data.close_histories(tickers, starts=starts)
 
-    def process_tickers(self) -> None:
-        """Refresh the price feature group for every referenced ticker, in batches."""
-        # Route to the correct feature group
-        if config.system_inference:
-            data = self.feature_store.read(FeatureGroup.BI4, read_options={'use_hive': True})
-        elif config.system_training:
-            data = self.feature_store.read(
-                FeatureGroup.BT4,
-                where=lambda fg: fg.filter(fg[config.filter_key] == config.acquired_disposed),
-                read_options={'use_hive': True},
-            )
-        else:
-            raise RuntimeError('No run mode selected: set SYSTEM_INFERENCE or SYSTEM_TRAINING')
+    def process_tickers(self, source: FeatureGroup, where: Filters | None, batch_size: int) -> None:
+        """Refresh the price feature group for every ticker referenced by ``source``, in batches.
 
-        # Get the unique tickers from the 'ticker' column
-        tickers = np.unique(data['ticker'].tolist())
-        logger.debug(len(tickers))
+        Args:
+            source: Transaction feature group whose tickers need prices.
+            where: Filter applied when reading ``source``.
+            batch_size: Tickers fetched and pushed per batch.
+        """
+        tickers = np.unique(self.feature_store.read(source, where=where)['ticker'].tolist())
+        logger.debug(f'{len(tickers)} unique tickers')
 
-        # Process the tickers in batches
-        for i in tqdm(range(0, len(tickers), config.buffer_size), desc='Processing tickers', unit='batch'):
-            processing_tickers = tickers[i : i + config.buffer_size]
+        for i in tqdm(range(0, len(tickers), batch_size), desc='Processing tickers', unit='batch'):
+            batch = tickers[i : i + batch_size].tolist()
             try:
-                # Bind the batch into the lambda so it captures this iteration's value.
-                current_data = self.feature_store.read(
-                    FeatureGroup.PRICES,
-                    where=lambda fg, batch=processing_tickers: fg.filter(fg['ticker'].isin(batch)),
-                    read_options={'use_hive': True},
-                )
-            except Exception:
-                current_data = pd.DataFrame()
-            new_data = self.fetch_new_prices(current_data, processing_tickers)
-            self.feature_store.push(FeatureGroup.PRICES, new_data)
+                current = self.feature_store.read(FeatureGroup.PRICES, where={'ticker': batch})
+            except Exception as e:
+                # Recorded degradation: without stored prices every ticker fetches full history
+                logger.warning(f'No stored prices for batch {i // batch_size} ({e}); fetching full history')
+                current = pd.DataFrame()
+            self.feature_store.push(FeatureGroup.PRICES, self.fetch_new_prices(current, batch))
 
         logger.debug('Finished processing all tickers')

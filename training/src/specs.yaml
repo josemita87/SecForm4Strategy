@@ -3,3 +3,8 @@
 # identification_features: kept for traceability but excluded from the model inputs.
 columns_to_drop: [key, timestamp, coding, insider_cik]
 identification_features: [ticker, insider_name, date, company_cik, price]
+
+# Keyword arguments for sklearn's HistGradientBoostingRegressor (random_state comes from config).
+model_params:
+  max_iter: 300
+  learning_rate: 0.05

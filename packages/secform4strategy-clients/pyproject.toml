@@ -12,7 +12,9 @@ requires-python = ">=3.10,<4.0"
 dependencies = []
 
 [project.optional-dependencies]
-feature-store = ["hopsworks>=4.1,<5", "pyarrow>=18", "pyyaml>=6,<7"]
+# pydantic validates the feature_groups.yaml catalog.
+feature-store = ["hopsworks>=4.1,<5", "pyarrow>=18", "pyyaml>=6,<7", "pydantic>=2,<3"]
+model-store = ["joblib>=1.4,<2"]
 broker = ["alpaca-trade-api>=3.2,<4"]
 messaging = ["quixstreams>=3.1,<4", "confluent-kafka>=2.6,<3"]
 edgar = ["requests>=2.32,<3", "pandas>=2.1"]
@@ -27,3 +29,4 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/secform4strategy_clients"]
+

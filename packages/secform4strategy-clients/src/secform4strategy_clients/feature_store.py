@@ -1,4 +1,4 @@
-"""Generic Hopsworks feature-store client.
+"""Generic Hopsworks feature-store client (a ``FeatureStore`` adapter).
 
 Infra-only and domain-independent. The caller supplies a *catalog* mapping its
 own references (e.g. ``"bt4"``) to feature-group specs at construction; the client
@@ -7,19 +7,44 @@ needing to know a group's name, keys or event time. The client knows nothing
 about what the references mean — the catalog is the caller's domain input.
 """
 
-from collections.abc import Callable
+from __future__ import annotations
+
+import functools
+import operator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
+
+from pydantic import BaseModel, ConfigDict
+
+from secform4strategy_clients.ports import is_many
+
+if TYPE_CHECKING:
+    from typing import Any
+
+    import pandas as pd
+
+    from secform4strategy_clients.ports import Filters
+
+
+class FeatureGroupSpec(BaseModel):
+    """One feature group's entry in a ``feature_groups.yaml`` catalog; unknown keys are rejected."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    name: str | None = None
+    primary_key: list[str]
+    event_time: str
+    online_enabled: bool = False
+    stream: bool = False
 
 
 def load_feature_group_catalog(spec_path: str | Path, version: int) -> dict[str, dict[str, Any]]:
-    """Build a feature-group catalog from a YAML spec template.
+    """Build a validated feature-group catalog from a YAML spec template.
 
-    The YAML maps each reference (e.g. ``bi4``) to its spec fields
-    (``primary_key``, ``event_time``, and any extra Hopsworks options). Two
-    fields are supplied here rather than in the template: ``version`` is injected
-    from ``version`` so one template serves every feature-store version, and
-    ``name`` defaults to the reference key unless the entry overrides it.
+    Each entry is validated against ``FeatureGroupSpec``. ``version`` is injected
+    so one template serves every feature-store version, and ``name`` defaults to
+    the reference key unless the entry overrides it. Options left out of the
+    template are not passed, so Hopsworks keeps its own defaults.
 
     Args:
         spec_path: Path to the YAML catalog template.
@@ -33,7 +58,7 @@ def load_feature_group_catalog(spec_path: str | Path, version: int) -> dict[str,
 
     raw = yaml.safe_load(Path(spec_path).read_text()) or {}
     return {
-        ref: {'name': spec.get('name', ref), 'version': version, **{k: v for k, v in spec.items() if k != 'name'}}
+        ref: {'name': ref, 'version': version} | FeatureGroupSpec.model_validate(spec).model_dump(exclude_unset=True)
         for ref, spec in raw.items()
     }
 
@@ -44,15 +69,17 @@ class HopsworksClient:
     Attributes:
         project: The authenticated Hopsworks project handle.
         fs: The project's feature store handle.
-        write_options: Default write options used by ``push``.
+        write_options: Write options used by ``push``.
+        read_options: Read options used by ``read``.
     """
 
     def __init__(
         self,
         project_name: str,
         api_key: str,
-        feature_groups: dict[str, dict],
-        write_options: dict | None = None,
+        feature_groups: dict[str, dict[str, Any]],
+        write_options: dict[str, Any] | None = None,
+        read_options: dict[str, Any] | None = None,
     ) -> None:
         """Log in, open the feature store, and resolve the feature-group catalog.
 
@@ -62,8 +89,9 @@ class HopsworksClient:
             feature_groups: Maps a caller reference to the keyword arguments for
                 ``get_or_create_feature_group`` (``name``, ``version``,
                 ``primary_key``, ``event_time``, ...).
-            write_options: Default write options for ``push``; defaults to
+            write_options: Write options for ``push``; defaults to
                 ``{"start_offline_materialization": True, "mode": "append"}``.
+            read_options: Read options for ``read``; defaults to ``{"use_hive": True}``.
         """
         # Lazy import: only pulled in when a client is actually constructed.
         import hopsworks
@@ -71,46 +99,39 @@ class HopsworksClient:
         self.project = hopsworks.login(project=project_name, api_key_value=api_key)
         self.fs = self.project.get_feature_store()
         self._fgs = {ref: self.fs.get_or_create_feature_group(**spec) for ref, spec in feature_groups.items()}
-        self.write_options = (
-            {'start_offline_materialization': True, 'mode': 'append'}
-            if write_options is None
-            else write_options
-        )
+        self.write_options = write_options or {'start_offline_materialization': True, 'mode': 'append'}
+        self.read_options = read_options or {'use_hive': True}
 
-    def push(self, reference: str, data, write_options: dict | None = None):
+    def push(self, reference: str, data: pd.DataFrame) -> object:
         """Insert a DataFrame into the referenced feature group, skipping empties.
 
         Args:
             reference: A key into the catalog given at construction.
-            data: The records to insert (e.g. a pandas DataFrame).
-            write_options: Overrides the client's default write options.
+            data: The records to insert.
 
         Returns:
             The result of the underlying insert, or ``None`` if ``data`` is empty.
         """
-        if hasattr(data, 'empty') and data.empty:
+        if data.empty:
             return None
-        options = self.write_options if write_options is None else write_options
-        return self._fgs[reference].insert(features=data, write_options=options)
+        return self._fgs[reference].insert(features=data, write_options=self.write_options)
 
-    def read(
-        self,
-        reference: str,
-        where: Callable[[Any], Any] | None = None,
-        read_options: dict | None = None,
-    ):
+    def read(self, reference: str, where: Filters | None = None) -> pd.DataFrame:
         """Read the referenced feature group, optionally filtered.
 
         Args:
             reference: A key into the catalog given at construction.
-            where: Optional callable that receives the feature group and returns a
-                filtered query (e.g. ``lambda fg: fg.filter(fg['ticker'].isin(t))``).
-                Keeps column knowledge in the caller; the client stays generic.
-            read_options: Optional read options forwarded to Hopsworks.
+            where: Column -> value equality filters; an iterable value matches any of its items.
 
         Returns:
             The (optionally filtered) contents as a DataFrame.
         """
         fg = self._fgs[reference]
-        target = where(fg) if where is not None else fg
-        return target.read(read_options=read_options or {})
+        if where:
+            fg = fg.filter(
+                functools.reduce(
+                    operator.and_,
+                    [fg[col].isin(list(value)) if is_many(value) else fg[col] == value for col, value in where.items()],
+                )
+            )
+        return fg.read(read_options=self.read_options)

@@ -1,9 +1,14 @@
-"""Entry point for the price-ingestion service: refresh the prices (P) feature group."""
+"""Entry point: wires the ports from config and refreshes the prices (P) feature group."""
 
 import logging
 import time
+from pathlib import Path
+
+from secform4strategy_clients.feature_store import HopsworksClient, load_feature_group_catalog
+from secform4strategy_clients.market_data import MarketDataClient
 
 from src.config import config
+from src.constants import FeatureGroup
 from src.ingestion import PriceIngestor
 
 logging.basicConfig(
@@ -13,7 +18,20 @@ logging.basicConfig(
 
 
 if __name__ == '__main__':
-    # Fetch the latest prices and update the prices (P) feature group.
+    # Prices follow the tickers of the active system's transactions; training keeps one direction only
+    if config.system_inference:
+        source, where = FeatureGroup.BI4, None
+    elif config.system_training:
+        source, where = FeatureGroup.BT4, {config.filter_key: config.acquired_disposed}
+    else:
+        raise RuntimeError('No run mode selected: set SYSTEM_INFERENCE or SYSTEM_TRAINING')
+
     time.sleep(config.delay)
-    ingestor = PriceIngestor()
-    ingestor.process_tickers()
+    PriceIngestor(
+        feature_store=HopsworksClient(
+            config.project_name,
+            config.hopsworks_api_key,
+            load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version),
+        ),
+        market_data=MarketDataClient(),
+    ).process_tickers(source, where, config.buffer_size)

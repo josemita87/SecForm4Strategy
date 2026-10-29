@@ -1,28 +1,35 @@
 """Parse SEC Form 4 filings: fetch a filing and extract transaction dicts from its XML."""
 
+from __future__ import annotations
+
 import logging
 import re
 import time
 import xml.etree.ElementTree as ET
+from typing import TYPE_CHECKING
 
-from const import derivative_paths, derivative_root, headers, insider_paths, paths, root
-from secform4strategy_clients.edgar import EdgarClient
+from const import derivative_paths, derivative_root, insider_paths, paths, root
+from pydantic import ValidationError
 from transaction import EssentialTrade
+
+if TYPE_CHECKING:
+    from secform4strategy_clients.ports import Filings
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = 'https://www.sec.gov/Archives/'
 XML_DELIM = r'<XML>\s*(<\?xml[^>]+?>.*?)</XML>'
 
-# SEC EDGAR HTTP client, carrying the service's required headers.
-edgar = EdgarClient(headers=headers)
 
-
-def parse_filing(url: str, sleep_time: float = 0.1) -> list[dict] | None:
+def parse_filing(url: str, filings: Filings, sleep_time: float = 0.1) -> list[dict[str, object]] | None:
     """Fetch a Form 4 filing and parse its transactions from the embedded XML.
+
+    A transaction whose fields fail validation is logged and skipped; the rest of
+    the filing is kept.
 
     Args:
         url: Filing path appended to the archives base URL.
+        filings: SEC filings source.
         sleep_time: Seconds to sleep before fetching, to throttle requests.
 
     Returns:
@@ -30,53 +37,58 @@ def parse_filing(url: str, sleep_time: float = 0.1) -> list[dict] | None:
     """
     full_url = BASE_URL + url
     time.sleep(sleep_time)
-    filing_xml = _fetch_filing(full_url)
-
-    if filing_xml is None:
+    if (filing_xml := _fetch_filing(full_url, filings)) is None:
         return None
 
-    filing_data = []
-    # Query both the non-derivative and derivative transaction blocks.
-    for tx_root, tx_paths in [(root, paths), (derivative_root, derivative_paths)]:
-        for etree in filing_xml.findall(tx_root):
-            # One accumulator per transaction; insider fields live at the filing
-            # root, transaction fields on the individual node.
-            trade = EssentialTrade(link=full_url, xml=filing_xml)
-            _query_xml(filing_xml, insider_paths, trade)
-            _query_xml(etree, tx_paths, trade)
-            filing_data.append(trade.to_dict())
+    # Insider fields live at the filing root, transaction fields on each transaction node
+    insider = _query_xml(filing_xml, insider_paths)
+    trades = []
+    for tx_root, tx_paths in ((root, paths), (derivative_root, derivative_paths)):
+        for node in filing_xml.findall(tx_root):
+            try:
+                trade = EssentialTrade.model_validate(
+                    {'link': full_url, 'xml': filing_xml, **insider, **_query_xml(node, tx_paths)}
+                )
+            except ValidationError as e:
+                logger.warning(f'Skipping malformed transaction in {full_url}: {e}')
+                continue
+            trades.append(trade.to_dict())
+    return trades
 
-    return filing_data
 
-
-def _fetch_filing(full_url: str) -> ET.Element | None:
+def _fetch_filing(full_url: str, filings: Filings) -> ET.Element | None:
     """Fetch the filing and extract its embedded XML document.
 
+    Args:
+        full_url: Absolute filing URL.
+        filings: SEC filings source.
+
     Returns:
-        The parsed XML element on success, or None if fetching or parsing fails.
+        The parsed XML element on success, or None (logged) if fetching or parsing fails.
     """
     try:
-        filing = edgar.get(full_url).text
-        return ET.fromstring(re.search(XML_DELIM, filing, re.DOTALL).group(1))
-    except Exception:
-        return None
+        if (match := re.search(XML_DELIM, filings.get(full_url).text, re.DOTALL)) is not None:
+            return ET.fromstring(match.group(1))
+        error = 'no embedded XML document'
+    except Exception as e:
+        error = str(e)
+    logger.warning(f'Could not fetch or parse {full_url}: {error}')
+    return None
 
 
-def _query_xml(etree: ET.Element, query_paths: dict, trade: EssentialTrade) -> None:
-    """Set ``trade`` attributes from ``query_paths`` resolved against ``etree``.
+def _query_xml(etree: ET.Element, query_paths: dict[str, str]) -> dict[str, str]:
+    """Read the raw text of each present field; footnote fields take the footnote id instead.
 
     Args:
         etree: The element to query.
-        query_paths: Mapping where keys are output attribute names and values are
-            the XML paths to the corresponding values.
-        trade: The transaction accumulator to populate in place.
-    """
-    for key, path in query_paths.items():
-        element = etree.find(path)
-        if element is None:
-            continue
+        query_paths: Output field name -> XML path of its value.
 
-        if 'footnote_id' in key.lower():
-            setattr(trade, key, element.get('id'))
-        else:
-            setattr(trade, key, element.text)
+    Returns:
+        Field name -> raw text, for the fields present in the XML.
+    """
+    return {
+        key: value
+        for key, path in query_paths.items()
+        if (element := etree.find(path)) is not None
+        and (value := element.get('id') if 'footnote_id' in key else element.text) is not None
+    }

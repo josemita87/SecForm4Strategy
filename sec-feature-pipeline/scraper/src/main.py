@@ -1,14 +1,17 @@
-"""Entry point that consumes filing URLs, parses Form 4s, and produces transactions."""
+"""Entry point: consumes filing URLs, parses their Form 4s, and produces the transactions."""
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Any
 
 import pandas as pd
 import xxhash
 from config import config
-from secform4strategy_clients.messaging import KafkaClient
+from const import headers
 from parser import parse_filing
+from secform4strategy_clients.edgar import EdgarClient
+from secform4strategy_clients.messaging import KafkaClient
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -16,22 +19,13 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(message)s',
 )
 
-# Shared Kafka infra client (manual-commit consume + produce).
-kafka = KafkaClient(
-    broker_address=config.kafka_broker_address,
-    consumer_group=config.consumer_group,
-    auto_offset_reset=config.auto_offset_reset,
-)
 
-
-def select_urls(records: list) -> list:
+def select_urls(records: list[tuple[dict[str, Any], int]], max_age: pd.Timedelta | None) -> list[tuple[str, int]]:
     """Extract ``(url, offset)`` pairs from consumed records, dropping stale ones.
-
-    In ``live`` mode, filings older than ``config.days_back`` are skipped; this is
-    domain policy and stays in the service rather than the Kafka client.
 
     Args:
         records: ``(record, offset)`` pairs as returned by the Kafka client.
+        max_age: Filings older than this are skipped; None keeps every filing.
 
     Returns:
         The ``(url, offset)`` pairs to parse.
@@ -39,101 +33,76 @@ def select_urls(records: list) -> list:
     urls = []
     for msg, offset in records:
         try:
-            url = msg['file_path']
-            date = pd.to_datetime(msg['timestamp'], unit='ms')
-
-            if config.mode == 'live' and date < datetime.now() - pd.Timedelta(days=config.days_back):
+            date = pd.to_datetime(msg['timestamp'], unit='ms', utc=True)
+            if max_age is not None and date < pd.Timestamp.now('UTC') - max_age:
                 logger.info(f'Filing too old: {date}')
                 continue
-
-            urls.append((url, offset))
-        except Exception:
-            logger.error("Couldn't extract URL from message")
-            continue
+            urls.append((msg['file_path'], offset))
+        except (KeyError, TypeError, ValueError):
+            logger.error(f"Couldn't extract URL from message: {msg}")
     return urls
 
 
-def parse_and_produce_4Fs(urls: list) -> None:
-    """Parse Form 4 filings from URLs and produce their transactions in batches.
+def build_messages(records: list[dict[str, Any]]) -> list[tuple[str, dict[str, Any], int]]:
+    """Key and timestamp transaction records as ``(key, record, timestamp)`` Kafka messages.
+
+    Records whose date cannot be parsed are logged and skipped.
 
     Args:
-        urls: Sequence of ``(url, offset)`` pairs to parse and produce.
-    """
-    buffer = []
-    if config.test_trial == 'True':
-        urls = urls[: config.test_size]
+        records: Transaction records, each with date and link fields.
 
-    for url, offset in urls:
-        filing_transactions = parse_filing(url, config.sleep_time)
-
-        if filing_transactions:
-            buffer.extend(filing_transactions)
-
-        if len(buffer) >= config.buffer_size:
-            produce_data(buffer)
-            # Commit the offset of the last message produced.
-            kafka.commit_offset(offset)
-            buffer = []
-
-    # If there are any remaining transactions in the buffer
-    if buffer:
-        produce_data(buffer)
-        kafka.commit_offset(offset)
-
-
-def produce_data(data: list[dict]) -> None:
-    """Shape transaction records (key + timestamp) and produce them to Kafka.
-
-    Args:
-        data: Transaction records to publish, each with date and link fields.
+    Returns:
+        The messages, with ``key`` and ``timestamp`` also stored on each record.
     """
     messages = []
-    for record in data:
+    for record in records:
+        # Dates may carry a timezone suffix ('2024-01-05-05:00'); the first 10 chars are the day
         try:
-            timestamp = int(datetime.strptime(record['date'], '%Y-%m-%d').timestamp()) * 1000
+            day = datetime.strptime(record['date'][:10], '%Y-%m-%d').replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            logger.error(f'Unparseable date, skipping record: {record}')
+            continue
+        record['timestamp'] = int(day.timestamp()) * 1000
 
-        except Exception:
-            try:
-                if len(record['date'].split('-')) > 3:
-                    # If the date has time information, split out the date part
-                    date_str = '-'.join(record['date'].split('-')[:3])
-                    timestamp = int(datetime.strptime(date_str, '%Y-%m-%d').timestamp()) * 1000
-            except Exception:
-                logger.error(f'Timestamp errror (Producer) {record}')
-
-        # Add timestamp to the record for future reference
-        record['timestamp'] = timestamp
-
-        try:
-            key = xxhash.xxh64(
-                record['link'] + str(record['remaining_shares']) + ('1' if record['derivative'] else '0')
-            ).hexdigest()
-
-        except Exception:
-            # Create a key for the record without using link
-            key = xxhash.xxh64(str(record['remaining_shares']) + ('1' if record['derivative'] else '0')).hexdigest()
-
-        # Add key as a value as well
-        record['key'] = key
-
-        messages.append((key, record, timestamp))
-
-    kafka.produce(config.kafka_output_topic, messages)
-    logger.debug(f'Produced {len(data)} messages')
+        # Key on link + remaining shares + derivative flag
+        record['key'] = xxhash.xxh64(
+            f'{record.get("link") or ""}{record["remaining_shares"]:.15g}{int(record["derivative"])}'
+        ).hexdigest()
+        messages.append((record['key'], record, record['timestamp']))
+    return messages
 
 
 if __name__ == '__main__':
-    time.sleep(config.delay)
+    kafka = KafkaClient(
+        broker_address=config.kafka_broker_address,
+        consumer_group=config.consumer_group,
+        auto_offset_reset=config.auto_offset_reset,
+    )
+    filings = EdgarClient(headers=headers)
+    max_age = pd.Timedelta(days=config.days_back) if config.mode == 'live' else None
 
-    # Logs
-    logger.info('Scraper Microservice Started')
-    logger.info(f'Connected to redpanda broker at {config.kafka_broker_address}')
-    logger.info(f'Input topic: {config.kafka_input_topic}')
-    logger.info(f'Output topic: {config.kafka_output_topic}')
+    def produce(records: list[dict[str, Any]]) -> None:
+        """Publish shaped records to the output topic."""
+        kafka.produce(config.kafka_output_topic, messages := build_messages(records))
+        logger.debug(f'Produced {len(messages)} messages')
+
+    time.sleep(config.delay)
+    logger.info(f'Scraper started: {config.kafka_input_topic} -> {config.kafka_output_topic}')
 
     while True:
         records = kafka.consume_with_offsets(config.kafka_input_topic, config.buffer_size, config.poll_timeout)
-        urls = select_urls(records)
-        parse_and_produce_4Fs(urls)
+        urls = select_urls(records, max_age)[: config.test_size if config.test_trial else None]
 
-    logger.info('Scraper Finished scraping!. Exiting...')
+        # Commit after each produced batch and once at the end, so filings that
+        # yield no transactions are not re-consumed on restart
+        buffer: list[dict[str, Any]] = []
+        for url, offset in urls:
+            buffer.extend(parse_filing(url, filings, config.sleep_time) or [])
+            if len(buffer) >= config.buffer_size:
+                produce(buffer)
+                kafka.commit_offset(offset)
+                buffer = []
+        if urls:
+            if buffer:
+                produce(buffer)
+            kafka.commit_offset(urls[-1][1])
