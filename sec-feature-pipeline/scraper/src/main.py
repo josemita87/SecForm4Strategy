@@ -46,32 +46,21 @@ def select_urls(records: list[tuple[dict[str, Any], int]], max_age: timedelta | 
 
 
 def build_messages(records: list[dict[str, Any]]) -> list[tuple[str, dict[str, Any], int]]:
-    """Key and timestamp transaction records as ``(key, record, timestamp)`` Kafka messages.
-
-    Records whose date cannot be parsed are logged and skipped.
+    """Key transaction records as ``(key, record, timestamp)`` Kafka messages, stamped at acceptance.
 
     Args:
-        records: Transaction records, each with date and link fields.
+        records: Transaction records with ``link``, ``remaining_shares``, ``derivative``
+            and the filing's acceptance ``timestamp`` (epoch ms).
 
     Returns:
-        The messages, with ``key`` and ``timestamp`` also stored on each record.
+        The messages, with ``key`` also stored on each record.
     """
-    messages = []
     for record in records:
-        # Dates may carry a timezone suffix ('2024-01-05-05:00'); the first 10 chars are the day
-        try:
-            day = datetime.strptime(record['date'][:10], '%Y-%m-%d').replace(tzinfo=UTC)
-        except TypeError, ValueError:
-            logger.error(f'Unparseable date, skipping record: {record}')
-            continue
-        record['timestamp'] = int(day.timestamp()) * 1000
-
         # Key on link + remaining shares + derivative flag
         record['key'] = xxhash.xxh64(
             f'{record.get("link") or ""}{record["remaining_shares"]:.15g}{int(record["derivative"])}'
         ).hexdigest()
-        messages.append((record['key'], record, record['timestamp']))
-    return messages
+    return [(record['key'], record, record['timestamp']) for record in records]
 
 
 if __name__ == '__main__':

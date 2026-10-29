@@ -1,44 +1,42 @@
 # TODO
 
-## 1. Disclosure-time pipeline (next)
+Long-running work, in the order chosen. Check items off as they land; keep the notes short.
+
+## 1. Disclosure-time pipeline (active)
 
 The edge is speed from disclosure, so disclosure time is the one timestamp everywhere.
 
-- [ ] Live discovery: replace the Selenium scraper (`EdgarClient.fetch_live_links`) with EDGAR's current-filings Atom feed (`...&action=getcurrent&type=4&output=atom`), polled about once a minute; verify the entry fields against the live endpoint
-- [ ] Remove the `edgar-live` extra (selenium, beautifulsoup4) and the Chromium dependency; update the `Filings` port
-- [ ] Single timestamp: the scraper parses `ACCEPTANCE-DATETIME` from each filing header and stamps every transaction with it, in backfill and live mode alike
-- [ ] master-index: drop `received_now`; discovery (quarterly master index or Atom feed) only selects which filings to fetch
-- [ ] Scraper age filter compares acceptance times (today it is a no-op in live mode)
-- [ ] Look-ahead bias: `compute_target` takes the start price at the first close after acceptance, not at the trade date; every label changes, so rebuild BT4/RT4
-- [ ] AWS plan: split into an event-driven live path (EventBridge poll -> dedupe -> SQS + DLQ -> scorer Lambda -> Alpaca) and the batch path (backfill, RT4 labelling, training)
+- [x] Live discovery: EDGAR current-filings Atom feed (`action=getcurrent&type=4&owner=only&output=atom`, de-duplicated by accession, exact form match) replaces the Selenium scraper; verified live
+- [x] Retire Selenium: remove `EdgarClient.fetch_live_links` / `_configure_driver`, the `edgar-live` extra (selenium, beautifulsoup4) and the Chromium layer of the master-index image; update the `Filings` port
+- [x] Single timestamp: the scraper parses `ACCEPTANCE-DATETIME` from each filing header and stamps every transaction with it, in backfill and live mode alike
+- [x] master-index: drop `received_now`; discovery (quarterly master index or Atom feed) only selects which filings to fetch
+- [x] Scraper age filter compares filing publication times (was a no-op in live mode)
+- [x] Look-ahead bias: `compute_target` enters at the first price after acceptance (same-day close in session, next open otherwise), not at the trade date; `compute_RT4` only averages labels whose exit close printed before acceptance; every label changes, so BT4/RT4 are rebuilt
+- [ ] Intraday entries: Alpaca minute bars (adapter behind `MarketData`) for a window around each filing; entry = first bar after acceptance plus processing latency; extended hours vs next open for out-of-session filings; spread/slippage and short constraints (borrow, short-sale restriction) in the labels
+- [ ] AWS plan: event-driven live path (EventBridge poll -> dedupe -> SQS + DLQ -> scorer Lambda -> Alpaca) beside the batch path (backfill, RT4 labelling, training)
 
-## 2. Python 3.15
+## 2. Backlog (active)
 
-- [ ] Check release status and wheel availability for 3.15: hopsworks, numpy, pandas, scikit-learn, pyarrow, pydantic, confluent-kafka (some pins block it today, e.g. numpy 1.26 and pandas <2.2 in inference)
-- [ ] One interpreter for every service; align `requires-python`, Dockerfile base images, `.python-version`, ruff `target-version` and mypy `python_version` (mypy targets 3.10 today, which is why `datetime.UTC` and `itertools.batched` are avoided)
-- [ ] Explicit lazy imports (PEP 810): `lazy import` replaces the function-level SDK imports in the clients package and the `TYPE_CHECKING` blocks
-- [ ] Deferred annotations (3.14, PEP 649/749): drop `from __future__ import annotations`
-- [ ] Unpacking in comprehensions (PEP 798) where it removes nested loops
-- [ ] Newer stdlib already available: `datetime.UTC`, `itertools.batched`, `except A, B` without parentheses (PEP 758)
-- [ ] Evaluate the free-threaded build for the scraper's I/O-bound fetches
-
-## 3. pandas -> numpy on the hot path
-
-Latency matters on the live path (filing -> score -> order), not in batch backfill or training.
-
-- [ ] Live scorer: build the feature vector for one filing with numpy, no DataFrame per filing
-- [ ] Model input: a fixed, ordered feature array instead of a name-based `ColumnTransformer` over a DataFrame (one-hot categories frozen at training time)
-- [ ] Message shaping (scraper/master-index `build_messages`) on plain dicts and arrays
-- [ ] Ticker history feature (`avg_target_expanding`) served as a precomputed per-ticker lookup, not recomputed with pandas per request
-- [ ] Measure first: profile the live path end to end and keep pandas where it is not on the critical path
-
-## Backlog
-
-- [ ] Tests (deferred): unit tests for `compute_RT4`, `compute_target`, kafka-to-store cleaning, Form 4 parsing, simulation and model save/load; typed fakes per port with mypy conformance lines
-- [ ] mypy backlog (~125 errors, older code): then add `type-check` to the pre-commit hook
-- [ ] CI: GitHub Actions running `make quality-static`
-- [ ] Hopsworks: rebuild RT4/BIR4 (corrupted `avg_target_expanding`) and BT4/BI4 (`ownership`, `rule105b1`); new feature-group versions for the `ownership` dtype change
-- [ ] api-enricher: rebuild market cap, exchange and SIC enrichment as a pure step on the `MarketData` port; keep `mcaps.parquet` and `mapper.json` as reference data
-- [ ] Training: time-based train/test split instead of random
-- [ ] Scraper: `_holdings` only sets holdings when both direct and indirect are present; confirm the intent
+- [x] Training: chronological, purged train/test split (test = latest filings; train keeps labels known before it)
+- [x] api-enricher retired: market cap (latest monthly snapshot before acceptance), exchange, SIC and SIC group added in target (`add_company_context`) from `mcaps.parquet` and `companies.json`
+- [ ] Market-cap snapshots end 2024-08: monthly refresh job (yahoo_connect, `MarketData.market_cap`, stamped at fetch time); SIC straight from the filing header (`STANDARD INDUSTRIAL CLASSIFICATION`) for companies missing from `companies.json`
+- [x] CI: GitHub Actions running `make quality-static` (blocking) and `type-check` (non-blocking); unverified until pushed
+- [ ] mypy: last 12 errors are the Kafka client (`messaging.py`); goes with the SQS migration, then `type-check` joins the pre-commit hook
+- [ ] Tests (deferred by request): unit tests for `compute_RT4`, `compute_target`, kafka-to-store cleaning, Form 4 parsing, simulation and model save/load; typed fakes per port with mypy conformance lines
+- [ ] Feature store rebuild: no Hopsworks credentials are available, so BT4/BI4/RT4/BIR4 are rebuilt (with the new labels and dtypes) on the S3/Iceberg store of the AWS migration, not on Hopsworks
+- [ ] alpaca-py: smoke-test the broker adapter against the paper account (replaced alpaca-trade-api for Python 3.14)
+- [ ] Scraper `_holdings` (strategy decision, deferred): holdings are set only when both direct and indirect are present; kept as is for now
 - [ ] AWS migration: branch from `master` once the items above land
+
+## 3. Python 3.15 (blocked)
+
+3.14 is done everywhere. 3.15 waits on Lambda GA (preview only) and on cp315 wheels: hopsworks (`<3.15`), confluent-kafka, quixstreams -> rocksdict.
+
+- [ ] Kafka/Hopsworks-free services (incl. the live path) to 3.15 after Lambda GA
+- [ ] `lazy import` (PEP 810) for the clients' SDK imports and the `TYPE_CHECKING` blocks
+- [ ] `frozendict` (PEP 814) for module constants; comprehension unpacking (PEP 798); Tachyon profiler (PEP 799) on the live path
+
+## Done
+
+- [x] pandas -> numpy/stdlib on the hot path: vectorised `compute_RT4`, positional numpy model contract, pandas-free EDGAR client, master-index and scraper
+- [x] Python 3.14 everywhere: services, Docker images, tooling targets; hopsworks 5, numpy 2, pandas 2.3, scikit-learn 1.9.1, alpaca-py (replaces alpaca-trade-api); `datetime.UTC`, `itertools.batched`, deferred annotations

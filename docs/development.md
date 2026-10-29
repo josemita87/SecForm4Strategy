@@ -10,11 +10,11 @@
 | `make type-check` | mypy, per service |
 | `make quality` | `format`, then `quality-static`, then `type-check` |
 
+CI (`.github/workflows/quality.yml`) runs `quality-static` on every push to `master` and every pull request, and `type-check` as a non-blocking job until the Kafka client is removed.
+
 The pre-commit hook (`uv run pre-commit install`; `uv run pre-commit run --all-files` to run it by hand) also checks file size (1 MB), private keys, merge markers and YAML/TOML syntax. `type-check` joins the hook once its backlog is cleared.
 
 **mypy runs per service.** Every service has a `src` package, so a single repo-wide run sees duplicate module names and stops. Each run puts the service's modules and the clients package on `MYPYPATH`, so imports resolve to real types instead of `Any`: flat services (`from config import config`) use `<service>/src`, package services (`from src.config import config`) use `<service>`.
-
-`sec-feature-pipeline/api-enricher` is orphaned (not wired into the pipeline) and excluded from every check until its enrichment is rebuilt.
 
 ## Comments and docstrings
 

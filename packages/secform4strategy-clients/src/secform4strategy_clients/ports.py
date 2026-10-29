@@ -72,8 +72,8 @@ class MarketData(Protocol):
         """Return the listing exchange for ``symbol``."""
         ...
 
-    def close_histories(self, symbols: Iterable[str], starts: Mapping[str, object] | None = None) -> pd.DataFrame:
-        """Return daily close history (``date``, ``close``, ``ticker``) for many symbols."""
+    def price_histories(self, symbols: Iterable[str], starts: Mapping[str, object] | None = None) -> pd.DataFrame:
+        """Return daily open/close history (``date``, ``open``, ``close``, ``ticker``) for many symbols."""
         ...
 
 
@@ -107,6 +107,6 @@ class Filings(Protocol):
         """Return a quarterly master index (one dict per filing), or None if unavailable."""
         ...
 
-    def fetch_live_links(self, num_pages: int) -> set[str]:
-        """Return the newest filing paths."""
+    def fetch_current_filings(self, form_type: str, num_pages: int = 1) -> list[dict[str, str]]:
+        """Return the newest filings of ``form_type`` (``accession``, ``file_path``, ISO ``date``)."""
         ...

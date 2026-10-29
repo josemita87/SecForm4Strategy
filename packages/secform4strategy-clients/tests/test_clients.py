@@ -242,16 +242,15 @@ def test_market_data_reads_info_fields(monkeypatch):
     assert client.exchange('ZZZ') is None
 
 
-def test_market_data_close_history_returns_tidy_frame(monkeypatch):
+def test_market_data_daily_bars_returns_tidy_frame(monkeypatch):
     import pandas as pd
 
     captured = {}
 
-    def _download(symbol, start=None):
-        captured['symbol'] = symbol
-        captured['start'] = start
+    def _download(symbol, start=None, multi_level_index=True):
+        captured.update(symbol=symbol, start=start, multi_level_index=multi_level_index)
         idx = pd.to_datetime(['2024-01-01', '2024-01-02'])
-        return pd.DataFrame({'Close': [10.0, 11.0]}, index=idx)
+        return pd.DataFrame({'Open': [9.5, 10.5], 'High': [10.5, 11.5], 'Close': [10.0, 11.0]}, index=idx)
 
     fake = types.ModuleType('yfinance')
     fake.download = _download
@@ -259,25 +258,26 @@ def test_market_data_close_history_returns_tidy_frame(monkeypatch):
 
     from secform4strategy_clients.market_data import MarketDataClient
 
-    out = MarketDataClient().close_history('AAPL', start='2024-01-01')
-    # Caller's symbol and start thread straight through to yfinance.download.
-    assert captured == {'symbol': 'AAPL', 'start': '2024-01-01'}
-    # The yfinance 'Close' column is reshaped into a tidy (date, close) frame.
-    assert list(out.columns) == ['date', 'close']
+    out = MarketDataClient().daily_bars('AAPL', start='2024-01-01')
+    # Caller's symbol and start thread straight through to yfinance.download, with flat columns.
+    assert captured == {'symbol': 'AAPL', 'start': '2024-01-01', 'multi_level_index': False}
+    # The yfinance 'Open'/'Close' columns are reshaped into a tidy (date, open, close) frame.
+    assert list(out.columns) == ['date', 'open', 'close']
+    assert out['open'].tolist() == [9.5, 10.5]
     assert out['close'].tolist() == [10.0, 11.0]
 
 
-def test_market_data_close_histories_tags_skips_and_downcasts(monkeypatch):
+def test_market_data_price_histories_tags_skips_and_downcasts(monkeypatch):
     import pandas as pd
 
     starts_seen = {}
 
-    def _download(symbol, start=None):
+    def _download(symbol, start=None, multi_level_index=True):
         starts_seen[symbol] = start
         if symbol == 'BAD':
             raise ValueError('delisted')
         idx = pd.to_datetime(['2024-01-02', '2024-01-01'])  # deliberately unsorted
-        return pd.DataFrame({'Close': [11.0, 10.0]}, index=idx)
+        return pd.DataFrame({'Open': [10.5, 9.5], 'Close': [11.0, 10.0]}, index=idx)
 
     fake = types.ModuleType('yfinance')
     fake.download = _download
@@ -285,21 +285,22 @@ def test_market_data_close_histories_tags_skips_and_downcasts(monkeypatch):
 
     from secform4strategy_clients.market_data import MarketDataClient
 
-    out = MarketDataClient().close_histories(['AAPL', 'BAD', 'MSFT'], starts={'AAPL': '2024-01-01'})
+    out = MarketDataClient().price_histories(['AAPL', 'BAD', 'MSFT'], starts={'AAPL': '2024-01-01'})
 
     # Per-symbol starts thread through; symbols absent from the mapping fetch full history.
     assert starts_seen == {'AAPL': '2024-01-01', 'BAD': None, 'MSFT': None}
     # The failed symbol is skipped, not fatal; survivors are tagged by ticker.
     assert set(out['ticker']) == {'AAPL', 'MSFT'}
     # Storage-friendly dtypes and (ticker, date) ordering.
+    assert out['open'].dtype == 'float32'
     assert out['close'].dtype == 'float32'
     assert isinstance(out['ticker'].dtype, pd.CategoricalDtype)
     aapl = out[out['ticker'] == 'AAPL']
     assert aapl['date'].is_monotonic_increasing
 
 
-def test_market_data_close_histories_empty_when_all_fail(monkeypatch):
-    def _download(symbol, start=None):
+def test_market_data_price_histories_empty_when_all_fail(monkeypatch):
+    def _download(symbol, start=None, multi_level_index=True):
         raise ValueError('nope')
 
     fake = types.ModuleType('yfinance')
@@ -308,8 +309,8 @@ def test_market_data_close_histories_empty_when_all_fail(monkeypatch):
 
     from secform4strategy_clients.market_data import MarketDataClient
 
-    out = MarketDataClient().close_histories(['BAD'])
-    assert list(out.columns) == ['date', 'close', 'ticker']
+    out = MarketDataClient().price_histories(['BAD'])
+    assert list(out.columns) == ['date', 'open', 'close', 'ticker']
     assert out.empty
 
 

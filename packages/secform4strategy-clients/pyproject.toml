@@ -14,9 +14,8 @@ feature-store = ["hopsworks>=5,<6", "pyarrow>=18", "pyyaml>=6,<7", "pydantic>=2,
 model-store = ["joblib>=1.4,<2"]
 broker = ["alpaca-py>=0.44,<1"]
 messaging = ["quixstreams>=3.1,<4", "confluent-kafka>=2.6,<3"]
-edgar = ["requests>=2.32,<3"]
-# Selenium for EdgarClient.fetch_live_links only, so HTTP-only services skip it
-edgar-live = ["selenium>=4.28,<5", "beautifulsoup4>=4,<5"]
+# tzdata backs zoneinfo where the OS has no timezone database (slim images)
+edgar = ["requests>=2.32,<3", "tzdata>=2024.1"]
 market-data = ["yfinance>=0.2.48,<0.3", "pandas>=2.1"]
 
 [build-system]

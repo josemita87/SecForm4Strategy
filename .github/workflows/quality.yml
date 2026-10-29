@@ -1,0 +1,25 @@
+name: quality
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  quality-static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: make quality-static
+
+  type-check:
+    runs-on: ubuntu-latest
+    # Non-blocking until the Kafka client (messaging.py, the last mypy errors) is removed
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: make type-check

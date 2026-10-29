@@ -2,7 +2,7 @@
 	start-redpanda stop-redpanda inference-sec inference-prices training-sec training-prices
 
 CLIENTS_SRC := packages/secform4strategy-clients/src
-# Services importing flat from src/ (`from config import config`); api-enricher is excluded
+# Services importing flat from src/ (`from config import config`)
 FLAT_SERVICES := training inference sec-feature-pipeline/master-index sec-feature-pipeline/scraper \
 	sec-feature-pipeline/kafka-to-store
 # Services importing through the src package (`from src.config import config`)

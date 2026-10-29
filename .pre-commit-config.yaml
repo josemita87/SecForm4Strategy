@@ -6,7 +6,7 @@ repos:
     hooks:
       - id: check-added-large-files
         args: ['--maxkb=1000']
-        exclude: ^sec-feature-pipeline/api-enricher/src/data/  # reference data cache, moves to S3 in the migration
+        exclude: ^prices-feature-pipeline/target/src/data/  # reference data, moves to S3 in the migration
       - id: detect-private-key
       - id: check-merge-conflict
       - id: check-yaml

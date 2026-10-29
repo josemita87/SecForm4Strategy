@@ -21,7 +21,7 @@ consuming and producing — not separate consumer/producer classes):
 | `HopsworksClient` | `secform4strategy_clients.feature_store` | `feature-store` | `hopsworks` |
 | `AlpacaClient` | `secform4strategy_clients.broker` | `broker` | `alpaca-py` |
 | `KafkaClient` | `secform4strategy_clients.messaging` | `messaging` | `quixstreams` |
-| `EdgarClient` | `secform4strategy_clients.edgar` | `edgar` (+ `edgar-live` for `fetch_live_links`) | `requests` / `selenium` |
+| `EdgarClient` | `secform4strategy_clients.edgar` | `edgar` | `requests` |
 | `MarketDataClient` | `secform4strategy_clients.market_data` | `market-data` | `yfinance` |
 | `LocalModelStore` | `secform4strategy_clients.model_store` | `model-store` | `joblib` |
 

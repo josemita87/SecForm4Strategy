@@ -1,7 +1,7 @@
 """Price-ingestion domain logic: refresh the prices (P) feature group.
 
 Reads the tickers referenced by a transaction feature group, pulls their latest
-close history through the market-data port, and upserts it into the price
+daily open/close history through the market-data port, and upserts it into the price
 feature group.
 """
 
@@ -21,11 +21,11 @@ logger = logging.getLogger(__name__)
 
 
 class PriceIngestor:
-    """Pull close-price history and upsert it into the price feature group.
+    """Pull daily open/close history and upsert it into the price feature group.
 
     Attributes:
         feature_store: Where transactions are read and prices upserted.
-        market_data: Source of close-price history.
+        market_data: Source of daily price history.
     """
 
     def __init__(self, feature_store: FeatureStore, market_data: MarketData):
@@ -33,7 +33,7 @@ class PriceIngestor:
 
         Args:
             feature_store: Where transactions are read and prices upserted.
-            market_data: Source of close-price history.
+            market_data: Source of daily price history.
         """
         self.feature_store = feature_store
         self.market_data = market_data
@@ -46,12 +46,12 @@ class PriceIngestor:
             tickers: Tickers to fetch data for.
 
         Returns:
-            New close-price rows, tagged by ticker.
+            New daily open/close rows, tagged by ticker.
         """
         # A ticker with no valid latest date gets no start, so it fetches full history
         latest = pd.Series() if prices.empty else prices.groupby('ticker')['date'].max().dropna()
         starts = {str(ticker): pd.to_datetime(date) + pd.Timedelta(days=1) for ticker, date in latest.items()}
-        return self.market_data.close_histories(tickers, starts=starts)
+        return self.market_data.price_histories(tickers, starts=starts)
 
     def process_tickers(self, source: FeatureGroup, where: Filters | None, batch_size: int) -> None:
         """Refresh the price feature group for every ticker referenced by ``source``, in batches.

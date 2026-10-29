@@ -6,10 +6,6 @@ build-master:
 build-scraper:
 	docker build -t scraper ../sec-feature-pipeline/scraper
 
-# Build the enricher Docker image
-build-enricher:
-	docker build -t api-enricher ../sec-feature-pipeline/api-enricher
-
 # Build the feature Docker image
 build-feature:
 	docker build -t feature ../sec-feature-pipeline/kafka-to-store
@@ -26,10 +22,6 @@ stop-master:
 # Stop and remove any existing scraper container
 stop-scraper:
 	-docker rm -f scraper || true
-
-# Stop and remove any existing enricher container
-stop-enricher:
-	-docker rm -f api-enricher || true
 
 # Stop and remove any existing feature container
 stop-feature:
@@ -52,12 +44,6 @@ run-infer-scraper: stop-scraper build-scraper
 		-it --network redpanda-network \
 		--env-file .env-inference-scraper.env \
 		--name scraper scraper
-
-run-infer-enricher: stop-enricher build-enricher
-	docker run \
-		-it --network redpanda-network \
-		--env-file .env-inference-enricher.env \
-		--name api-enricher api-enricher
 
 run-infer-feature: stop-feature build-feature
 	docker run \

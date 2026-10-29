@@ -1,6 +1,6 @@
 # Service spec (fields: docs/configuration.md)
-columns_to_drop: [key, timestamp, coding, insider_cik]
-identification_features: [ticker, insider_name, date, company_cik, price]
+columns_to_drop: [key, coding, insider_cik]
+identification_features: [ticker, insider_name, date, company_cik, price, timestamp, label_known_at]
 
 model_params:
   max_iter: 300

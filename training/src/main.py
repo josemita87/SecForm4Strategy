@@ -14,7 +14,6 @@ import sklearn
 from config import config
 from secform4strategy_clients.feature_store import HopsworksClient, load_feature_group_catalog
 from secform4strategy_clients.model_store import LocalModelStore
-from sklearn.model_selection import train_test_split
 
 # Configure structured logging (the handler needs the log directory to exist)
 Path(config.log_path).parent.mkdir(parents=True, exist_ok=True)
@@ -38,14 +37,14 @@ if __name__ == '__main__':
     data = helper.load_and_preprocess_data(feature_store, config.columns_to_drop)
     logger.info(f'Loaded data with shape: {data.shape}')
 
-    # Features exclude the target and the identification columns
-    X = data.drop(columns=[config.target_feature])
-    y = data[config.target_feature]
-    features = [col for col in X.columns if col not in config.identification_features]
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=config.train_test_ratio, random_state=config.random_state
-    )
+    # Chronological split, purged: training keeps only labels already known when the test period starts
+    data = data.sort_values('timestamp')
+    test_start = data['timestamp'].iloc[int(len(data) * (1 - config.train_test_ratio))]
+    train, test = data[data['label_known_at'] < test_start], data[data['timestamp'] >= test_start]
+    features = [col for col in data.columns if col not in [config.target_feature, *config.identification_features]]
+    X_train, y_train = train.drop(columns=[config.target_feature]), train[config.target_feature]
+    X_test, y_test = test.drop(columns=[config.target_feature]), test[config.target_feature]
+    logger.info(f'Train {len(train)} rows, test {len(test)} rows from {datetime.fromtimestamp(test_start / 1000, UTC)}')
 
     # Train on arrays in `features` order (the order inference must follow); preprocessing is fitted on train only
     params = {**config.model_params, 'random_state': config.random_state}
@@ -98,6 +97,7 @@ if __name__ == '__main__':
             'model_params': params,
             'train_rows': len(X_train),
             'test_rows': len(X_test),
+            'test_start': datetime.fromtimestamp(test_start / 1000, UTC).isoformat(),
             'metrics': metrics,
             'simulation': {'capital_invested': capital_invested, 'gains': final_capital},
         },

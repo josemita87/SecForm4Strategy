@@ -28,21 +28,26 @@ HEADERS = {
 FORM_TYPE = '4'
 
 
-def build_messages(filings: list[dict[str, str]], received_now: bool) -> list[tuple[str, dict[str, Any], int]]:
+def build_messages(filings: list[dict[str, str]]) -> list[tuple[str, dict[str, Any], int]]:
     """Key and timestamp filing records as ``(key, record, timestamp)`` Kafka messages.
 
+    The timestamp is the filing's own ``date``, at the precision its source gives: a
+    full ISO timestamp from the current-filings feed, a day (taken as UTC midnight)
+    from the quarterly master index.
+
     Args:
-        filings: Filing records, with ``file_path`` (and ``date`` unless ``received_now``).
-        received_now: Stamp every filing with the current time instead of its filing date.
+        filings: Filing records with ``file_path`` and ``date``.
 
     Returns:
         One message per filing, keyed by a hash of its file path.
     """
-    now_ms = int(datetime.now(UTC).timestamp() * 1000)
     timestamps = [
-        now_ms
-        if received_now
-        else int(datetime.strptime(filing['date'].strip(), '%Y-%m-%d').replace(tzinfo=UTC).timestamp()) * 1000
+        int(
+            (
+                filed if (filed := datetime.fromisoformat(filing['date'].strip())).tzinfo else filed.replace(tzinfo=UTC)
+            ).timestamp()
+            * 1000
+        )
         for filing in filings
     ]
     return [
@@ -55,16 +60,20 @@ if __name__ == '__main__':
     filings = EdgarClient(headers=HEADERS)
     kafka = KafkaClient(config.kafka_broker_address, loglevel='CRITICAL')
 
-    def produce(data: list[dict[str, str]], received_now: bool) -> None:
+    def produce(data: list[dict[str, str]]) -> None:
         """Publish filings to the output topic one batch at a time (each produce call flushes)."""
-        for batch in batched(build_messages(data, received_now), config.buffer_size, strict=False):
+        for batch in batched(build_messages(data), config.buffer_size, strict=False):
             kafka.produce(config.kafka_output_topic, batch)
 
     logger.info(f'Master index started in {config.mode} mode -> {config.kafka_output_topic}')
 
     if config.mode == 'live':
+        # Each poll returns the newest filings again, so already-produced accessions are skipped
+        seen: set[str] = set()
         for _ in range(config.live_iterations):
-            produce([{'file_path': path} for path in filings.fetch_live_links(config.num_pages)], received_now=True)
+            new = [f for f in filings.fetch_current_filings(FORM_TYPE, config.num_pages) if f['accession'] not in seen]
+            seen |= {filing['accession'] for filing in new}
+            produce(new)
             time.sleep(config.secs_between_iterations)
     else:
         now = datetime.now(UTC)
@@ -77,4 +86,4 @@ if __name__ == '__main__':
             if (index := filings.fetch_master_index(year, quarter)) is None:
                 logger.warning(f'No master index for {year} {quarter}')
                 continue
-            produce([filing for filing in index if filing['form_type'] == FORM_TYPE], received_now=False)
+            produce([filing for filing in index if filing['form_type'] == FORM_TYPE])

@@ -5,7 +5,7 @@ directly: which ``Ticker.info`` keys hold a market cap or an exchange. Callers a
 for a domain value (``market_cap``/``exchange``) rather than driving the SDK. It
 does not catch errors — how to handle a missing value is the caller's domain.
 
-The one exception is the batch :meth:`MarketDataClient.close_histories`, where
+The one exception is the batch :meth:`MarketDataClient.price_histories`, where
 skipping a symbol that fails to download (delisted, renamed) is itself a
 market-data concern and the only sensible way to keep a multi-symbol pull alive.
 """
@@ -41,11 +41,11 @@ class MarketDataClient:
         exchange: str | None = self._yf.Ticker(symbol).info.get('exchange')
         return exchange
 
-    def close_history(self, symbol: str, start: object = None) -> pd.DataFrame:
-        """Return the daily close-price history for ``symbol``.
+    def daily_bars(self, symbol: str, start: object = None) -> pd.DataFrame:
+        """Return the daily open and close history for ``symbol``.
 
-        Hides the yfinance specifics (``download`` and the ``Close`` column)
-        behind a tidy two-column frame.
+        Hides the yfinance specifics (``download`` and its column layout) behind a
+        tidy three-column frame.
 
         Args:
             symbol: Ticker symbol to download.
@@ -53,18 +53,20 @@ class MarketDataClient:
                 history is returned.
 
         Returns:
-            A DataFrame with ``date`` and ``close`` columns.
+            A DataFrame with ``date``, ``open`` and ``close`` columns.
         """
-        close: pd.DataFrame = self._yf.download(symbol, start=start)['Close'].reset_index()
-        close.columns = ['date', 'close']
-        return close
+        bars: pd.DataFrame = self._yf.download(symbol, start=start, multi_level_index=False)[
+            ['Open', 'Close']
+        ].reset_index()
+        bars.columns = ['date', 'open', 'close']
+        return bars
 
-    def close_histories(self, symbols: Iterable[str], starts: Mapping[str, object] | None = None) -> pd.DataFrame:
-        """Return concatenated daily close history for many symbols, tagged by ticker.
+    def price_histories(self, symbols: Iterable[str], starts: Mapping[str, object] | None = None) -> pd.DataFrame:
+        """Return concatenated daily open/close history for many symbols, tagged by ticker.
 
         Best-effort: a symbol whose download fails (delisted, renamed) is logged
         and skipped rather than aborting the whole batch. The result uses
-        storage-friendly dtypes (``float32`` close, categorical ticker), sorted by
+        storage-friendly dtypes (``float32`` prices, categorical ticker), sorted by
         ticker then date.
 
         Args:
@@ -73,7 +75,7 @@ class MarketDataClient:
                 absent from the mapping fetch their full available history.
 
         Returns:
-            A DataFrame with ``date``, ``close`` and ``ticker`` columns.
+            A DataFrame with ``date``, ``open``, ``close`` and ``ticker`` columns.
         """
         import pandas as pd
 
@@ -81,17 +83,17 @@ class MarketDataClient:
         frames = []
         for symbol in symbols:
             try:
-                frames.append(self.close_history(symbol, start=starts.get(symbol)).assign(ticker=symbol))
+                frames.append(self.daily_bars(symbol, start=starts.get(symbol)).assign(ticker=symbol))
             except Exception as exc:
                 logger.warning('Skipping %s: %s', symbol, exc)
 
         if not frames:
-            logger.warning('No close history downloaded for any symbol')
-            return pd.DataFrame(columns=['date', 'close', 'ticker'])
+            logger.warning('No price history downloaded for any symbol')
+            return pd.DataFrame(columns=['date', 'open', 'close', 'ticker'])
 
         return (
             pd.concat(frames, ignore_index=True)
-            .astype({'close': 'float32', 'ticker': 'category'})
+            .astype({'open': 'float32', 'close': 'float32', 'ticker': 'category'})
             .assign(date=lambda df: pd.to_datetime(df['date']))
             .sort_values(['ticker', 'date'], ignore_index=True)
         )

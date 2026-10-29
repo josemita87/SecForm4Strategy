@@ -2,9 +2,8 @@
 agg_dict:
   company_cik: first
   key: first
-  timestamp: first
+  timestamp: max
   date: first
-  market_cap: first
   shares: sum
   remaining_shares: sum
   direct_holding: sum

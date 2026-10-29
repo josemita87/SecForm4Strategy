@@ -33,6 +33,14 @@ class Config(BaseSettings):
     filter_key: str = Field(..., json_schema_extra={'env': 'FILTER_KEY'})
     acquired_disposed: str = Field(..., json_schema_extra={'env': 'ACQUIRED_DISPOSED'})
 
+    # Reference data (docs/configuration.md)
+    market_caps_path: Path = Field(
+        default=Path(__file__).parent / 'data' / 'mcaps.parquet', json_schema_extra={'env': 'MARKET_CAPS_PATH'}
+    )
+    companies_path: Path = Field(
+        default=Path(__file__).parent / 'data' / 'companies.json', json_schema_extra={'env': 'COMPANIES_PATH'}
+    )
+
     # Aggregation policy, loaded and resolved from specs.yaml at instantiation
     agg_dict: dict[str, str | Callable[..., object]] = Field(default_factory=_agg_dict)
 

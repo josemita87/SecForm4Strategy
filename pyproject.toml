@@ -1,6 +1,6 @@
 [project]
 name = "secform4strategy"
-version = "0.2.0"
+version = "0.3.0"
 description = "Repo-root dev tooling and shared lint/type/docstring configuration. Not a runtime package — each microservice has its own pyproject.toml and uv.lock for independent Docker builds."
 readme = "Readme.md"
 authors = [{ name = "Josep Cubedo Macian", email = "136491450+josemita87@users.noreply.github.com" }]
@@ -65,8 +65,7 @@ unsafe-fixes = false
 preview = false
 show-fixes = true
 target-version = "py314"
-# api-enricher is orphaned (not wired into the pipeline); its enrichment is rebuilt in the AWS migration
-exclude = ["lab", "sec-feature-pipeline/api-enricher"]
+exclude = ["lab"]
 
 [tool.ruff.lint]
 select = [
@@ -89,7 +88,6 @@ ignore = [
   "N802",    # Feature-group accessors are domain contracts (fetch_BT4, push_BIR4, parse_and_produce_4Fs)
   "N803",    # ML matrix argument convention (X, X_test, y_pred)
   "N806",    # Feature-group / ML locals are domain vocabulary (BT4, RT4, BI4, BIR4, X_test)
-  "N812",    # Conventional import aliases (selenium expected_conditions as EC)
   "N817",    # Conventional import aliases (xml ElementTree as ET)
 ]
 
@@ -132,7 +130,7 @@ docstring-code-format = true
 
 [tool.pydoclint]
 style = "google"
-exclude = "\\.git|\\.venv|build|dist|lab|api-enricher"
+exclude = "\\.git|\\.venv|build|dist|lab"
 check-arg-order = true
 check-return-types = false  # types live in the signatures, not repeated in docstrings
 arg-type-hints-in-docstring = false
@@ -149,5 +147,5 @@ check-style-mismatch = true
 check-arg-defaults = true
 
 [tool.bandit]
-exclude_dirs = ["build", "dist", "lab", ".venv", "sec-feature-pipeline/api-enricher"]
+exclude_dirs = ["build", "dist", "lab", ".venv"]
 skips = ["B101", "B601"]
