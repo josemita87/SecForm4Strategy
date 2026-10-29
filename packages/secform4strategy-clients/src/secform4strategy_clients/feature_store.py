@@ -134,4 +134,5 @@ class HopsworksClient:
                     [fg[col].isin(list(value)) if is_many(value) else fg[col] == value for col, value in where.items()],
                 )
             )
-        return fg.read(read_options=self.read_options)
+        data: pd.DataFrame = fg.read(read_options=self.read_options)
+        return data

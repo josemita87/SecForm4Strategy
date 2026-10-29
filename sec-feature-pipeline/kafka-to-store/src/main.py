@@ -1,4 +1,9 @@
-"""Entry point: consumes Kafka transactions, cleans them, and pushes them to the feature store."""
+"""Entry point: consumes Kafka transactions, cleans them, and pushes them to the feature store.
+
+Columns are cast by policy when present: ``CATEGORICAL`` to category, ``BOOLEAN``
+to bool and ``NUMERIC`` to the listed dtypes. ``ownership`` holds 'D'/'I'
+(direct/indirect) and is categorical, since a bool cast would make both True.
+"""
 
 import logging
 from pathlib import Path
@@ -17,8 +22,6 @@ logging.basicConfig(
 )
 
 
-# Column dtype policy for the transaction feature groups (applied when present).
-# `ownership` is 'D'/'I' (direct/indirect): a bool cast would turn both into True.
 CATEGORICAL = [
     'company_cik',
     'ticker',
@@ -104,8 +107,6 @@ if __name__ == '__main__':
             buffer_size=config.buffer_size,
             timeout=config.poll_timeout,
         )
-        # The Kafka client returns raw records; building the DataFrame, parsing
-        # the date and downcasting dtypes are domain concerns owned here.
         if records:
             feature_store.push(target, validate_and_reduce_mem_storage(data_cleaning(records)))
 

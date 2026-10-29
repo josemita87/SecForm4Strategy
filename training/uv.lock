@@ -1052,7 +1052,6 @@ requires-dist = [
     { name = "confluent-kafka", marker = "extra == 'messaging'", specifier = ">=2.6,<3" },
     { name = "hopsworks", marker = "extra == 'feature-store'", specifier = ">=4.1,<5" },
     { name = "joblib", marker = "extra == 'model-store'", specifier = ">=1.4,<2" },
-    { name = "pandas", marker = "extra == 'edgar'", specifier = ">=2.1" },
     { name = "pandas", marker = "extra == 'market-data'", specifier = ">=2.1" },
     { name = "pyarrow", marker = "extra == 'feature-store'", specifier = ">=18" },
     { name = "pydantic", marker = "extra == 'feature-store'", specifier = ">=2,<3" },

@@ -2,10 +2,9 @@
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import pandas as pd
 import xxhash
 from config import config
 from const import headers
@@ -20,7 +19,7 @@ logging.basicConfig(
 )
 
 
-def select_urls(records: list[tuple[dict[str, Any], int]], max_age: pd.Timedelta | None) -> list[tuple[str, int]]:
+def select_urls(records: list[tuple[dict[str, Any], int]], max_age: timedelta | None) -> list[tuple[str, int]]:
     """Extract ``(url, offset)`` pairs from consumed records, dropping stale ones.
 
     Args:
@@ -33,12 +32,12 @@ def select_urls(records: list[tuple[dict[str, Any], int]], max_age: pd.Timedelta
     urls = []
     for msg, offset in records:
         try:
-            date = pd.to_datetime(msg['timestamp'], unit='ms', utc=True)
-            if max_age is not None and date < pd.Timestamp.now('UTC') - max_age:
+            date = datetime.fromtimestamp(msg['timestamp'] / 1000, tz=timezone.utc)
+            if max_age is not None and date < datetime.now(timezone.utc) - max_age:
                 logger.info(f'Filing too old: {date}')
                 continue
             urls.append((msg['file_path'], offset))
-        except (KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError, OverflowError, OSError):
             logger.error(f"Couldn't extract URL from message: {msg}")
     return urls
 
@@ -79,7 +78,7 @@ if __name__ == '__main__':
         auto_offset_reset=config.auto_offset_reset,
     )
     filings = EdgarClient(headers=headers)
-    max_age = pd.Timedelta(days=config.days_back) if config.mode == 'live' else None
+    max_age = timedelta(days=config.days_back) if config.mode == 'live' else None
 
     def produce(records: list[dict[str, Any]]) -> None:
         """Publish shaped records to the output topic."""
@@ -93,8 +92,7 @@ if __name__ == '__main__':
         records = kafka.consume_with_offsets(config.kafka_input_topic, config.buffer_size, config.poll_timeout)
         urls = select_urls(records, max_age)[: config.test_size if config.test_trial else None]
 
-        # Commit after each produced batch and once at the end, so filings that
-        # yield no transactions are not re-consumed on restart
+        # Commit per produced batch and at the end, so transaction-less filings are not re-consumed
         buffer: list[dict[str, Any]] = []
         for url, offset in urls:
             buffer.extend(parse_filing(url, filings, config.sleep_time) or [])

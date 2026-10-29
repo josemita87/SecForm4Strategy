@@ -105,8 +105,8 @@ class Filings(Protocol):
         """GET a filing URL."""
         ...
 
-    def fetch_master_index(self, year: int, quarter: str) -> pd.DataFrame | None:
-        """Return a quarterly master index of filings, or None if unavailable."""
+    def fetch_master_index(self, year: int, quarter: str) -> list[dict[str, str]] | None:
+        """Return a quarterly master index (one dict per filing), or None if unavailable."""
         ...
 
     def fetch_live_links(self, num_pages: int) -> set[str]:

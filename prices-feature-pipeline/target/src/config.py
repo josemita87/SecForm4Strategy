@@ -1,5 +1,6 @@
 """Pydantic settings for the target microservice."""
 
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
@@ -7,7 +8,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
-def _agg_dict() -> dict:
+def _agg_dict() -> dict[str, str | Callable[..., object]]:
     """Resolve the aggregation policy from specs.yaml.
 
     Pandas aggregation names pass through unchanged; the ``mode_first`` token is
@@ -33,7 +34,7 @@ class Config(BaseSettings):
     acquired_disposed: str = Field(..., json_schema_extra={'env': 'ACQUIRED_DISPOSED'})
 
     # Aggregation policy, loaded and resolved from specs.yaml at instantiation
-    agg_dict: dict = Field(default_factory=_agg_dict)
+    agg_dict: dict[str, str | Callable[..., object]] = Field(default_factory=_agg_dict)
 
     # System settings
     system_training: bool = Field(False, json_schema_extra={'env': 'SYSTEM_TRAINING'})

@@ -1,15 +1,6 @@
 """Constants, SIC codes, XML path mappings, and request headers for the scraper."""
 
-# from sec_cik_mapper import StockMapper
 import random
-
-# mapper = StockMapper()
-# cik_exchange_mapper = mapper.cik_to_exchange
-
-# with open('backtesting/drive/datasets/cik_sic_exchange_mapper.json', 'r') as f:
-
-# cik_sic_exch_map = json.load(f)
-
 
 sic_codes = {
     'All Industries': list(range(100, 9900)),
@@ -53,7 +44,7 @@ all_txs_columns = [
 ]
 
 
-# LINKS, PATHS, EXPECTED KEYS and HEADERS for filing_spider.py
+# XML paths, holding paths and request headers
 
 link_comp_info = 'https://data.sec.gov/submissions/CIK{cik}.json'
 link_filing = 'https://www.sec.gov/Archives/edgar/data/{cik}/{full_accesion}/{accesion}.txt'
@@ -93,15 +84,11 @@ derivative_paths = {
     'd_shares': 'transactionAmounts/transactionShares/value',
     'd_acquired_disposed': 'transactionAmounts/transactionAcquiredDisposedCode/value',
     'd_acquired_price': 'transactionAmounts/transactionPricePerShare/value',
-    #'d_strike_price':     'derivativeTable/derivativeTransaction/expirationDate/value',
     'd_execution_date': 'transactionDate/value',
-    #'d-exercisable-date': 'exerciseDate/value',
-    #'d-expiration-date':  'expirationDate/value',
     'd_remaining_shares': 'postTransactionAmounts/sharesOwnedFollowingTransaction/value',
     'd_ownership': 'ownershipNature/directOrIndirectOwnership/value',
     'd_coding': 'transactionCoding/transactionCode',
     'd_footnote_id': 'transactionAmounts/transactionShares/footnoteId',
-    #'d-underlying_shares':'underlyingSecurity/underlyingSecurityShares/value'
 }
 
 

@@ -48,11 +48,11 @@ class InferencePipeline:
         self.broker = broker
         self.model_store = model_store
 
-    def load_model(self) -> Pipeline:
-        """Load the trained pipeline, refusing one saved under another scikit-learn version.
+    def load_model(self) -> tuple[Pipeline, tuple[str, ...]]:
+        """Load the trained pipeline and the feature order its input arrays follow.
 
         Returns:
-            The loaded scikit-learn pipeline.
+            The scikit-learn pipeline and its ordered feature names.
 
         Raises:
             RuntimeError: If the model was saved with a different scikit-learn version.
@@ -61,7 +61,7 @@ class InferencePipeline:
         if (trained_with := metadata.get('sklearn_version')) != sklearn.__version__:
             raise RuntimeError(f'Model trained with scikit-learn {trained_with}, running {sklearn.__version__}')
         logger.info(f'Loaded model trained at {metadata.get("trained_at")} (git {metadata.get("git_sha")})')
-        return model
+        return model, tuple(metadata['features'])
 
     def fetch_new_trades(self) -> pd.DataFrame:
         """Read the inference transactions (BIR4), dropping duplicate and NaN rows.
@@ -72,7 +72,7 @@ class InferencePipeline:
         return self.feature_store.read(FeatureGroup.BIR4).drop_duplicates().dropna()
 
     @staticmethod
-    def generate_predictions(model: Pipeline, data: pd.DataFrame) -> pd.DataFrame:
+    def generate_predictions(model: Pipeline, features: tuple[str, ...], data: pd.DataFrame) -> pd.DataFrame:
         """Score the data and attach the predictions as a ``predictions`` column.
 
         The pipeline applies the preprocessing fitted at training time, so the
@@ -80,15 +80,13 @@ class InferencePipeline:
 
         Args:
             model: The fitted pipeline used to score the data.
+            features: Feature order the pipeline's input arrays follow.
             data: Inference data containing at least the training features.
 
         Returns:
             A copy of ``data`` with a ``predictions`` column.
         """
-        # Select exactly the features the pipeline was trained on, in training order
-        result = data.copy()
-        result['predictions'] = model.predict(data[list(model.feature_names_in_)])
-        return result
+        return data.assign(predictions=model.predict(data[list(features)].to_numpy()))
 
     def execute_trades(self, predictions_df: pd.DataFrame, threshold: float, order: OrderSpec) -> None:
         """Place a short order for every prediction below ``threshold``.

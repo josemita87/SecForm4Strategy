@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import yaml
 from dotenv import load_dotenv
@@ -14,9 +15,9 @@ load_dotenv('.credentials.env')
 
 
 @lru_cache
-def _specs() -> dict:
+def _specs() -> dict[str, Any]:
     """Load the static feature-selection spec (column lists) from specs.yaml."""
-    return yaml.safe_load((Path(__file__).parent / 'specs.yaml').read_text())
+    return dict(yaml.safe_load((Path(__file__).parent / 'specs.yaml').read_text()))
 
 
 class Config(BaseSettings):
@@ -32,7 +33,7 @@ class Config(BaseSettings):
     project_name: str = Field(..., json_schema_extra={'env': 'PROJECT_NAME'})
     feature_group_version: int = Field(..., json_schema_extra={'env': 'FEATURE_GROUP_VERSION'})
     hopsworks_api_key: str = Field(..., json_schema_extra={'env': 'HOPSWORKS_API_KEY'})
-    csv_path: str = Field(default=CSV_PATH.str, json_schema_extra={'env': 'CSV_PATH'})
+    csv_path: Path = Field(default=CSV_PATH, json_schema_extra={'env': 'CSV_PATH'})
 
     # Feature Selection (column lists loaded from specs.yaml)
     columns_to_drop: list[str] = Field(default_factory=lambda: _specs()['columns_to_drop'])
@@ -46,10 +47,10 @@ class Config(BaseSettings):
     last_n_days: int = Field(..., json_schema_extra={'env': 'LAST_N_DAYS'})
 
     # Logging
-    log_path: str = Field(default=LOG_PATH.str, json_schema_extra={'env': 'LOG_PATH'})
+    log_path: Path = Field(default=LOG_PATH, json_schema_extra={'env': 'LOG_PATH'})
 
     # Models
-    model_path: str = Field(default=MODEL_PATH.str, json_schema_extra={'env': 'MODEL_PATH'})
+    model_path: Path = Field(default=MODEL_PATH, json_schema_extra={'env': 'MODEL_PATH'})
 
 
 config = Config()

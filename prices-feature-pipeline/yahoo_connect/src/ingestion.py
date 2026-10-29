@@ -50,10 +50,9 @@ class PriceIngestor:
         Returns:
             New close-price rows, tagged by ticker.
         """
-        # Skip NaT maxima: an unresumable ticker falls back to full history
-        # (start absent → None) rather than feeding NaT into the download.
+        # A ticker with no valid latest date gets no start, so it fetches full history
         latest = pd.Series() if prices.empty else prices.groupby('ticker')['date'].max().dropna()
-        starts = {ticker: pd.to_datetime(date) + pd.Timedelta(days=1) for ticker, date in latest.items()}
+        starts = {str(ticker): pd.to_datetime(date) + pd.Timedelta(days=1) for ticker, date in latest.items()}
         return self.market_data.close_histories(tickers, starts=starts)
 
     def process_tickers(self, source: FeatureGroup, where: Filters | None, batch_size: int) -> None:

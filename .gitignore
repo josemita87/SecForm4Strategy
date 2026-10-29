@@ -1,11 +1,3 @@
-# Ignore all Python files by default
-#*.py
-
-# But not these directories where actual code is located
-!src/
-!app/
-!project_name/
-
 # Ignore virtual environment folders
 venv/
 env/
@@ -39,11 +31,6 @@ site-packages/
 # Ignore Jupyter notebook checkpoints
 .ipynb_checkpoints/
 
-# Ignore dependency management files (if you don't want to track them)
-# Pipfile
-# Pipfile.lock
-# poetry.lock
-# pyproject.toml
 
 # Ignore any other unnecessary files (generated files)
 *.swp

@@ -12,9 +12,7 @@ import types
 import pytest
 
 
-# --------------------------------------------------------------------------- #
-# AlpacaClient
-# --------------------------------------------------------------------------- #
+# --- AlpacaClient ---
 def test_alpaca_threads_credentials_and_places_order(monkeypatch):
     rest_calls = {}
     order_calls = {}
@@ -52,9 +50,7 @@ def test_alpaca_threads_credentials_and_places_order(monkeypatch):
     }
 
 
-# --------------------------------------------------------------------------- #
-# KafkaConsumer
-# --------------------------------------------------------------------------- #
+# --- KafkaConsumer ---
 class _FakeMessage:
     def __init__(self, payload: bytes, offset: int = 0):
         self._payload = payload
@@ -226,9 +222,7 @@ def test_kafka_consume_with_offsets_and_commit(monkeypatch):
     assert holder['app'].consumer.committed is not None
 
 
-# --------------------------------------------------------------------------- #
-# MarketDataClient
-# --------------------------------------------------------------------------- #
+# --- MarketDataClient ---
 def test_market_data_reads_info_fields(monkeypatch):
     class _FakeTicker:
         def __init__(self, symbol):
@@ -319,9 +313,7 @@ def test_market_data_close_histories_empty_when_all_fail(monkeypatch):
     assert out.empty
 
 
-# --------------------------------------------------------------------------- #
-# load_feature_group_catalog
-# --------------------------------------------------------------------------- #
+# --- load_feature_group_catalog ---
 def test_load_feature_group_catalog_injects_version_and_defaults_name(tmp_path):
     from secform4strategy_clients.feature_store import load_feature_group_catalog
 

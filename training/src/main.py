@@ -47,11 +47,11 @@ if __name__ == '__main__':
         X, y, test_size=config.train_test_ratio, random_state=config.random_state
     )
 
-    # Train the regressor; preprocessing is fitted on the training split only
+    # Train on arrays in `features` order (the order inference must follow); preprocessing is fitted on train only
     params = {**config.model_params, 'random_state': config.random_state}
     pipeline = model.build_pipeline(X_train[features], params)
-    pipeline.fit(X_train[features], y_train)
-    y_pred = pd.Series(pipeline.predict(X_test[features]), index=X_test.index)
+    pipeline.fit(X_train[features].to_numpy(), y_train.to_numpy())
+    y_pred = pd.Series(pipeline.predict(X_test[features].to_numpy()), index=X_test.index)
     logger.info(f'Trained regressor; {len(y_pred)} test predictions')
 
     # The model must beat what needs no model: no move, the average move, and the ticker's own history

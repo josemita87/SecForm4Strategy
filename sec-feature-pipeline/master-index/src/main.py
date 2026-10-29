@@ -5,7 +5,6 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-import pandas as pd
 import xxhash
 from config import config
 from secform4strategy_clients.edgar import EdgarClient
@@ -25,7 +24,7 @@ HEADERS = {
 FORM_TYPE = '4'
 
 
-def build_messages(filings: pd.DataFrame, received_now: bool) -> list[tuple[str, dict[str, Any], int]]:
+def build_messages(filings: list[dict[str, str]], received_now: bool) -> list[tuple[str, dict[str, Any], int]]:
     """Key and timestamp filing records as ``(key, record, timestamp)`` Kafka messages.
 
     Args:
@@ -35,20 +34,24 @@ def build_messages(filings: pd.DataFrame, received_now: bool) -> list[tuple[str,
     Returns:
         One message per filing, keyed by a hash of its file path.
     """
-    timestamps = (
-        int(datetime.now(timezone.utc).timestamp() * 1000)
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    timestamps = [
+        now_ms
         if received_now
-        else pd.to_datetime(filings['date']).astype('int64') // 10**6
-    )
-    records = filings.assign(timestamp=timestamps).to_dict(orient='records')
-    return [(xxhash.xxh64(record['file_path']).hexdigest(), record, record['timestamp']) for record in records]
+        else int(datetime.strptime(filing['date'].strip(), '%Y-%m-%d').replace(tzinfo=timezone.utc).timestamp()) * 1000
+        for filing in filings
+    ]
+    return [
+        (xxhash.xxh64(filing['file_path']).hexdigest(), {**filing, 'timestamp': ts}, ts)
+        for filing, ts in zip(filings, timestamps, strict=True)
+    ]
 
 
 if __name__ == '__main__':
     filings = EdgarClient(headers=HEADERS)
     kafka = KafkaClient(config.kafka_broker_address, loglevel='CRITICAL')
 
-    def produce(data: pd.DataFrame, received_now: bool) -> None:
+    def produce(data: list[dict[str, str]], received_now: bool) -> None:
         """Publish filings to the output topic one batch at a time (each produce call flushes)."""
         messages = build_messages(data, received_now)
         for i in range(0, len(messages), config.buffer_size):
@@ -58,7 +61,7 @@ if __name__ == '__main__':
 
     if config.mode == 'live':
         for _ in range(config.live_iterations):
-            produce(pd.DataFrame(filings.fetch_live_links(config.num_pages), columns=['file_path']), received_now=True)
+            produce([{'file_path': path} for path in filings.fetch_live_links(config.num_pages)], received_now=True)
             time.sleep(config.secs_between_iterations)
     else:
         now = datetime.now(timezone.utc)
@@ -71,4 +74,4 @@ if __name__ == '__main__':
             if (index := filings.fetch_master_index(year, quarter)) is None:
                 logger.warning(f'No master index for {year} {quarter}')
                 continue
-            produce(index[index['form_type'] == FORM_TYPE], received_now=False)
+            produce([filing for filing in index if filing['form_type'] == FORM_TYPE], received_now=False)

@@ -1,18 +1,29 @@
 """Trading simulation and prediction plotting utilities."""
 
+from __future__ import annotations
+
 import logging
-from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
-import pandas as pd
 import seaborn as sns
 from sklearn.metrics import mean_absolute_error
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from pathlib import Path
+
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 
 def plot_predictions(
-    y_test: pd.Series, y_pred_reg: pd.Series, financial_results: float, capital_invested: float, plot_path: str
+    y_test: pd.Series[float],
+    y_pred_reg: pd.Series[float],
+    financial_results: float,
+    capital_invested: float,
+    plot_path: Path,
 ) -> None:
     """Plot actual vs predicted negative returns and financial results.
 
@@ -43,8 +54,8 @@ def plot_predictions(
 
 
 def run_simulation(
-    real_returns: pd.Series, y_pred_negative: pd.Series, investment: float = 100, threshold: float = -0.3
-) -> tuple[float, float, pd.Series, pd.Series]:
+    real_returns: pd.Series[float], y_pred_negative: pd.Series[float], investment: float = 100, threshold: float = -0.3
+) -> tuple[float, float, pd.Series[float], pd.Series[float]]:
     """Short ``investment`` on every prediction at or below ``threshold`` and sum the outcome.
 
     Args:
@@ -65,7 +76,7 @@ def run_simulation(
     return investment * shorted.sum(), gains, real_returns, y_pred_negative
 
 
-def evaluate(y_true: pd.Series, predictions: Mapping[str, pd.Series]) -> dict[str, dict[str, float]]:
+def evaluate(y_true: pd.Series[float], predictions: Mapping[str, pd.Series[float]]) -> dict[str, dict[str, float]]:
     """Score the model and its baselines on the same rows: error and the return of shorting their negatives.
 
     ``short_return`` is the mean return captured per short position (positive is a

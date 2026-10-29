@@ -5,20 +5,7 @@ layout rather than hardcoded as absolute-path constants in env files. Config
 fields default to these and may still be overridden by environment variables.
 """
 
-from pathlib import Path as _Path
-
-
-class Path(type(_Path())):
-    """A pathlib path that also exposes its string form via ``.str``.
-
-    Saves calling ``str(path)`` at every use site (e.g. ``PLOT_PATH.str``).
-    """
-
-    @property
-    def str(self) -> str:
-        """Return the path as a plain string."""
-        return super().__str__()
-
+from pathlib import Path
 
 # training/src — the directory holding this file.
 SRC_ROOT = Path(__file__).resolve().parent

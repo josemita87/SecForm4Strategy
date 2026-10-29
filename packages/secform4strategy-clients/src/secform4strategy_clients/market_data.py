@@ -35,11 +35,13 @@ class MarketDataClient:
 
     def market_cap(self, symbol: str) -> int | None:
         """Return the market capitalization for ``symbol`` (or None if absent)."""
-        return self._yf.Ticker(symbol).info.get('marketCap')
+        cap: int | None = self._yf.Ticker(symbol).info.get('marketCap')
+        return cap
 
     def exchange(self, symbol: str) -> str | None:
         """Return the listing exchange for ``symbol`` (or None if absent)."""
-        return self._yf.Ticker(symbol).info.get('exchange')
+        exchange: str | None = self._yf.Ticker(symbol).info.get('exchange')
+        return exchange
 
     def close_history(self, symbol: str, start: object = None) -> pd.DataFrame:
         """Return the daily close-price history for ``symbol``.
@@ -55,7 +57,7 @@ class MarketDataClient:
         Returns:
             A DataFrame with ``date`` and ``close`` columns.
         """
-        close = self._yf.download(symbol, start=start)['Close'].reset_index()
+        close: pd.DataFrame = self._yf.download(symbol, start=start)['Close'].reset_index()
         close.columns = ['date', 'close']
         return close
 

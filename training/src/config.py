@@ -2,12 +2,13 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import yaml
 from dotenv import load_dotenv
 from paths import DATA_SOURCE_PATH, LOG_PATH, MODEL_PATH, PLOT_PATH
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Load the main .env file and then the credentials.env file
 load_dotenv('.env')
@@ -15,9 +16,9 @@ load_dotenv('.credentials.env')
 
 
 @lru_cache
-def _specs() -> dict:
+def _specs() -> dict[str, Any]:
     """Load the static feature-selection spec (column lists) from specs.yaml."""
-    return yaml.safe_load((Path(__file__).parent / 'specs.yaml').read_text())
+    return dict(yaml.safe_load((Path(__file__).parent / 'specs.yaml').read_text()))
 
 
 class Config(BaseSettings):
@@ -29,10 +30,10 @@ class Config(BaseSettings):
     hopsworks_api_key: str = Field(..., json_schema_extra={'env': 'HOPSWORKS_API_KEY'})
 
     # Paths (defaults anchored on the repo layout via paths.py; env overridable)
-    model_path: str = Field(default=MODEL_PATH.str, json_schema_extra={'env': 'MODEL_PATH'})
-    data_source_path: str = Field(default=DATA_SOURCE_PATH.str, json_schema_extra={'env': 'DATA_SOURCE_PATH'})
-    plot_path: str = Field(default=PLOT_PATH.str, json_schema_extra={'env': 'PLOT_PATH'})
-    log_path: str = Field(default=LOG_PATH.str, json_schema_extra={'env': 'LOG_PATH'})
+    model_path: Path = Field(default=MODEL_PATH, json_schema_extra={'env': 'MODEL_PATH'})
+    data_source_path: Path = Field(default=DATA_SOURCE_PATH, json_schema_extra={'env': 'DATA_SOURCE_PATH'})
+    plot_path: Path = Field(default=PLOT_PATH, json_schema_extra={'env': 'PLOT_PATH'})
+    log_path: Path = Field(default=LOG_PATH, json_schema_extra={'env': 'LOG_PATH'})
 
     # Training settings
     train_test_ratio: float = Field(..., json_schema_extra={'env': 'TRAIN_TEST_RATIO'})
@@ -49,12 +50,8 @@ class Config(BaseSettings):
     # Commit recorded in the model metadata (set in CI/Docker; falls back to `git rev-parse`)
     git_sha: str | None = Field(None, json_schema_extra={'env': 'GIT_SHA'})
 
-    class Config:
-        """Pydantic configuration for environment file loading."""
-
-        # Specify only the main .env file here for Pydantic's internal use
-        env_file = '.env'
-        env_file_encoding = 'utf-8'
+    # `model_path` / `model_params` are settings, not pydantic internals
+    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', protected_namespaces=('settings_',))
 
 
 config = Config()

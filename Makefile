@@ -2,8 +2,7 @@
 	start-redpanda stop-redpanda inference-sec inference-prices training-sec training-prices
 
 CLIENTS_SRC := packages/secform4strategy-clients/src
-# Services whose modules import each other flat from src/ (`from config import config`)
-# (api-enricher is orphaned and excluded from the gate; see pyproject.toml)
+# Services importing flat from src/ (`from config import config`); api-enricher is excluded
 FLAT_SERVICES := training inference sec-feature-pipeline/master-index sec-feature-pipeline/scraper \
 	sec-feature-pipeline/kafka-to-store
 # Services importing through the src package (`from src.config import config`)
@@ -15,8 +14,7 @@ lint:
 format:
 	uv run ruff format .
 	uv run ruff check . --fix
-# Every service has a `src` package, so each is checked on its own, with its
-# modules and the clients package on MYPYPATH so imports resolve to real types.
+# One mypy run per service (docs/development.md)
 type-check:
 	@status=0; \
 	MYPYPATH=$(CLIENTS_SRC) uv run mypy --explicit-package-bases $(CLIENTS_SRC)/secform4strategy_clients || status=1; \

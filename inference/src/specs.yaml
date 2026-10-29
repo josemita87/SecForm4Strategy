@@ -1,4 +1,2 @@
-# Feature-selection spec for scoring.
-# columns_to_drop: removed before scoring. The model input columns themselves are
-# fixed by the trained pipeline (feature_names_in_), so no feature list lives here.
+# Service spec (fields: docs/configuration.md)
 columns_to_drop: [key, timestamp, coding]

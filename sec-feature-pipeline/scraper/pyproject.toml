@@ -6,10 +6,8 @@ readme = "README.md"
 authors = [{ name = "Josep Cubedo Macian", email = "136491450+josemita87@users.noreply.github.com" }]
 requires-python = ">=3.12,<4.0"
 dependencies = [
-    # SEC EDGAR HTTP and Kafka (consume-with-offsets / produce / commit) both come
-    # from the shared clients package; only the domain orchestration stays local.
+    # EDGAR HTTP and Kafka come from the shared clients package.
     "secform4strategy-clients[edgar,messaging]",
-    "pandas>=2.2.3,<3.0.0",
     "autopep8>=2.3.1,<3.0.0",
     "pydantic>=2.9.2,<3.0.0",
     "xxhash>=3.5.0,<4.0.0",

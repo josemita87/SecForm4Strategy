@@ -31,7 +31,7 @@ class AlpacaClient:
         self.api = tradeapi.REST(api_key, api_secret, base_url, api_version=api_version)
         logger.info('Initialized Alpaca API')
 
-    def get_account(self):
+    def get_account(self) -> object:
         """Retrieve account information from Alpaca.
 
         Returns:
@@ -55,7 +55,7 @@ class AlpacaClient:
             The submitted order object, or ``None`` if submission failed.
         """
         try:
-            order = self.api.submit_order(
+            order: object = self.api.submit_order(
                 symbol=symbol, qty=qty, side=side, type=order_type, time_in_force=time_in_force
             )
             logger.info(f'Order submitted: {order}')

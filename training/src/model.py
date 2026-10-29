@@ -13,11 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 def build_pipeline(X: pd.DataFrame, params: dict[str, Any]) -> Pipeline:
-    """Build an unfitted preprocessing + regression pipeline for the columns of ``X``.
+    """Build an unfitted preprocessing + regression pipeline over the columns of ``X``, by position.
 
     Preprocessing lives inside the pipeline so it is fitted on the training split
-    only and persisted with the model; inference reuses it as-is instead of
-    refitting a scaler on the batch it is scoring.
+    only and persisted with the model. Columns are addressed by position, so the
+    fitted pipeline scores plain arrays whose columns follow ``X``'s order, with no
+    DataFrame needed at inference.
 
     Args:
         X: Training features; their dtypes decide which columns are scaled
@@ -27,11 +28,12 @@ def build_pipeline(X: pd.DataFrame, params: dict[str, Any]) -> Pipeline:
     Returns:
         An unfitted ``Pipeline`` with ``preprocess`` and ``regressor`` steps.
     """
-    continuous_cols = X.select_dtypes(include='number').columns.tolist()
-    categorical_cols = X.select_dtypes(include=['bool', 'category', 'object']).columns.tolist()
+    position = {col: i for i, col in enumerate(X.columns)}
+    continuous_cols = [position[col] for col in X.select_dtypes(include='number').columns]
+    categorical_cols = [position[col] for col in X.select_dtypes(include=['bool', 'category', 'object']).columns]
 
     # Columns of any other dtype (e.g. datetimes) are dropped by the transformer
-    ignored = sorted(set(X.columns) - set(continuous_cols) - set(categorical_cols))
+    ignored = sorted(set(X.columns) - set(X.columns[continuous_cols + categorical_cols]))
     if ignored:
         logger.warning(f'Columns ignored by the model (unsupported dtype): {ignored}')
 

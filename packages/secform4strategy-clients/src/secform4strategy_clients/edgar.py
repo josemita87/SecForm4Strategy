@@ -14,7 +14,8 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import pandas as pd
+    from requests import Response
+    from selenium.webdriver.chrome.webdriver import WebDriver
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class EdgarClient:
     def __init__(
         self,
         user_agent: str | None = None,
-        headers: dict | None = None,
+        headers: dict[str, str] | None = None,
         timeout: int = 10,
     ) -> None:
         """Configure the client's headers and default timeout.
@@ -61,7 +62,7 @@ class EdgarClient:
         )
         self.timeout = timeout
 
-    def get(self, url: str, timeout: int | None = None):
+    def get(self, url: str, timeout: int | None = None) -> Response:
         """GET a URL with the configured headers.
 
         Args:
@@ -71,15 +72,21 @@ class EdgarClient:
         Returns:
             The raw ``requests.Response`` (caller reads ``.text``/``.content``/etc.).
         """
-        return self._requests.get(url, headers=self.headers, timeout=self.timeout if timeout is None else timeout)
+        response: Response = self._requests.get(
+            url, headers=self.headers, timeout=self.timeout if timeout is None else timeout
+        )
+        return response
 
-    def fetch_master_index(self, year: int, quarter: str, throttle: float = 1.0) -> pd.DataFrame | None:
+    #: Fields of each master-index line, in file order.
+    MASTER_INDEX_FIELDS = ('cik', 'company', 'form_type', 'date', 'file_path')
+
+    def fetch_master_index(self, year: int, quarter: str, throttle: float = 1.0) -> list[dict[str, str]] | None:
         """Fetch and parse an EDGAR quarterly master index.
 
         Knows the master.idx URL pattern and the file's pipe-delimited format
         (a preamble followed by a ``...|...`` header, then one filing per line
-        with fields ``cik|company|form_type|date|file_path``). Callers get a
-        DataFrame of all filings and apply their own form-type filtering.
+        with fields ``cik|company|form_type|date|file_path``). Callers get every
+        filing as a dict of strings and apply their own form-type filtering.
 
         Args:
             year: Calendar year of the master index.
@@ -88,12 +95,8 @@ class EdgarClient:
                 rate limits. Set to 0 to disable.
 
         Returns:
-            A DataFrame of filing records, or ``None`` if the request was not 200.
+            One dict per filing, or ``None`` if the request was not 200.
         """
-        from io import StringIO
-
-        import pandas as pd
-
         response = self.get(f'https://www.sec.gov/Archives/edgar/full-index/{year}/{quarter}/master.idx')
         if response.status_code != HTTPStatus.OK:
             return None
@@ -101,19 +104,17 @@ class EdgarClient:
         # Crop the preamble: data starts two lines after the header row.
         lines = response.content.decode('utf-8').splitlines()
         start_index = next((i + 2 for i, line in enumerate(lines) if '|' in line), 0)
-        df = pd.read_csv(
-            StringIO('\n'.join(lines[start_index:])),
-            sep='|',
-            header=None,
-            names=['cik', 'company', 'form_type', 'date', 'file_path'],
-            dtype=str,
-        )
+        # A company name may itself contain '|', so the CIK and the last three fields are split off around it
+        filings = [
+            dict(zip(self.MASTER_INDEX_FIELDS, (cik, *rest.rsplit('|', 3)), strict=True))
+            for cik, rest in (line.split('|', 1) for line in lines[start_index:] if line.strip())
+        ]
 
         if throttle:
             time.sleep(throttle)
-        return df
+        return filings
 
-    def fetch_live_links(self, num_pages: int, wait_time: int = 10) -> set:
+    def fetch_live_links(self, num_pages: int, wait_time: int = 10) -> set[str]:
         """Scrape the newest Form 4 filing links from EDGAR's current-filings page.
 
         Drives a headless browser over the paginated ``getcurrent`` results and
@@ -137,7 +138,7 @@ class EdgarClient:
 
         driver = self._configure_driver()
         wait = WebDriverWait(driver, wait_time)
-        all_links: set = set()
+        all_links: set[str] = set()
 
         # Always quit the browser, including when a page fails mid-pagination.
         try:
@@ -170,7 +171,7 @@ class EdgarClient:
 
         return all_links
 
-    def _configure_driver(self):
+    def _configure_driver(self) -> WebDriver:
         """Create a masked headless Chromium WebDriver for EDGAR scraping."""
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options

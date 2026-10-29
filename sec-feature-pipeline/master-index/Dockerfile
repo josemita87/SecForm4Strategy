@@ -36,9 +36,7 @@ ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_BIN=/usr/bin/chromedriver
 ENV DISPLAY=:99
 
-# Service lives at this path inside the image; the repo layout is replicated so
-# the [tool.uv.sources] path to the shared clients package resolves the same way
-# it does on the host. This image is built with the repo root as the build context.
+# Repo layout replicated under /repo, built from the repo root (docs/development.md)
 ENV SVC_DIR=/repo/sec-feature-pipeline/master-index
 # Add src to the PYTHONPATH
 ENV PYTHONPATH=${SVC_DIR}
@@ -47,8 +45,7 @@ ENV PYTHONUNBUFFERED=1
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 
-# Copy the shared clients package (its path source is resolved relative to the
-# service pyproject) and the service's dependency manifests first, for caching.
+# Clients package and dependency manifests first, so the dependency layer is cached
 COPY packages/secform4strategy-clients /repo/packages/secform4strategy-clients
 COPY sec-feature-pipeline/master-index/pyproject.toml sec-feature-pipeline/master-index/uv.lock ${SVC_DIR}/
 

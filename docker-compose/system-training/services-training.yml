@@ -83,8 +83,6 @@ services:
       - "9003:9003"
     restart:
       "on-failure:5"
-    #profiles:
-    #  - prices
 
   target:
     build:

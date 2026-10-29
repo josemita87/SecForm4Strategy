@@ -3,9 +3,7 @@ FROM python:3.12-slim
 # Bring in the uv binary from the official image
 COPY --from=ghcr.io/astral-sh/uv:0.9.7 /uv /uvx /bin/
 
-# Service lives at this path inside the image; the repo layout is replicated so
-# the [tool.uv.sources] path to the shared clients package resolves the same way
-# it does on the host. This image is built with the repo root as the build context.
+# Repo layout replicated under /repo, built from the repo root (docs/development.md)
 ENV SVC_DIR=/repo/sec-feature-pipeline/scraper
 # Add src to the PYTHONPATH
 ENV PYTHONPATH=${SVC_DIR}
@@ -19,8 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the shared clients package (its path source is resolved relative to the
-# service pyproject) and the service's dependency manifests first, for caching.
+# Clients package and dependency manifests first, so the dependency layer is cached
 COPY packages/secform4strategy-clients /repo/packages/secform4strategy-clients
 COPY sec-feature-pipeline/scraper/pyproject.toml sec-feature-pipeline/scraper/uv.lock ${SVC_DIR}/
 

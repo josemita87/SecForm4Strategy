@@ -1,6 +1,4 @@
-# Build context is the repo root for services using the shared clients package.
-# Never copy host build artifacts into images — they clobber the venv that
-# `uv sync` builds inside the image and break `uv run --no-sync` at runtime.
+# Host build artifacts stay out of the repo-root build context (docs/development.md)
 **/.venv/
 .venv/
 **/__pycache__/

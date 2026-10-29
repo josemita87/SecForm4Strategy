@@ -1,6 +1,4 @@
-# Feature-group catalog for the target microservice.
-# `name` defaults to the reference key; `version` is injected at load time from
-# config.feature_group_version. See secform4strategy_clients.feature_store.load_feature_group_catalog.
+# Feature-group catalog (format: docs/configuration.md)
 p:
   primary_key: [ticker, date]
   event_time: date

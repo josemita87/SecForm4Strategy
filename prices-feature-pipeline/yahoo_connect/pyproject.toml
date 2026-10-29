@@ -7,8 +7,7 @@ authors = [{ name = "Josep Cubedo Macian", email = "136491450+josemita87@users.n
 # Compatible range for hopsworks and hsfs
 requires-python = ">=3.10,<3.12"
 dependencies = [
-    # Hopsworks feature store and the yfinance market-data client both come from
-    # the shared clients package.
+    # Feature store and market data come from the shared clients package.
     "secform4strategy-clients[feature-store,market-data]",
     "pydantic-settings>=2.6.1,<3.0.0",
     "pandas>=2.1,<3.0.0",

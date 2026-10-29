@@ -32,12 +32,12 @@ if __name__ == '__main__':
         broker=AlpacaClient(config.alpaca_api_key, config.alpaca_api_secret, config.alpaca_base_url),
         model_store=LocalModelStore(config.model_path),
     )
-    model = pipeline.load_model()
+    model, features = pipeline.load_model()
 
     # The CSV source stands in for the feature store when it is disabled
     data = pipeline.fetch_new_trades() if config.hopsworks_connect else pd.read_csv(config.csv_path)
 
-    predictions = pipeline.generate_predictions(model, data.drop(columns=config.columns_to_drop))
+    predictions = pipeline.generate_predictions(model, features, data.drop(columns=config.columns_to_drop))
     pipeline.execute_trades(
         predictions,
         config.prediction_threshold,

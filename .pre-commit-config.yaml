@@ -1,5 +1,4 @@
-# Install: uv run pre-commit install
-# Run manually: uv run pre-commit run --all-files
+# Install: uv run pre-commit install (docs/development.md)
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

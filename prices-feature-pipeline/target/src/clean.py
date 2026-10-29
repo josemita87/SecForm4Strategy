@@ -19,7 +19,7 @@ def get_unique_tickers(df: pd.DataFrame) -> list[str]:
     Returns:
         A list of unique tickers.
     """
-    return df['ticker'].unique().tolist()
+    return df['ticker'].drop_duplicates().tolist()
 
 
 def data_cleaning(data: pd.DataFrame, required: list[str]) -> pd.DataFrame:

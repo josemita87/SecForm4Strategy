@@ -1,7 +1,4 @@
-# Per-column aggregation policy for collapsing same-ticker, same-day transactions
-# into one daily row (see computations.data_aggregation). Values are pandas
-# aggregation names, except the 'mode_first' token which the config resolves to
-# `lambda x: x.mode()[0]` (most frequent value, first on ties).
+# Service spec (fields: docs/configuration.md)
 agg_dict:
   company_cik: first
   key: first

@@ -1,7 +1,4 @@
-# Feature-group catalog for the inference microservice.
-# The scorer reads the enriched inference output (bir4) written by the target service.
-# `name` defaults to the reference key; `version` is injected at load time from
-# config.feature_group_version. See secform4strategy_clients.feature_store.load_feature_group_catalog.
+# Feature-group catalog (format: docs/configuration.md)
 bir4:
   primary_key: [key]
   event_time: date

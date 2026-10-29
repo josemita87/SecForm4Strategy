@@ -43,8 +43,7 @@ def compute_target(transactions: pd.DataFrame, prices: pd.DataFrame, period: int
     Returns:
         A DataFrame with computed ``pct_change`` and value columns.
     """
-    # Homogenize to naive UTC datetimes so both frames share one datetime type.
-    # tz_localize(None) already yields datetime64[ns], so no astype is needed.
+    # Naive UTC on both sides, so the as-of joins compare one datetime type
     transactions['date'] = pd.to_datetime(transactions['date']).dt.tz_convert('UTC').dt.tz_localize(None)
     prices['date'] = pd.to_datetime(prices['date']).dt.tz_convert('UTC').dt.tz_localize(None)
 
@@ -107,19 +106,30 @@ def compute_RT4(df: pd.DataFrame, timedelta: int) -> pd.DataFrame:
     Returns:
         The DataFrame sorted by ticker and time, with an added ``avg_target_expanding`` column.
     """
-    delta_ms = timedelta * 24 * 60 * 60 * 1000
-
-    def known_target_mean(group: pd.DataFrame) -> pd.Series:
-        ts, pct = group['timestamp'].to_numpy(np.int64), group['pct_change'].to_numpy(np.float64)
-        # Number of this ticker's rows whose target had materialized at each row's time
-        known = np.searchsorted(ts, ts - delta_ms, side='right')
-        sums, counts = (np.concatenate([[0], np.cumsum(a)]) for a in (np.nan_to_num(pct), ~np.isnan(pct)))
-        return pd.Series(sums[known] / np.where(counts[known] > 0, counts[known], np.nan), index=group.index)
-
-    # The search is per ticker: timestamps are only sorted within each ticker's block
     df = df.sort_values(['ticker', 'timestamp'])
-    df['avg_target_expanding'] = df.groupby('ticker', group_keys=False)[['timestamp', 'pct_change']].apply(
-        known_target_mean
+    if df.empty:
+        return df.assign(avg_target_expanding=np.nan)
+
+    delta_ms = timedelta * 24 * 60 * 60 * 1000
+    tickers = df['ticker'].to_numpy()
+    ts = df['timestamp'].to_numpy(np.int64)
+    pct = df['pct_change'].to_numpy(np.float64)
+
+    # Each ticker is one contiguous block; `start` is the first row of each row's block
+    new_block = np.r_[True, tickers[1:] != tickers[:-1]]
+    block = np.cumsum(new_block) - 1
+    start = np.flatnonzero(new_block)[block]
+
+    # Per-block key ranges never overlap, so one search finds every row's known-rows boundary
+    span = int(ts.max() - ts.min()) + delta_ms + 1
+    key = block * span + (ts - ts.min() + delta_ms)
+    end = np.searchsorted(key, key - delta_ms, side='right')
+
+    # Mean of the known rows' non-NaN targets, from prefix sums differenced within the block
+    sums, counts = (np.r_[0, np.cumsum(a)] for a in (np.nan_to_num(pct), ~np.isnan(pct)))
+    known = counts[end] - counts[start]
+    df['avg_target_expanding'] = np.divide(
+        sums[end] - sums[start], known, out=np.full(len(df), np.nan), where=known > 0
     )
     return df
 
