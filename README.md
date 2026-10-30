@@ -56,7 +56,7 @@ Two pipelines feed one feature store; two "systems" (training and inference) run
 
 ### The data contract
 
-Every feature group shares one contract (`primary_key=['key']`, `event_time='date'`), so services join cleanly without bespoke glue. The catalog (`feature_groups.yaml` per service):
+Every feature group shares one contract (`primary_key=['key']`, `event_time='date'`), so services join cleanly without bespoke glue. The catalog (the `feature_groups` section of each service's `spec.yaml`):
 
 | Group | Meaning | Produced by | Consumed by |
 | --- | --- | --- | --- |
@@ -134,14 +134,13 @@ Each service is its own `uv` project (own `pyproject.toml` + `uv.lock`) and Dock
 
 - Docker + Docker Compose
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
-- A Hopsworks API key, and (for the inference system) Alpaca paper-trading credentials
+- A contact for SEC's fair-access policy, and (for the inference system) Alpaca paper-trading credentials
 
 ### Secrets
 
-Secrets are **never** committed. Each stack reads a git-ignored `.credentials.env` (next to the Compose file) containing, as needed:
+Secrets are **never** committed, and services hold them as `SecretStr`, unwrapped only where an SDK needs them. The SEC pipeline reads `SEC_USER_AGENT` (a real name and contact email, e.g. `export SEC_USER_AGENT="Jane Doe jane@example.com"`) from the host environment; Compose refuses to start without it. Each stack reads a git-ignored `.credentials.env` (next to the Compose file) containing, as needed:
 
 ```dotenv
-HOPSWORKS_API_KEY=...
 ALPACA_API_KEY=...
 ALPACA_API_SECRET=...
 ALPACA_BASE_URL=https://paper-api.alpaca.markets

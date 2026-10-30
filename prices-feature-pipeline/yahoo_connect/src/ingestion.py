@@ -6,13 +6,16 @@ feature group.
 """
 
 import logging
+from collections.abc import Iterable
+from itertools import batched
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
+from pyiceberg.exceptions import NoSuchTableError
 from tqdm import tqdm
 
-from src.constants import FeatureGroup
+from src.constants import Column, FeatureGroup
 
 if TYPE_CHECKING:
     from secform4strategy_clients.ports import FeatureStore, Filters, MarketData
@@ -38,7 +41,7 @@ class PriceIngestor:
         self.feature_store = feature_store
         self.market_data = market_data
 
-    def fetch_new_prices(self, prices: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:
+    def fetch_new_prices(self, prices: pd.DataFrame, tickers: Iterable[str]) -> pd.DataFrame:
         """Fetch close history for ``tickers``, resuming each from its latest stored date.
 
         Args:
@@ -49,7 +52,7 @@ class PriceIngestor:
             New daily open/close rows, tagged by ticker.
         """
         # A ticker with no valid latest date gets no start, so it fetches full history
-        latest = pd.Series() if prices.empty else prices.groupby('ticker')['date'].max().dropna()
+        latest = pd.Series() if prices.empty else prices.groupby(Column.TICKER)[Column.DATE].max().dropna()
         starts = {str(ticker): pd.to_datetime(date) + pd.Timedelta(days=1) for ticker, date in latest.items()}
         return self.market_data.price_histories(tickers, starts=starts)
 
@@ -61,16 +64,14 @@ class PriceIngestor:
             where: Filter applied when reading ``source``.
             batch_size: Tickers fetched and pushed per batch.
         """
-        tickers = np.unique(self.feature_store.read(source, where=where)['ticker'].tolist())
+        tickers = np.unique(self.feature_store.read(source, where=where)[Column.TICKER]).tolist()
         logger.debug(f'{len(tickers)} unique tickers')
 
-        for i in tqdm(range(0, len(tickers), batch_size), desc='Processing tickers', unit='batch'):
-            batch = tickers[i : i + batch_size].tolist()
+        for batch in tqdm(batched(tickers, batch_size, strict=False), desc='Processing tickers', unit='batch'):
             try:
-                current = self.feature_store.read(FeatureGroup.PRICES, where={'ticker': batch})
-            except Exception as e:
-                # Recorded degradation: without stored prices every ticker fetches full history
-                logger.warning(f'No stored prices for batch {i // batch_size} ({e}); fetching full history')
+                current = self.feature_store.read(FeatureGroup.PRICES, where={Column.TICKER: batch})
+            except NoSuchTableError:
+                # The first run creates the price table, so every ticker fetches its full history
                 current = pd.DataFrame()
             self.feature_store.push(FeatureGroup.PRICES, self.fetch_new_prices(current, batch))
 

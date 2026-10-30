@@ -6,15 +6,17 @@ from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-import helper
 import model
 import pandas as pd
 import simulation
 import sklearn
 from config import config
+from constants import Column, FeatureGroup
 from pyiceberg.catalog import load_catalog
-from secform4strategy_clients.feature_store import IcebergFeatureStore, load_feature_group_catalog
+from secform4strategy_clients.feature_groups import load_feature_group_catalog
+from secform4strategy_clients.feature_store import IcebergFeatureStore
 from secform4strategy_clients.model_store import LocalModelStore
+from secform4strategy_clients.ports import ModelMetadata
 
 # Configure structured logging (the handler needs the log directory to exist)
 Path(config.log_path).parent.mkdir(parents=True, exist_ok=True)
@@ -33,16 +35,17 @@ if __name__ == '__main__':
     feature_store = IcebergFeatureStore(
         load_catalog('default'),
         config.feature_store_namespace,
-        load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version),
+        load_feature_group_catalog(Path(__file__).parent / 'spec.yaml', config.feature_group_version),
     )
-    data = helper.load_and_preprocess_data(feature_store, config.columns_to_drop)
+    # pandas reads a tuple as one label, so the columns go as a list
+    data = feature_store.read(FeatureGroup.RT4).drop(columns=list(config.columns_to_drop), errors='ignore')
     logger.info(f'Loaded data with shape: {data.shape}')
 
     # Chronological split, purged: training keeps only labels already known when the test period starts
-    data = data.sort_values('timestamp')
-    test_start = data['timestamp'].iloc[int(len(data) * (1 - config.train_test_ratio))]
-    train, test = data[data['label_known_at'] < test_start], data[data['timestamp'] >= test_start]
-    features = [col for col in data.columns if col not in [config.target_feature, *config.identification_features]]
+    data = data.sort_values(Column.TIMESTAMP)
+    test_start = data[Column.TIMESTAMP].iloc[int(len(data) * (1 - config.train_test_ratio))]
+    train, test = data[data[Column.LABEL_KNOWN_AT] < test_start], data[data[Column.TIMESTAMP] >= test_start]
+    features = [col for col in data.columns if col not in (config.target_feature, *config.identification_features)]
     X_train, y_train = train.drop(columns=[config.target_feature]), train[config.target_feature]
     X_test, y_test = test.drop(columns=[config.target_feature]), test[config.target_feature]
     logger.info(f'Train {len(train)} rows, test {len(test)} rows from {datetime.fromtimestamp(test_start / 1000, UTC)}')
@@ -62,8 +65,8 @@ if __name__ == '__main__':
             'zero': pd.Series(0.0, index=y_test.index),
             'train_mean': pd.Series(y_train.mean(), index=y_test.index),
             **(
-                {'ticker_history': X_test['avg_target_expanding'].fillna(y_train.mean())}
-                if 'avg_target_expanding' in X_test
+                {'ticker_history': X_test[Column.AVG_TARGET_EXPANDING].fillna(y_train.mean())}
+                if Column.AVG_TARGET_EXPANDING in X_test
                 else {}
             ),
         },
@@ -71,12 +74,8 @@ if __name__ == '__main__':
     for name, scores in metrics.items():
         logger.info(f'{name}: {scores}')
 
-    # Simulate shorting the predicted negative returns and plot them against the actual ones
-    y_pred_negative = y_pred[y_pred < 0]
-    capital_invested, final_capital, y_negative, y_pred_negative = simulation.run_simulation(
-        y_test.loc[y_pred_negative.index], y_pred_negative, threshold=0, investment=100
-    )
-    simulation.plot_predictions(y_negative, y_pred_negative, final_capital, capital_invested, config.plot_path)
+    shorted = y_pred < 0
+    simulation.plot_shorts(y_test[shorted], y_pred[shorted], metrics['model'], config.plot_path)
 
     # Save the fitted pipeline with the facts needed to reproduce and audit it
     try:
@@ -88,19 +87,18 @@ if __name__ == '__main__':
         git_sha = 'unknown'
     LocalModelStore(config.model_path).save(
         pipeline,
-        {
-            'trained_at': datetime.now(UTC).isoformat(),
-            'git_sha': git_sha,
-            'sklearn_version': sklearn.__version__,
-            'feature_group_version': config.feature_group_version,
-            'target': config.target_feature,
-            'features': features,
-            'model_params': params,
-            'train_rows': len(X_train),
-            'test_rows': len(X_test),
-            'test_start': datetime.fromtimestamp(test_start / 1000, UTC).isoformat(),
-            'metrics': metrics,
-            'simulation': {'capital_invested': capital_invested, 'gains': final_capital},
-        },
+        ModelMetadata(
+            trained_at=datetime.now(UTC),
+            git_sha=git_sha,
+            sklearn_version=sklearn.__version__,
+            feature_group_version=config.feature_group_version,
+            target=config.target_feature,
+            features=tuple(features),
+            model_params=params,
+            train_rows=len(X_train),
+            test_rows=len(X_test),
+            test_start=datetime.fromtimestamp(test_start / 1000, UTC),
+            metrics=metrics,
+        ),
     )
     logger.info(f'Model saved at: {config.model_path}')

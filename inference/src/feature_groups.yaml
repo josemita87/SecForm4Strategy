@@ -1,4 +1,0 @@
-# Feature-group catalog (format: docs/configuration.md)
-bir4:
-  primary_key: [key]
-  event_time: date

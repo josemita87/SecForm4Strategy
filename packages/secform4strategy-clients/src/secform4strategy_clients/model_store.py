@@ -4,13 +4,15 @@ The model is a joblib file and its metadata a JSON file beside it
 (``model.joblib`` + ``model.meta.json``), so the pair moves and versions together.
 """
 
-import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any
 
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-    from typing import Any
+import joblib
+from pydantic import TypeAdapter
+
+from secform4strategy_clients.ports import ModelMetadata
+
+METADATA = TypeAdapter(ModelMetadata)
 
 
 class LocalModelStore:
@@ -21,35 +23,30 @@ class LocalModelStore:
         meta_path: The metadata file beside it.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: Path) -> None:
         """Bind the store to a model path.
 
         Args:
             path: Model file path; metadata is written next to it as ``<stem>.meta.json``.
         """
-        self.path = Path(path)
-        self.meta_path = self.path.with_suffix('.meta.json')
+        self.path = path
+        self.meta_path = path.with_suffix('.meta.json')
 
-    def save(self, model: object, metadata: Mapping[str, Any]) -> None:
+    def save(self, model: object, metadata: ModelMetadata) -> None:
         """Write the model and its metadata, creating the directory if needed.
 
         Args:
             model: The fitted model to persist.
-            metadata: JSON-serialisable facts about the model (non-JSON values are stringified).
+            metadata: The facts about the model.
         """
-        # Lazy import so the dependency is only required when a model is stored.
-        import joblib
-
         self.path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(model, self.path)
-        self.meta_path.write_text(json.dumps(metadata, indent=2, default=str))
+        self.meta_path.write_bytes(METADATA.dump_json(metadata, indent=2))
 
-    def load(self) -> tuple[Any, dict[str, Any]]:
-        """Read the model and its metadata.
+    def load(self) -> tuple[Any, ModelMetadata]:
+        """Read the model and its validated metadata.
 
         Returns:
-            The model and its metadata dict.
+            The model and its metadata.
         """
-        import joblib
-
-        return joblib.load(self.path), json.loads(self.meta_path.read_text())
+        return joblib.load(self.path), METADATA.validate_json(self.meta_path.read_bytes())

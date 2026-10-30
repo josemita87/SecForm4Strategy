@@ -5,6 +5,18 @@ this module holds no configuration and no trading-strategy logic.
 """
 
 import logging
+from typing import TYPE_CHECKING
+
+from alpaca.trading.client import TradingClient
+from alpaca.trading.enums import OrderSide
+from alpaca.trading.enums import OrderType as AlpacaOrderType
+from alpaca.trading.enums import TimeInForce as AlpacaTimeInForce
+from alpaca.trading.requests import OrderRequest
+
+if TYPE_CHECKING:
+    from pydantic import SecretStr
+
+    from secform4strategy_clients.ports import OrderType, Side, TimeInForce
 
 logger = logging.getLogger(__name__)
 
@@ -16,54 +28,45 @@ class AlpacaClient:
         api: The authenticated Alpaca trading client.
     """
 
-    def __init__(self, api_key: str, api_secret: str, base_url: str) -> None:
-        """Initialize the Alpaca trading client from explicit credentials.
+    def __init__(self, api_key: SecretStr, api_secret: SecretStr, base_url: str) -> None:
+        """Initialize the Alpaca trading client; the secrets are unwrapped only here, for the SDK.
 
         Args:
             api_key: Alpaca API key.
             api_secret: Alpaca API secret.
             base_url: Alpaca trading base URL; a paper URL selects the paper account.
         """
-        # Lazy import so the SDK is only required when this client is built.
-        from alpaca.trading.client import TradingClient
-
-        self.api = TradingClient(api_key, api_secret, paper='paper' in base_url, url_override=base_url)
+        self.api = TradingClient(
+            api_key.get_secret_value(),
+            api_secret.get_secret_value(),
+            paper='paper' in base_url,
+            url_override=base_url,
+        )
         logger.info('Initialized Alpaca API')
 
-    def get_account(self) -> object:
-        """Retrieve account information from Alpaca.
-
-        Returns:
-            The Alpaca account object.
-        """
-        account: object = self.api.get_account()
-        logger.info(f'Account: {account}')
-        return account
-
-    def place_order(self, symbol: str, qty: str, side: str, order_type: str, time_in_force: str) -> object | None:
+    def place_order(
+        self, symbol: str, qty: float, side: Side, order_type: OrderType, time_in_force: TimeInForce
+    ) -> object | None:
         """Submit an order to Alpaca.
 
         Args:
             symbol: Ticker symbol to trade.
             qty: Number of shares to trade.
-            side: Order side, e.g. ``"buy"`` or ``"sell"``.
-            order_type: Order type, e.g. ``"market"``.
-            time_in_force: Time-in-force policy, e.g. ``"gtc"``.
+            side: Order side.
+            order_type: Order type.
+            time_in_force: Time-in-force policy; ``opg``/``cls`` join the opening or closing auction.
 
         Returns:
             The submitted order object, or ``None`` if submission failed.
         """
-        from alpaca.trading.enums import OrderSide, OrderType, TimeInForce
-        from alpaca.trading.requests import OrderRequest
-
         try:
             order: object = self.api.submit_order(
                 OrderRequest(
                     symbol=symbol,
-                    qty=float(qty),
+                    qty=qty,
                     side=OrderSide(side),
-                    type=OrderType(order_type),
-                    time_in_force=TimeInForce(time_in_force),
+                    type=AlpacaOrderType(order_type),
+                    time_in_force=AlpacaTimeInForce(time_in_force),
                 )
             )
         except Exception as e:

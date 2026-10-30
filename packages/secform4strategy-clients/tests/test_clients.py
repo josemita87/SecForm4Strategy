@@ -1,15 +1,25 @@
 """Unit tests for the pure infrastructure clients.
 
-Each SDK is replaced with a fake injected into ``sys.modules`` so the tests run
-without the real (heavy) dependencies. The tests assert that caller-supplied
-parameters are threaded straight through to the SDK and that the clients carry
-no domain logic of their own.
+Each SDK is replaced with a fake injected into ``sys.modules`` and the client module
+is then imported afresh, so it binds the fake at module level. The tests assert that
+caller-supplied parameters are threaded straight through to the SDK and that the
+clients carry no domain logic of their own.
 """
 
+import importlib
 import sys
 import types
+from datetime import date
 
+import pandas as pd
 import pytest
+from pydantic import SecretStr
+
+
+def _fresh(monkeypatch, module):
+    """Import ``secform4strategy_clients.<module>`` anew, against the SDK fakes installed so far."""
+    monkeypatch.delitem(sys.modules, f'secform4strategy_clients.{module}', raising=False)
+    return importlib.import_module(f'secform4strategy_clients.{module}')
 
 
 # --- AlpacaClient ---
@@ -36,9 +46,9 @@ def test_alpaca_threads_credentials_and_places_order(monkeypatch):
     _module('alpaca.trading.enums', OrderSide=str, OrderType=str, TimeInForce=str)
     _module('alpaca.trading.requests', OrderRequest=lambda **fields: fields)
 
-    from secform4strategy_clients.broker import AlpacaClient
-
-    client = AlpacaClient(api_key='k', api_secret='s', base_url='https://paper-api.alpaca.markets')
+    client = _fresh(monkeypatch, 'broker').AlpacaClient(
+        api_key=SecretStr('k'), api_secret=SecretStr('s'), base_url='https://paper-api.alpaca.markets'
+    )
     assert client_calls == {
         'api_key': 'k',
         'secret_key': 's',
@@ -46,7 +56,7 @@ def test_alpaca_threads_credentials_and_places_order(monkeypatch):
         'url_override': 'https://paper-api.alpaca.markets',
     }
 
-    assert client.place_order('AAPL', '1', 'sell', 'market', 'gtc') == 'order'
+    assert client.place_order('AAPL', 1, 'sell', 'market', 'gtc') == 'order'
     assert orders == [{'symbol': 'AAPL', 'qty': 1.0, 'side': 'sell', 'type': 'market', 'time_in_force': 'gtc'}]
 
 
@@ -153,7 +163,7 @@ def test_kafka_returns_raw_dicts_without_parsing(monkeypatch):
     ]
     holder = _install_fake_quixstreams(monkeypatch, msgs)
 
-    from secform4strategy_clients.messaging import KafkaClient
+    KafkaClient = _fresh(monkeypatch, 'messaging').KafkaClient
 
     consumer = KafkaClient(broker_address='b:9092', consumer_group='g', auto_offset_reset='earliest')
     assert holder['app'].kwargs['broker_address'] == 'b:9092'
@@ -171,7 +181,7 @@ def test_kafka_returns_full_buffer_not_finished(monkeypatch):
     msgs = [_FakeMessage(b'{"a": 1}'), _FakeMessage(b'{"a": 2}'), _FakeMessage(b'{"a": 3}')]
     _install_fake_quixstreams(monkeypatch, msgs)
 
-    from secform4strategy_clients.messaging import KafkaClient
+    KafkaClient = _fresh(monkeypatch, 'messaging').KafkaClient
 
     consumer = KafkaClient(broker_address='b', consumer_group='g', auto_offset_reset='earliest')
     finished, records = consumer.consume_batch('td', buffer_size=2, timeout=1)
@@ -182,7 +192,7 @@ def test_kafka_returns_full_buffer_not_finished(monkeypatch):
 def test_kafka_producer_serializes_and_flushes(monkeypatch):
     holder = _install_fake_quixstreams(monkeypatch, [])
 
-    from secform4strategy_clients.messaging import KafkaClient
+    KafkaClient = _fresh(monkeypatch, 'messaging').KafkaClient
 
     client = KafkaClient(broker_address='b:9092')
     client.produce(
@@ -211,7 +221,7 @@ def test_kafka_consume_with_offsets_and_commit(monkeypatch):
     ck.TopicPartition = _TopicPartition
     monkeypatch.setitem(sys.modules, 'confluent_kafka', ck)
 
-    from secform4strategy_clients.messaging import KafkaClient
+    KafkaClient = _fresh(monkeypatch, 'messaging').KafkaClient
 
     client = KafkaClient(broker_address='b', consumer_group='g', auto_offset_reset='earliest')
     batch = client.consume_with_offsets('td', buffer_size=10, timeout=1)
@@ -223,28 +233,7 @@ def test_kafka_consume_with_offsets_and_commit(monkeypatch):
 
 
 # --- MarketDataClient ---
-def test_market_data_reads_info_fields(monkeypatch):
-    class _FakeTicker:
-        def __init__(self, symbol):
-            self.info = {'marketCap': 123, 'exchange': 'NMS'} if symbol == 'AAPL' else {}
-
-    fake = types.ModuleType('yfinance')
-    fake.Ticker = _FakeTicker
-    monkeypatch.setitem(sys.modules, 'yfinance', fake)
-
-    from secform4strategy_clients.market_data import MarketDataClient
-
-    client = MarketDataClient()
-    assert client.market_cap('AAPL') == 123
-    assert client.exchange('AAPL') == 'NMS'
-    # Missing keys return None rather than raising.
-    assert client.market_cap('ZZZ') is None
-    assert client.exchange('ZZZ') is None
-
-
 def test_market_data_daily_bars_returns_tidy_frame(monkeypatch):
-    import pandas as pd
-
     captured = {}
 
     def _download(symbol, **kwargs):
@@ -256,11 +245,11 @@ def test_market_data_daily_bars_returns_tidy_frame(monkeypatch):
     fake.download = _download
     monkeypatch.setitem(sys.modules, 'yfinance', fake)
 
-    from secform4strategy_clients.market_data import MarketDataClient
+    MarketDataClient = _fresh(monkeypatch, 'market_data').MarketDataClient
 
-    out = MarketDataClient().daily_bars('AAPL', start='2024-01-01')
+    out = MarketDataClient().daily_bars('AAPL', start=date(2024, 1, 1))
     # Caller's symbol and start thread straight through to yfinance.download, with flat columns.
-    assert captured == {'symbol': 'AAPL', 'start': '2024-01-01', 'auto_adjust': True, 'multi_level_index': False}
+    assert captured == {'symbol': 'AAPL', 'start': date(2024, 1, 1), 'auto_adjust': True, 'multi_level_index': False}
     # Without a start, the full history is requested rather than yfinance's one-month default.
     captured.clear()
     MarketDataClient().daily_bars('AAPL')
@@ -272,8 +261,6 @@ def test_market_data_daily_bars_returns_tidy_frame(monkeypatch):
 
 
 def test_market_data_price_histories_tags_skips_and_downcasts(monkeypatch):
-    import pandas as pd
-
     starts_seen = {}
 
     def _download(symbol, start=None, **kwargs):
@@ -287,12 +274,12 @@ def test_market_data_price_histories_tags_skips_and_downcasts(monkeypatch):
     fake.download = _download
     monkeypatch.setitem(sys.modules, 'yfinance', fake)
 
-    from secform4strategy_clients.market_data import MarketDataClient
+    MarketDataClient = _fresh(monkeypatch, 'market_data').MarketDataClient
 
-    out = MarketDataClient().price_histories(['AAPL', 'BAD', 'MSFT'], starts={'AAPL': '2024-01-01'})
+    out = MarketDataClient().price_histories(['AAPL', 'BAD', 'MSFT'], starts={'AAPL': date(2024, 1, 1)})
 
     # Per-symbol starts thread through; symbols absent from the mapping fetch full history.
-    assert starts_seen == {'AAPL': '2024-01-01', 'BAD': None, 'MSFT': None}
+    assert starts_seen == {'AAPL': date(2024, 1, 1), 'BAD': None, 'MSFT': None}
     # The failed symbol is skipped, not fatal; survivors are tagged by ticker.
     assert set(out['ticker']) == {'AAPL', 'MSFT'}
     # Storage-friendly dtypes and (ticker, date) ordering.
@@ -311,7 +298,7 @@ def test_market_data_price_histories_empty_when_all_fail(monkeypatch):
     fake.download = _download
     monkeypatch.setitem(sys.modules, 'yfinance', fake)
 
-    from secform4strategy_clients.market_data import MarketDataClient
+    MarketDataClient = _fresh(monkeypatch, 'market_data').MarketDataClient
 
     out = MarketDataClient().price_histories(['BAD'])
     assert list(out.columns) == ['date', 'open', 'close', 'ticker']
@@ -320,25 +307,27 @@ def test_market_data_price_histories_empty_when_all_fail(monkeypatch):
 
 # --- load_feature_group_catalog ---
 def test_load_feature_group_catalog_injects_version_and_defaults_name(tmp_path):
-    from secform4strategy_clients.feature_store import load_feature_group_catalog
+    from secform4strategy_clients.feature_groups import FeatureGroupSpec, load_feature_group_catalog
 
-    spec = tmp_path / 'feature_groups.yaml'
+    spec = tmp_path / 'spec.yaml'
     spec.write_text(
-        'bi4:\n'
-        '  primary_key: [key]\n'
-        '  event_time: date\n'
-        'custom:\n'
-        '  name: override_name\n'
-        '  primary_key: [id]\n'
-        '  event_time: ts\n'
+        'feature_groups:\n'
+        '  bi4:\n'
+        '    primary_key: [key]\n'
+        '    event_time: date\n'
+        '  custom:\n'
+        '    name: override_name\n'
+        '    primary_key: [id]\n'
+        '    event_time: ts\n'
+        'other_section: 1\n'
     )
 
     catalog = load_feature_group_catalog(spec, version=3)
     # name defaults to the reference key; version is injected from the argument.
-    assert catalog['bi4'] == {'name': 'bi4', 'version': 3, 'primary_key': ['key'], 'event_time': 'date'}
+    assert catalog['bi4'] == FeatureGroupSpec(name='bi4', version=3, primary_key=('key',), event_time='date')
     # an explicit name in the template is preserved.
-    assert catalog['custom']['name'] == 'override_name'
-    assert catalog['custom']['version'] == 3
+    assert catalog['custom'].name == 'override_name'
+    assert catalog['custom'].version == 3
 
 
 if __name__ == '__main__':

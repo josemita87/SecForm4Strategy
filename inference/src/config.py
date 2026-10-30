@@ -1,34 +1,23 @@
 """Application configuration loaded from environment variables and .env files."""
 
-from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-import yaml
 from dotenv import load_dotenv
 from paths import CSV_PATH, LOG_PATH, MODEL_PATH
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings
-
-if TYPE_CHECKING:
-    from typing import Any
+from secform4strategy_clients.ports import OrderType, Side, TimeInForce
 
 load_dotenv('.env')
 load_dotenv('.credentials.env')
 
 
-@lru_cache
-def _specs() -> dict[str, Any]:
-    """Load the static feature-selection spec (column lists) from specs.yaml."""
-    return dict(yaml.safe_load((Path(__file__).parent / 'specs.yaml').read_text()))
-
-
 class Config(BaseSettings):
-    """Settings for Alpaca, the feature store, feature selection, trading and logging."""
+    """Settings for Alpaca, the feature store, trading and logging."""
 
     # Alpaca API credentials
-    alpaca_api_key: str = Field(..., json_schema_extra={'env': 'ALPACA_API_KEY'})
-    alpaca_api_secret: str = Field(..., json_schema_extra={'env': 'ALPACA_API_SECRET'})
+    alpaca_api_key: SecretStr = Field(..., json_schema_extra={'env': 'ALPACA_API_KEY'})
+    alpaca_api_secret: SecretStr = Field(..., json_schema_extra={'env': 'ALPACA_API_SECRET'})
     alpaca_base_url: str = Field(..., json_schema_extra={'env': 'ALPACA_BASE_URL'})
 
     # Iceberg feature store; the catalog itself is configured by PYICEBERG_CATALOG__DEFAULT__* (docs/configuration.md)
@@ -38,16 +27,12 @@ class Config(BaseSettings):
     use_feature_store: bool = Field(True, json_schema_extra={'env': 'USE_FEATURE_STORE'})
     csv_path: Path = Field(default=CSV_PATH, json_schema_extra={'env': 'CSV_PATH'})
 
-    # Feature Selection (column lists loaded from specs.yaml)
-    columns_to_drop: list[str] = Field(default_factory=lambda: _specs()['columns_to_drop'])
-    target_feature: str = Field(..., json_schema_extra={'env': 'TARGET_FEATURE'})
     # Trading settings
-    qty: str = Field(..., json_schema_extra={'env': 'QTY'})
-    side: str = Field('sell', json_schema_extra={'env': 'SIDE'})
-    order_type: str = Field('market', json_schema_extra={'env': 'ORDER_TYPE'})
-    time_in_force: str = Field('gtc', json_schema_extra={'env': 'TIME_IN_FORCE'})
+    qty: float = Field(..., gt=0, json_schema_extra={'env': 'QTY'})
+    side: Side = Field('sell', json_schema_extra={'env': 'SIDE'})
+    order_type: OrderType = Field('market', json_schema_extra={'env': 'ORDER_TYPE'})
+    time_in_force: TimeInForce = Field('gtc', json_schema_extra={'env': 'TIME_IN_FORCE'})
     prediction_threshold: float = Field(..., json_schema_extra={'env': 'PREDICTION_THRESHOLD'})
-    last_n_days: int = Field(..., json_schema_extra={'env': 'LAST_N_DAYS'})
 
     # Logging
     log_path: Path = Field(default=LOG_PATH, json_schema_extra={'env': 'LOG_PATH'})

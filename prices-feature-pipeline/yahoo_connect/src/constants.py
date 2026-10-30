@@ -1,6 +1,6 @@
 """Domain constants for the yahoo-connect microservice."""
 
-from enum import Enum
+from enum import Enum, StrEnum
 
 
 class FeatureGroup(str, Enum):
@@ -13,3 +13,10 @@ class FeatureGroup(str, Enum):
     PRICES = 'p'
     BT4 = 'bt4'
     BI4 = 'bi4'
+
+
+class Column(StrEnum):
+    """Columns this service reads or writes."""
+
+    TICKER = 'ticker'
+    DATE = 'date'

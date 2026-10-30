@@ -2,13 +2,10 @@
 
 import json
 from dataclasses import dataclass
-from enum import Enum
-from typing import TYPE_CHECKING
+from enum import Enum, StrEnum
+from pathlib import Path
 
 import pandas as pd
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class FeatureGroup(str, Enum):
@@ -23,6 +20,43 @@ class FeatureGroup(str, Enum):
     BI4 = 'bi4'
     RT4 = 'rt4'
     BIR4 = 'bir4'
+
+
+class Column(StrEnum):
+    """Columns this service reads, writes, or joins on."""
+
+    TICKER = 'ticker'
+    DATE = 'date'
+    TIMESTAMP = 'timestamp'
+    COMPANY_CIK = 'company_cik'
+    ACQUIRED_DISPOSED = 'acquired_disposed'
+    PRICE = 'price'
+    SHARES = 'shares'
+    REMAINING_SHARES = 'remaining_shares'
+    DIRECT_HOLDING = 'direct_holding'
+    INDIRECT_HOLDING = 'indirect_holding'
+    TX_VALUE = 'tx_value'
+    REMAINING_VALUE = 'remaining_value'
+    OPEN = 'open'
+    CLOSE = 'close'
+    MARKET_CAP = 'market_cap'
+    EXCHANGE = 'exchange'
+    SIC = 'sic'
+    SIC_GROUP = 'sic_group'
+    PCT_CHANGE = 'pct_change'
+    LABEL_KNOWN_AT = 'label_known_at'
+    AVG_TARGET_EXPANDING = 'avg_target_expanding'
+
+    # Join keys and intermediates, never stored
+    SNAPSHOT = 'snapshot'
+    LAST_CLOSE = 'last_close'
+    CLOSED_AT = 'closed_at'
+    ENTRY_DAY = 'entry_day'
+    ENTRY_PRICE = 'entry_price'
+    PRINTS_AT = 'prints_at'
+    EXIT_DUE = 'exit_due'
+    EXIT_DATE = 'exit_date'
+    EXIT_PRICE = 'exit_price'
 
 
 class Direction(str, Enum):
@@ -65,10 +99,10 @@ class ReferenceData:
         return cls(
             market_caps=pd.DataFrame(
                 {
-                    'ticker': caps['ticker'].astype(str),
-                    'snapshot': pd.to_datetime(caps['fbd']),
-                    'market_cap': caps['marketcap'],
+                    Column.TICKER: caps['ticker'].astype(str),
+                    Column.SNAPSHOT: pd.to_datetime(caps['fbd']),
+                    Column.MARKET_CAP: caps['marketcap'],
                 }
-            ).sort_values('snapshot'),
+            ).sort_values(Column.SNAPSHOT),
             companies=pd.DataFrame(json.loads(companies_path.read_text(encoding='utf-8'))),
         )

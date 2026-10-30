@@ -14,6 +14,7 @@ The edge is speed from disclosure, so disclosure time is the one timestamp every
 - [x] Look-ahead bias: `compute_target` enters at the first price after acceptance (same-day close in session, next open otherwise), not at the trade date; `compute_RT4` only averages labels whose exit close printed before acceptance; every label changes, so BT4/RT4 are rebuilt
 - [x] Backfill de-duplication: the master index lists a filing once per filer; master-index keeps one row per accession, and transaction keys use the accession (not the filer-dependent link), so backfill and live discovery agree
 - [ ] Concurrent backfill near SEC's 10 requests/s (about 250k unique Form 4s a year: ~7 h/year at the cap vs ~30-37 h/year sequential, measured at ~2 filings/s; add progress logging): Step Functions Distributed Map with capped concurrency on AWS, a small worker pool locally; start with 2-3 years of history
+- [ ] SEC errors and rate limits: a 403/429/503 reads as a filing without XML, so the scraper skips it and still commits its offset (the filing is lost); retry with backoff on non-200 and stop before the commit when retries run out. Needed by the concurrent backfill
 - [ ] Auction execution (decided: daily granularity): live orders go to the auction the backtest enters at, market-on-open (`opg`) for filings accepted outside the session, market-on-close (`cls`) for in-session ones; replaces today's `market`/`gtc` on run; verify Alpaca's submission windows for `opg`/`cls` before relying on them; lands with the live scorer
 - [ ] AWS: monthly market-cap refresh as a scheduled job (EventBridge -> Lambda on the `MarketData` port, snapshot stamped at fetch time) writing the reference table on S3/Iceberg; market-cap snapshots end 2024-08 until then
 - [ ] AWS plan: event-driven live path (EventBridge poll -> dedupe -> SQS + DLQ -> scorer Lambda -> Alpaca) beside the batch path (backfill, RT4 labelling, training)
@@ -32,12 +33,13 @@ The edge is speed from disclosure, so disclosure time is the one timestamp every
 - [x] api-enricher retired: market cap (latest monthly snapshot before acceptance), exchange, SIC and SIC group added in target (`add_company_context`) from `mcaps.parquet` and `companies.json`
 - [ ] SIC straight from the filing header (`STANDARD INDUSTRIAL CLASSIFICATION`) for companies missing from `companies.json`
 - [x] CI: GitHub Actions running `make quality-static` (blocking) and `type-check` (non-blocking); unverified until pushed
-- [ ] mypy: last 12 errors are the Kafka client (`messaging.py`); goes with the SQS migration, then `type-check` joins the pre-commit hook
+- [ ] mypy: last 6 errors are the Kafka client (`messaging.py`); goes with the SQS migration, then `type-check` joins the pre-commit hook
 - [ ] Tests (deferred by request): unit tests for `compute_RT4`, `compute_target`, kafka-to-store cleaning, Form 4 parsing, simulation and model save/load; typed fakes per port with mypy conformance lines
 - [ ] Inference coverage: `fetch_new_trades` drops BIR4 rows with any missing value (e2e: 317 of 573 kept), although the model handles missing values; decide which columns a scored row must have
 - [ ] Feature store rebuild: no Hopsworks credentials are available, so BT4/BI4/RT4/BIR4 are rebuilt (with the new labels and dtypes) on the S3/Iceberg store of the AWS migration, not on Hopsworks
 - [ ] alpaca-py: smoke-test the broker adapter against the paper account (replaced alpaca-trade-api for Python 3.14)
-- [ ] Scraper `_holdings` (strategy decision, deferred): holdings are set only when both direct and indirect are present; kept as is for now
+- [ ] Scraper holdings (`parser._holdings`, strategy decision, deferred): holdings are set only when both direct and indirect are present; kept as is for now
+- [x] Feature-group v2: transaction key = accession + table + position (the old accession + remaining shares + derivative key collided, ~1.5% of transactions overwritten); share and holding columns float64 (were int32/int64: truncated fractional shares, could overflow)
 - [ ] AWS migration: branch from `master` once the items above land
 
 ## 4. Python 3.15 (blocked)
@@ -45,7 +47,6 @@ The edge is speed from disclosure, so disclosure time is the one timestamp every
 3.14 is done everywhere. 3.15 waits on Lambda GA (preview only) and on cp315 wheels: hopsworks (`<3.15`), confluent-kafka, quixstreams -> rocksdict.
 
 - [ ] Kafka/Hopsworks-free services (incl. the live path) to 3.15 after Lambda GA
-- [ ] `lazy import` (PEP 810) for the clients' SDK imports and the `TYPE_CHECKING` blocks
 - [ ] `frozendict` (PEP 814) for module constants; comprehension unpacking (PEP 798); Tachyon profiler (PEP 799) on the live path
 
 ## Done

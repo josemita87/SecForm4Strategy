@@ -9,6 +9,10 @@ dependencies = [
     # EDGAR HTTP and Kafka come from the shared clients package.
     "secform4strategy-clients[edgar,messaging]",
     "pydantic>=2.12,<3",
+    # Form 4 XML declared as models (src/form4.py)
+    "pydantic-xml>=2.17,<3",
+    # zoneinfo data for the US/Eastern acceptance time on slim images
+    "tzdata>=2024.1",
     "pydantic-settings>=2.10,<3",
     "xxhash>=3.5,<4",
 ]

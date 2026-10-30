@@ -1,143 +1,111 @@
 """SEC EDGAR HTTP client.
 
 Encapsulates how to talk to SEC EDGAR: the required ``User-Agent`` header, a
-default timeout, polite rate-limiting, and EDGAR's file formats (the quarterly
-master index, the current-filings Atom feed, the submission acceptance header).
-Service logic (keys, timestamps, publishing) stays with the caller.
+default timeout, polite rate-limiting, and EDGAR's listing formats (the quarterly
+master index, the current-filings Atom feed). Service logic (keys, timestamps,
+publishing) stays with the caller.
 """
 
-import logging
-import re
 import time
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import UTC, datetime
 from http import HTTPStatus
-from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
-if TYPE_CHECKING:
-    from requests import Response
+import httpx
 
-logger = logging.getLogger(__name__)
+from secform4strategy_clients.ports import Filing
 
-ARCHIVES_URL = 'https://www.sec.gov/Archives/'
 ATOM = {'atom': 'http://www.w3.org/2005/Atom'}
-EASTERN = ZoneInfo('America/New_York')
 
 
 class EdgarClient:
-    """Perform HTTP GETs against SEC EDGAR with the required headers.
+    """Perform HTTP GETs against SEC EDGAR over one pooled connection.
 
     Attributes:
-        headers: Request headers sent with every GET (includes the SEC User-Agent).
-        timeout: Default per-request timeout in seconds.
+        http: The HTTP client, carrying the SEC headers and default timeout.
     """
 
-    #: Current-filings Atom feed; ``owner=only`` lists ownership filings (Forms 3, 4, 5).
-    CURRENT_FILINGS_FEED = (
-        'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type={form_type}&owner=only'
-        '&start={start}&count=100&output=atom'
-    )
-
-    def __init__(
-        self,
-        user_agent: str | None = None,
-        headers: dict[str, str] | None = None,
-        timeout: int = 10,
-    ) -> None:
-        """Configure the client's headers and default timeout.
+    def __init__(self, user_agent: str, timeout: float = 10) -> None:
+        """Open the client with the SEC headers and a default timeout.
 
         Args:
-            user_agent: Value for the ``User-Agent`` header (SEC requires one).
-                Ignored if ``headers`` is given.
-            headers: Full headers dict to use verbatim; overrides ``user_agent``.
+            user_agent: ``User-Agent`` header; SEC fair access requires a real name and contact email.
             timeout: Default request timeout in seconds.
         """
-        # Lazy import so the SDK is only required when this client is built.
-        import requests
-
-        self._requests = requests
-        self.headers = (
-            dict(headers)
-            if headers is not None
-            else {
-                'Accept-Encoding': 'gzip, deflate',
-                'Host': 'www.sec.gov',
-                **({'User-Agent': user_agent} if user_agent else {}),
-            }
+        self.http = httpx.Client(
+            headers=httpx.Headers({'User-Agent': user_agent, 'Accept-Encoding': 'gzip, deflate'}),
+            timeout=httpx.Timeout(timeout),
+            follow_redirects=True,
         )
-        self.timeout = timeout
 
-    def get(self, url: str, timeout: int | None = None) -> Response:
-        """GET a URL with the configured headers.
+    def get(self, url: str) -> httpx.Response:
+        """GET a URL with the configured headers and timeout.
 
         Args:
             url: The full URL to request.
-            timeout: Optional per-request timeout override (seconds).
 
         Returns:
-            The raw ``requests.Response`` (caller reads ``.text``/``.content``/etc.).
+            The raw response; the caller checks its status.
         """
-        response: Response = self._requests.get(
-            url, headers=self.headers, timeout=self.timeout if timeout is None else timeout
-        )
-        return response
+        return self.http.get(url)
 
-    #: Fields of each master-index line, in file order.
-    MASTER_INDEX_FIELDS = ('cik', 'company', 'form_type', 'date', 'file_path')
+    def fetch_master_index(
+        self, year: int, quarter: int, form_type: str, throttle: float = 1.0
+    ) -> tuple[Filing, ...] | None:
+        """Fetch a quarterly master index and return its filings of ``form_type``.
 
-    def fetch_master_index(self, year: int, quarter: str, throttle: float = 1.0) -> list[dict[str, str]] | None:
-        """Fetch and parse an EDGAR quarterly master index.
-
-        Knows the master.idx URL pattern and the file's pipe-delimited format
-        (a preamble followed by a ``...|...`` header, then one filing per line
-        with fields ``cik|company|form_type|date|file_path``). Callers get every
-        filing as a dict of strings and apply their own form-type filtering.
+        The index is a preamble, a ``...|...`` header, then one pipe-delimited line per
+        filer of each filing (``cik|company|form_type|date|file_path``); a filing is kept
+        once per accession and dated at UTC midnight of its filing day.
 
         Args:
             year: Calendar year of the master index.
-            quarter: Quarter identifier (e.g. ``"QTR1"``).
-            throttle: Seconds to sleep after a successful fetch, to respect SEC
-                rate limits. Set to 0 to disable.
+            quarter: Quarter number, 1 to 4.
+            form_type: Form type to keep, e.g. ``'4'``.
+            throttle: Seconds to sleep after a successful fetch, to respect SEC rate limits; 0 disables it.
 
         Returns:
-            One dict per filing, or ``None`` if the request was not 200.
+            One filing per accession, or ``None`` if the request was not 200.
         """
-        response = self.get(f'https://www.sec.gov/Archives/edgar/full-index/{year}/{quarter}/master.idx')
+        response = self.get(f'https://www.sec.gov/Archives/edgar/full-index/{year}/QTR{quarter}/master.idx')
         if response.status_code != HTTPStatus.OK:
             return None
 
-        # Crop the preamble: data starts two lines after the header row.
-        lines = response.content.decode('utf-8').splitlines()
-        start_index = next((i + 2 for i, line in enumerate(lines) if '|' in line), 0)
-        # A company name may itself contain '|', so the CIK and the last three fields are split off around it
-        filings = [
-            dict(zip(self.MASTER_INDEX_FIELDS, (cik, *rest.rsplit('|', 3)), strict=True))
-            for cik, rest in (line.split('|', 1) for line in lines[start_index:] if line.strip())
-        ]
-
+        # Data starts two lines after the header row; a company name may contain '|', so split from the right
+        lines = response.text.splitlines()
+        start = next((i + 2 for i, line in enumerate(lines) if '|' in line), 0)
+        rows = (line.rsplit('|', 3)[1:] for line in lines[start:] if line.strip())
+        filings = {
+            (accession := file_path.rsplit('/', 1)[-1].removesuffix('.txt')): Filing(
+                accession, file_path, datetime.fromisoformat(filed).replace(tzinfo=UTC)
+            )
+            for form, filed, file_path in rows
+            if form == form_type
+        }
         if throttle:
             time.sleep(throttle)
-        return filings
+        return tuple(filings.values())
 
-    def fetch_current_filings(self, form_type: str, num_pages: int = 1) -> list[dict[str, str]]:
+    def fetch_current_filings(self, form_type: str, num_pages: int = 1) -> tuple[Filing, ...]:
         """Return the newest ownership filings of ``form_type`` from EDGAR's current-filings Atom feed.
 
-        The feed lists a filing once per filer (issuer and reporting owner) and matches
-        form types by prefix, so entries are de-duplicated by accession number and kept
-        only on an exact form match.
+        The feed (``owner=only``: Forms 3, 4, 5) lists a filing once per filer and matches
+        form types by prefix, so entries are kept once per accession and only on an exact
+        form match.
 
         Args:
             form_type: Form type to keep, e.g. ``'4'``.
             num_pages: Feed pages of 100 entries to read, newest first.
 
         Returns:
-            One dict per filing: ``accession``, ``file_path`` (archive path of the full
-            submission) and ``date`` (the feed's ISO timestamp for the filing).
+            One filing per accession, timestamped with the feed's ``updated`` time.
         """
-        filings: dict[str, dict[str, str]] = {}
+        filings: dict[str, Filing] = {}
         for page in range(num_pages):
-            response = self.get(self.CURRENT_FILINGS_FEED.format(form_type=form_type, start=page * 100))
+            response = self.get(
+                'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent'
+                f'&type={form_type}&owner=only&start={page * 100}&count=100&output=atom'
+            )
             response.raise_for_status()
             for entry in ET.fromstring(response.content).iterfind('atom:entry', ATOM):
                 accession = entry.findtext('atom:id', '', ATOM).rpartition('=')[2]
@@ -145,24 +113,10 @@ class EdgarClient:
                 if category is None or link is None or category.get('term') != form_type or accession in filings:
                     continue
                 # The index page sits in the filer's directory, next to the full submission
-                filer_dir = link.get('href', '').rsplit('/', 2)[0].removeprefix(ARCHIVES_URL)
-                filings[accession] = {
-                    'accession': accession,
-                    'file_path': f'{filer_dir}/{accession}.txt',
-                    'date': entry.findtext('atom:updated', '', ATOM),
-                }
-        return list(filings.values())
-
-
-def acceptance_time(document: str) -> datetime | None:
-    """Return when SEC accepted a filing, from the full submission's ``<ACCEPTANCE-DATETIME>`` header.
-
-    Args:
-        document: The full ``.txt`` submission.
-
-    Returns:
-        The timezone-aware acceptance time (EDGAR stamps it in US/Eastern), or None if absent.
-    """
-    if (match := re.search(r'<ACCEPTANCE-DATETIME>(\d{14})', document)) is None:
-        return None
-    return datetime.strptime(match.group(1), '%Y%m%d%H%M%S').replace(tzinfo=EASTERN)
+                filer_dir = link.get('href', '').rsplit('/', 2)[0].removeprefix('https://www.sec.gov/Archives/')
+                filings[accession] = Filing(
+                    accession,
+                    f'{filer_dir}/{accession}.txt',
+                    datetime.fromisoformat(entry.findtext('atom:updated', '', ATOM)),
+                )
+        return tuple(filings.values())

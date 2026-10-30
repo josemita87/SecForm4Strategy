@@ -1,22 +1,16 @@
 """Market-data client backed by yfinance.
 
-Encapsulates the yfinance-specific knowledge callers would otherwise reach into
-directly: which ``Ticker.info`` keys hold a market cap or an exchange. Callers ask
-for a domain value (``market_cap``/``exchange``) rather than driving the SDK. It
-does not catch errors — how to handle a missing value is the caller's domain.
-
-The one exception is the batch :meth:`MarketDataClient.price_histories`, where
-skipping a symbol that fails to download (delisted, renamed) is itself a
-market-data concern and the only sensible way to keep a multi-symbol pull alive.
+Hides the yfinance download call and its column layout behind tidy daily bars. The
+batch :meth:`MarketDataClient.price_histories` skips a symbol that fails to download
+(delisted, renamed), the only way to keep a multi-symbol pull alive.
 """
 
 import logging
-from typing import TYPE_CHECKING
+from collections.abc import Iterable, Mapping
+from datetime import date
 
-if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
-
-    import pandas as pd
+import pandas as pd
+import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
@@ -24,24 +18,7 @@ logger = logging.getLogger(__name__)
 class MarketDataClient:
     """Look up market-data fields for a ticker via yfinance."""
 
-    def __init__(self) -> None:
-        """Bind the yfinance module."""
-        # Lazy import so the SDK is only required when this client is built.
-        import yfinance as yf
-
-        self._yf = yf
-
-    def market_cap(self, symbol: str) -> int | None:
-        """Return the market capitalization for ``symbol`` (or None if absent)."""
-        cap: int | None = self._yf.Ticker(symbol).info.get('marketCap')
-        return cap
-
-    def exchange(self, symbol: str) -> str | None:
-        """Return the listing exchange for ``symbol`` (or None if absent)."""
-        exchange: str | None = self._yf.Ticker(symbol).info.get('exchange')
-        return exchange
-
-    def daily_bars(self, symbol: str, start: object = None) -> pd.DataFrame:
+    def daily_bars(self, symbol: str, start: date | None = None) -> pd.DataFrame:
         """Return the daily open and close history for ``symbol``.
 
         Hides the yfinance specifics (``download`` and its column layout) behind a
@@ -59,13 +36,13 @@ class MarketDataClient:
         """
         # Without a start yfinance returns only its default one-month period, so ask for all of it
         window = {'start': start} if start is not None else {'period': 'max'}
-        bars: pd.DataFrame = self._yf.download(symbol, **window, auto_adjust=True, multi_level_index=False)[
+        bars: pd.DataFrame = yf.download(symbol, **window, auto_adjust=True, multi_level_index=False)[
             ['Open', 'Close']
         ].reset_index()
         bars.columns = ['date', 'open', 'close']
         return bars
 
-    def price_histories(self, symbols: Iterable[str], starts: Mapping[str, object] | None = None) -> pd.DataFrame:
+    def price_histories(self, symbols: Iterable[str], starts: Mapping[str, date] | None = None) -> pd.DataFrame:
         """Return concatenated daily open/close history for many symbols, tagged by ticker.
 
         Best-effort: a symbol whose download fails (delisted, renamed) is logged
@@ -81,8 +58,6 @@ class MarketDataClient:
         Returns:
             A DataFrame with ``date``, ``open``, ``close`` and ``ticker`` columns.
         """
-        import pandas as pd
-
         starts = starts or {}
         frames = []
         for symbol in symbols:

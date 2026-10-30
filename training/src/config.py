@@ -2,16 +2,13 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any
 
 import yaml
 from dotenv import load_dotenv
 from paths import DATA_SOURCE_PATH, LOG_PATH, MODEL_PATH, PLOT_PATH
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-if TYPE_CHECKING:
-    from typing import Any
 
 # Load the main .env file and then the credentials.env file
 load_dotenv('.env')
@@ -20,8 +17,8 @@ load_dotenv('.credentials.env')
 
 @lru_cache
 def _specs() -> dict[str, Any]:
-    """Load the static feature-selection spec (column lists) from specs.yaml."""
-    return dict(yaml.safe_load((Path(__file__).parent / 'specs.yaml').read_text()))
+    """Load the static feature-selection spec (column lists) from spec.yaml."""
+    return dict(yaml.safe_load((Path(__file__).parent / 'spec.yaml').read_text()))
 
 
 class Config(BaseSettings):
@@ -41,12 +38,12 @@ class Config(BaseSettings):
     train_test_ratio: float = Field(..., json_schema_extra={'env': 'TRAIN_TEST_RATIO'})
     random_state: int = Field(..., json_schema_extra={'env': 'RANDOM_STATE'})
 
-    # Feature Selection (column lists loaded from specs.yaml)
+    # Feature Selection (column lists loaded from spec.yaml)
     target_feature: str = Field(..., json_schema_extra={'env': 'TARGET_FEATURE'})
-    columns_to_drop: list[str] = Field(default_factory=lambda: _specs()['columns_to_drop'])
-    identification_features: list[str] = Field(default_factory=lambda: _specs()['identification_features'])
+    columns_to_drop: tuple[str, ...] = Field(default_factory=lambda: _specs()['columns_to_drop'])
+    identification_features: tuple[str, ...] = Field(default_factory=lambda: _specs()['identification_features'])
 
-    # Model hyperparameters (loaded from specs.yaml)
+    # Model hyperparameters (loaded from spec.yaml)
     model_params: dict[str, int | float] = Field(default_factory=lambda: _specs()['model_params'])
 
     # Commit recorded in the model metadata (set in CI/Docker; falls back to `git rev-parse`)

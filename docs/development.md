@@ -30,7 +30,7 @@ Services that depend on the shared clients package build with the repo root as c
 
 ## Shared clients package
 
-`packages/secform4strategy-clients` has no hard dependencies. Every SDK sits behind an extra and is imported lazily, so a service installs and imports only the clients it uses. Its `requires-python` range is permissive because each service resolves the package against its own interpreter.
+`packages/secform4strategy-clients` has no hard dependencies. Every SDK sits behind an extra and is imported at the top of its one client module, so a service installs and imports only the client modules it uses; the package `__init__` imports nothing. Its `requires-python` range is permissive because each service resolves the package against its own interpreter.
 
 Services depend on the Protocols in `secform4strategy_clients.ports`, never on concrete clients; each `main.py` builds the clients from config and passes them in.
 

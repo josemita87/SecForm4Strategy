@@ -1,0 +1,7 @@
+# Service spec (format: docs/configuration.md)
+
+# Feature-group catalog
+feature_groups:
+  bir4:
+    primary_key: [key]
+    event_time: date

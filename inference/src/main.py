@@ -6,10 +6,12 @@ from pathlib import Path
 
 import pandas as pd
 from config import config
+from constants import Column, FeatureGroup
 from inference_pipeline import InferencePipeline, OrderSpec
 from pyiceberg.catalog import load_catalog
 from secform4strategy_clients.broker import AlpacaClient
-from secform4strategy_clients.feature_store import IcebergFeatureStore, load_feature_group_catalog
+from secform4strategy_clients.feature_groups import load_feature_group_catalog
+from secform4strategy_clients.feature_store import IcebergFeatureStore
 from secform4strategy_clients.model_store import LocalModelStore
 
 # Configure logging (the file handler needs the log directory to exist)
@@ -25,20 +27,28 @@ logging.basicConfig(
 
 if __name__ == '__main__':
     pipeline = InferencePipeline(
-        feature_store=IcebergFeatureStore(
-            load_catalog('default'),
-            config.feature_store_namespace,
-            load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version),
-        ),
         broker=AlpacaClient(config.alpaca_api_key, config.alpaca_api_secret, config.alpaca_base_url),
         model_store=LocalModelStore(config.model_path),
     )
     model, features = pipeline.load_model()
 
     # The CSV source stands in for the feature store when it is disabled
-    data = pipeline.fetch_new_trades() if config.use_feature_store else pd.read_csv(config.csv_path)
+    data = (
+        (
+            IcebergFeatureStore(
+                load_catalog('default'),
+                config.feature_store_namespace,
+                load_feature_group_catalog(Path(__file__).parent / 'spec.yaml', config.feature_group_version),
+            ).read(FeatureGroup.BIR4)
+            if config.use_feature_store
+            else pd.read_csv(config.csv_path)
+        )
+        .drop_duplicates()
+        .dropna()
+    )
 
-    predictions = pipeline.generate_predictions(model, features, data.drop(columns=config.columns_to_drop))
+    # The pipeline applies the preprocessing fitted at training time, on arrays in the trained feature order
+    predictions = data.assign(**{Column.PREDICTIONS: model.predict(data[list(features)].to_numpy())})
     pipeline.execute_trades(
         predictions,
         config.prediction_threshold,

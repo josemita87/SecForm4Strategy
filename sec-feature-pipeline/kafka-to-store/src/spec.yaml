@@ -1,0 +1,10 @@
+# Service spec (format: docs/configuration.md)
+
+# Feature-group catalog
+feature_groups:
+  bt4:
+    primary_key: [key]
+    event_time: date
+  bi4:
+    primary_key: [key]
+    event_time: date

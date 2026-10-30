@@ -1,6 +1,6 @@
 """Domain constants for the inference microservice."""
 
-from enum import Enum
+from enum import Enum, StrEnum
 
 
 class FeatureGroup(str, Enum):
@@ -11,3 +11,10 @@ class FeatureGroup(str, Enum):
     """
 
     BIR4 = 'bir4'
+
+
+class Column(StrEnum):
+    """Columns this service reads or writes."""
+
+    TICKER = 'ticker'
+    PREDICTIONS = 'predictions'

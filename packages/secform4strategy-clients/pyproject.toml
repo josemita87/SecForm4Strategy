@@ -9,13 +9,12 @@ requires-python = ">=3.14"
 dependencies = []
 
 [project.optional-dependencies]
-# pyiceberg with a SQLite catalog for local runs; pydantic validates the feature_groups.yaml catalog.
+# pyiceberg with a SQLite catalog for local runs; pydantic validates the feature-group catalogs.
 feature-store = ["pyiceberg[sql-sqlite,pyarrow]>=0.12,<0.13", "pandas>=2.3", "pyyaml>=6,<7", "pydantic>=2,<3"]
-model-store = ["joblib>=1.4,<2"]
-broker = ["alpaca-py>=0.44,<1"]
+model-store = ["joblib>=1.4,<2", "pydantic>=2,<3"]
+broker = ["alpaca-py>=0.44,<1", "pydantic>=2,<3"]
 messaging = ["quixstreams>=3.1,<4", "confluent-kafka>=2.6,<3"]
-# tzdata backs zoneinfo where the OS has no timezone database (slim images)
-edgar = ["requests>=2.32,<3", "tzdata>=2024.1"]
+edgar = ["httpx>=0.28,<1"]
 market-data = ["yfinance>=0.2.48,<0.3", "pandas>=2.1"]
 
 [build-system]

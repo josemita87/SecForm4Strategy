@@ -354,6 +354,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pydantic-xml"
+version = "2.22.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6c/b5/eb7a11ba976a6f7f5b49fc41affbc3139999f0e8d7100579e33a607e97b5/pydantic_xml-2.22.0.tar.gz", hash = "sha256:3f3382a0aaa5117e117541cdb4e5b6ceeaa7d9ffeea7b30e742a8b221589bca8", size = 26863, upload-time = "2026-10-18T14:44:06.164Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/39/f5/0996ae493cbfac75053996058fd7c08455d1aa9419bd6613323814126b14/pydantic_xml-2.22.0-py3-none-any.whl", hash = "sha256:ba457056a6e8fa94bd7d9da0441480127740cf03ed59cf4e60abc0390512ab27", size = 43467, upload-time = "2026-10-18T14:44:07.565Z" },
+]
+
+[[package]]
 name = "pydoclint"
 version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
@@ -475,6 +488,7 @@ dev = [
     { name = "pre-commit" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pydantic-xml" },
     { name = "pydoclint" },
     { name = "python-dotenv" },
     { name = "ruff" },
@@ -495,6 +509,7 @@ dev = [
     { name = "pre-commit", specifier = ">=4,<5" },
     { name = "pydantic", specifier = ">=2.10.0" },
     { name = "pydantic-settings", specifier = ">=2.6,<3" },
+    { name = "pydantic-xml", specifier = ">=2.17,<3" },
     { name = "pydoclint", specifier = ">=0.8.0,<1" },
     { name = "python-dotenv", specifier = ">=1,<2" },
     { name = "ruff", specifier = ">=0.14.10" },

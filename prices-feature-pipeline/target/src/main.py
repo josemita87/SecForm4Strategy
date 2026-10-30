@@ -2,19 +2,19 @@
 
 import logging
 import time
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pyiceberg.catalog import load_catalog
-from secform4strategy_clients.feature_store import IcebergFeatureStore, load_feature_group_catalog
+from secform4strategy_clients.feature_groups import load_feature_group_catalog
+from secform4strategy_clients.feature_store import IcebergFeatureStore
 
-from src import clean, computations
+from src import computations
 from src.config import config
-from src.constants import FeatureGroup, ReferenceData
+from src.constants import Column, FeatureGroup, ReferenceData
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
-
     from secform4strategy_clients.ports import FeatureStore, Filters
 
 logger = logging.getLogger(__name__)
@@ -42,18 +42,17 @@ def run_training(
         reference: Market caps and company table joined onto each daily row.
     """
     BT4 = feature_store.read(FeatureGroup.BT4, where=where)
-    tickers = clean.get_unique_tickers(BT4)
-    logger.info(f'{len(tickers)} tickers to label')
+    logger.info(f'{len(tickers := BT4[Column.TICKER].unique())} tickers to label')
 
     # Without prices no target can be computed, so a failed read fails the run
-    BT4, P = clean.normalize_data(BT4, feature_store.read(FeatureGroup.PRICES, where={'ticker': tickers}))
+    P = feature_store.read(FeatureGroup.PRICES, where={Column.TICKER: tickers})
 
     # Aggregate daily, add company context and value features, attach the forward return, then the expanding average
     daily = computations.add_company_context(computations.data_aggregation(BT4, agg_dict), reference)
     semiRT4 = computations.compute_target(computations.add_value_features(daily, P), P, delta_period)
     # Only labelled rows feed the expanding average; `label_known_at` stays for training's purged split
-    labelled = semiRT4.dropna(subset=['label_known_at'])
-    RT4 = clean.data_cleaning(computations.compute_RT4(labelled), ['pct_change', 'avg_target_expanding'])
+    labelled = semiRT4.dropna(subset=[Column.LABEL_KNOWN_AT])
+    RT4 = computations.compute_RT4(labelled).dropna(subset=[Column.PCT_CHANGE, Column.AVG_TARGET_EXPANDING])
     feature_store.push(FeatureGroup.RT4, RT4)
 
 
@@ -73,13 +72,11 @@ def run_inference(
     """
     BI4 = feature_store.read(FeatureGroup.BI4, where=where)
     # The same features as training: company context and USD values from prices known at acceptance
-    BI4, P = clean.normalize_data(
-        BI4, feature_store.read(FeatureGroup.PRICES, where={'ticker': clean.get_unique_tickers(BI4)})
-    )
+    P = feature_store.read(FeatureGroup.PRICES, where={Column.TICKER: BI4[Column.TICKER].unique()})
     daily = computations.add_company_context(computations.data_aggregation(BI4, agg_dict), reference)
     BIR4 = computations.map_RT4_to_BIR4(feature_store.read(FeatureGroup.RT4), computations.add_value_features(daily, P))
     # BIR4 has no realized return yet, only the mapped expanding average
-    feature_store.push(FeatureGroup.BIR4, clean.data_cleaning(BIR4, ['avg_target_expanding']))
+    feature_store.push(FeatureGroup.BIR4, BIR4.dropna(subset=[Column.AVG_TARGET_EXPANDING]))
 
 
 if __name__ == '__main__':
@@ -88,7 +85,7 @@ if __name__ == '__main__':
     feature_store = IcebergFeatureStore(
         load_catalog('default'),
         config.feature_store_namespace,
-        load_feature_group_catalog(Path(__file__).parent / 'feature_groups.yaml', config.feature_group_version),
+        load_feature_group_catalog(Path(__file__).parent / 'spec.yaml', config.feature_group_version),
     )
     where = {config.filter_key: config.acquired_disposed}
     reference = ReferenceData.load(config.market_caps_path, config.companies_path)

@@ -1,6 +1,6 @@
 """Domain constants for the training microservice."""
 
-from enum import Enum
+from enum import Enum, StrEnum
 
 
 class FeatureGroup(str, Enum):
@@ -11,3 +11,11 @@ class FeatureGroup(str, Enum):
     """
 
     RT4 = 'rt4'
+
+
+class Column(StrEnum):
+    """Columns this service reads or writes."""
+
+    TIMESTAMP = 'timestamp'
+    LABEL_KNOWN_AT = 'label_known_at'
+    AVG_TARGET_EXPANDING = 'avg_target_expanding'

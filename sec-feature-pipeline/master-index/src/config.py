@@ -13,6 +13,9 @@ class Config(BaseSettings):
     kafka_broker_address: str = Field(..., json_schema_extra={'env': 'KAFKA_BROKER_ADDRESS'})
     kafka_output_topic: str = Field(..., json_schema_extra={'env': 'KAFKA_OUTPUT_TOPIC'})
 
+    # SEC fair access requires a real name and contact email, e.g. 'Jane Doe jane@example.com'
+    sec_user_agent: str = Field(..., pattern=r'^\S.*\s\S+@\S+\.\S+$', json_schema_extra={'env': 'SEC_USER_AGENT'})
+
     # System Settings
     buffer_size: int = Field(..., json_schema_extra={'env': 'BUFFER_SIZE'})
     mode: Literal['historical', 'live', 'last_quarter'] = Field(..., json_schema_extra={'env': 'MODE'})

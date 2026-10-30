@@ -1,2 +1,0 @@
-# Service spec (fields: docs/configuration.md)
-columns_to_drop: [key, timestamp, coding]

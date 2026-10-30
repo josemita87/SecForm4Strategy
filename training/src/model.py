@@ -1,7 +1,7 @@
 """Scikit-learn model: feature preprocessing plus a gradient-boosted regressor."""
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import HistGradientBoostingRegressor
@@ -9,8 +9,6 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 if TYPE_CHECKING:
-    from typing import Any
-
     import pandas as pd
 
 logger = logging.getLogger(__name__)

@@ -29,11 +29,11 @@ docstrings:
 	uv run pydoclint .
 security:
 	uv run bandit -c pyproject.toml -r . --severity-level high
-# Every feature_groups.yaml catalog parses against the FeatureGroupSpec schema
+# Every spec.yaml feature-group catalog parses against the FeatureGroupSpec schema
 validate-config:
-	PYTHONPATH=$(CLIENTS_SRC) uv run python -c "import glob; \
-	from secform4strategy_clients.feature_store import load_feature_group_catalog as load; \
-	[print(p, sorted(load(p, 1))) for p in sorted(glob.glob('**/feature_groups.yaml', recursive=True))]"
+	PYTHONPATH=$(CLIENTS_SRC) uv run python -c "import glob, pathlib; \
+	from secform4strategy_clients.feature_groups import load_feature_group_catalog as load; \
+	[print(p, sorted(load(pathlib.Path(p), 1))) for p in sorted(glob.glob('**/src/spec.yaml', recursive=True))]"
 # Fast checks run by the pre-commit hook; type-check joins once its backlog is cleared
 quality-static: lint docstrings security validate-config
 quality: format quality-static type-check

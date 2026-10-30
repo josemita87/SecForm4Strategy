@@ -16,6 +16,9 @@ class Config(BaseSettings):
     auto_offset_reset: str = Field(..., json_schema_extra={'env': 'AUTO_OFFSET_RESET'})
     consumer_group: str = Field(..., json_schema_extra={'env': 'CONSUMER_GROUP'})
 
+    # SEC fair access requires a real name and contact email, e.g. 'Jane Doe jane@example.com'
+    sec_user_agent: str = Field(..., pattern=r'^\S.*\s\S+@\S+\.\S+$', json_schema_extra={'env': 'SEC_USER_AGENT'})
+
     # System Settings
     buffer_size: int = Field(..., json_schema_extra={'env': 'BUFFER_SIZE'})
     sleep_time: float = Field(..., json_schema_extra={'env': 'SLEEP_TIME'})

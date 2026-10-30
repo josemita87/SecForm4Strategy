@@ -7,15 +7,17 @@ import yaml
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
+from src.constants import Direction
+
 
 def _agg_dict() -> dict[str, str | Callable[..., object]]:
-    """Resolve the aggregation policy from specs.yaml.
+    """Resolve the aggregation policy from spec.yaml.
 
     Pandas aggregation names pass through unchanged; the ``mode_first`` token is
     mapped to ``lambda x: x.mode()[0]`` (most frequent value, first on ties).
     """
     ops = {'mode_first': lambda x: x.mode()[0]}
-    spec = yaml.safe_load((Path(__file__).parent / 'specs.yaml').read_text())['agg_dict']
+    spec = yaml.safe_load((Path(__file__).parent / 'spec.yaml').read_text())['agg_dict']
     return {col: ops.get(op, op) for col, op in spec.items()}
 
 
@@ -29,7 +31,7 @@ class Config(BaseSettings):
     # Investment settings
     delta_period: int = Field(..., json_schema_extra={'env': 'DELTA_PERIOD'})
     filter_key: str = Field(..., json_schema_extra={'env': 'FILTER_KEY'})
-    acquired_disposed: str = Field(..., json_schema_extra={'env': 'ACQUIRED_DISPOSED'})
+    acquired_disposed: Direction = Field(..., json_schema_extra={'env': 'ACQUIRED_DISPOSED'})
 
     # Reference data (docs/configuration.md)
     market_caps_path: Path = Field(
@@ -39,7 +41,7 @@ class Config(BaseSettings):
         default=Path(__file__).parent / 'data' / 'companies.json', json_schema_extra={'env': 'COMPANIES_PATH'}
     )
 
-    # Aggregation policy, loaded and resolved from specs.yaml at instantiation
+    # Aggregation policy, loaded and resolved from spec.yaml at instantiation
     agg_dict: dict[str, str | Callable[..., object]] = Field(default_factory=_agg_dict)
 
     # System settings

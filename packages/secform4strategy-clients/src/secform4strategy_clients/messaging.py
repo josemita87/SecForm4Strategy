@@ -8,10 +8,11 @@ and any value transformations are the caller's responsibility).
 """
 
 import json
-from typing import TYPE_CHECKING
+from collections.abc import Iterable, Mapping
+from typing import Any
 
-if TYPE_CHECKING:
-    from collections.abc import Iterable
+from confluent_kafka import TopicPartition
+from quixstreams import Application
 
 
 class KafkaClient:
@@ -27,7 +28,7 @@ class KafkaClient:
         consumer_group: str | None = None,
         auto_offset_reset: str | None = None,
         loglevel: str | None = None,
-        consumer_extra_config: dict | None = None,
+        consumer_extra_config: Mapping[str, object] | None = None,
     ) -> None:
         """Initialize the underlying quixstreams Application.
 
@@ -43,9 +44,6 @@ class KafkaClient:
             loglevel: Optional quixstreams log level (e.g. ``"CRITICAL"``).
             consumer_extra_config: Extra consumer config passed to the Application.
         """
-        # Lazy import so the SDK is only required when this client is built.
-        from quixstreams import Application
-
         if consumer_extra_config is None and consumer_group is not None:
             consumer_extra_config = {'enable.auto.offset.store': True}
         app_kwargs = {
@@ -67,7 +65,7 @@ class KafkaClient:
         buffer_size: int,
         timeout: int,
         auto_commit_enable: bool = True,
-    ) -> tuple[bool, list]:
+    ) -> tuple[bool, list[dict[str, Any]]]:
         """Consume messages from a topic and return one batch of raw records.
 
         Args:
@@ -83,7 +81,7 @@ class KafkaClient:
         """
         topic = self.app.topic(name=topic_name, value_deserializer='json', key_deserializer='string')
 
-        buffer: list = []
+        buffer: list[dict[str, Any]] = []
         with self.app.get_consumer(auto_commit_enable=auto_commit_enable) as consumer:
             consumer.subscribe(topics=[topic.name])
 
@@ -96,7 +94,7 @@ class KafkaClient:
                 if len(buffer) >= buffer_size:
                     return False, buffer
 
-    def consume_with_offsets(self, topic_name: str, buffer_size: int, timeout: int) -> list:
+    def consume_with_offsets(self, topic_name: str, buffer_size: int, timeout: int) -> list[tuple[dict[str, Any], int]]:
         """Consume a batch of ``(record, offset)`` pairs for manual-commit workflows.
 
         Unlike ``consume_batch``, this keeps a single persistent consumer with
@@ -118,7 +116,7 @@ class KafkaClient:
             self._consumer = self.app.get_consumer(auto_commit_enable=False)
             self._consumer.subscribe(topics=[self._input_topic.name])
 
-        buffer: list = []
+        buffer: list[tuple[dict[str, Any], int]] = []
         while True:
             if (message := self._consumer.poll(timeout)) is None:
                 if buffer:
@@ -143,12 +141,10 @@ class KafkaClient:
                 is one past it.
             partition: Partition index to commit on.
         """
-        from confluent_kafka import TopicPartition
-
         tp = TopicPartition(topic=self._input_topic.name, partition=partition, offset=offset + 1)
         self._consumer.commit(offsets=[tp])
 
-    def produce(self, topic_name: str, messages: Iterable[tuple[object, dict, object]]) -> None:
+    def produce(self, topic_name: str, messages: Iterable[tuple[str, Mapping[str, Any], int | None]]) -> None:
         """Produce a batch of messages to a topic and flush.
 
         The caller owns all message shaping; this method only serializes and

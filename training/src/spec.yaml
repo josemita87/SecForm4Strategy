@@ -1,4 +1,11 @@
-# Service spec (fields: docs/configuration.md)
+# Service spec (format: docs/configuration.md)
+
+# Feature-group catalog
+feature_groups:
+  rt4:
+    primary_key: [key]
+    event_time: date
+
 columns_to_drop: [key, coding, insider_cik]
 identification_features: [ticker, insider_name, date, company_cik, price, timestamp, label_known_at]
 
