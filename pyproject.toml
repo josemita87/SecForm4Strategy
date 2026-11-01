@@ -1,6 +1,6 @@
 [project]
 name = "secform4strategy"
-version = "0.3.0"
+version = "0.4.0"
 description = "Repo-root dev tooling and shared lint/type/docstring configuration. Not a runtime package — each microservice has its own pyproject.toml and uv.lock for independent Docker builds."
 readme = "Readme.md"
 authors = [{ name = "Josep Cubedo Macian", email = "136491450+josemita87@users.noreply.github.com" }]
@@ -96,7 +96,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "D104"]  # Allow re-export imports and missing package docstrings
 "**/config.py" = ["N805"]  # pydantic-settings validators take cls/values, not self
-"**/tests/**" = ["D103", "PLC0415", "ARG001", "ARG002", "PLR2004"]  # Test names are their docs; SDK fakes are installed before the client import and mirror SDK signatures; assertions compare literals
+"**/tests/**" = ["D102", "D103", "PLC0415", "ARG001", "ARG002", "PLR2004"]  # Test names are their docs; SDK fakes are installed before the client import and mirror SDK signatures; assertions compare literals
+"**/secform4strategy_clients/fakes/*.py" = ["ARG002"]  # Fake methods keep their port's signature whether or not they read every argument
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "unittest.mock".msg = "Substitute a typed in-memory implementation of the port; mock only true external SDKs."
@@ -135,7 +136,7 @@ exclude = "\\.git|\\.venv|build|dist|lab"
 check-arg-order = true
 check-return-types = false  # types live in the signatures, not repeated in docstrings
 arg-type-hints-in-docstring = false
-check-yield-types = true
+check-yield-types = false  # as for returns: the yield type lives in the signature
 skip-checking-short-docstrings = true  # a one-line docstring is a complete contract
 skip-checking-raises = false
 allow-init-docstring = true  # constructors document their own arguments

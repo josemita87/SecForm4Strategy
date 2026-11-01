@@ -457,7 +457,7 @@ dependencies = [
 requires-dist = [
     { name = "pandas", specifier = ">=2.3.3,<2.4" },
     { name = "pydantic-settings", specifier = ">=2.10,<3" },
-    { name = "secform4strategy-clients", extras = ["feature-store", "messaging"], directory = "../../packages/secform4strategy-clients" },
+    { name = "secform4strategy-clients", extras = ["feature-store", "messaging"], editable = "../../packages/secform4strategy-clients" },
 ]
 
 [[package]]
@@ -990,7 +990,7 @@ wheels = [
 [[package]]
 name = "secform4strategy-clients"
 version = "0.1.0"
-source = { directory = "../../packages/secform4strategy-clients" }
+source = { editable = "../../packages/secform4strategy-clients" }
 
 [package.optional-dependencies]
 feature-store = [

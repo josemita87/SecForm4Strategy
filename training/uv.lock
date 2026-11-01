@@ -796,7 +796,7 @@ wheels = [
 [[package]]
 name = "secform4strategy-clients"
 version = "0.1.0"
-source = { directory = "../packages/secform4strategy-clients" }
+source = { editable = "../packages/secform4strategy-clients" }
 
 [package.optional-dependencies]
 feature-store = [
@@ -909,7 +909,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "scikit-learn", specifier = "==1.9.1" },
     { name = "seaborn", specifier = ">=0.13.2,<0.14" },
-    { name = "secform4strategy-clients", extras = ["feature-store", "model-store"], directory = "../packages/secform4strategy-clients" },
+    { name = "secform4strategy-clients", extras = ["feature-store", "model-store"], editable = "../packages/secform4strategy-clients" },
 ]
 
 [[package]]

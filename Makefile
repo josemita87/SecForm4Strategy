@@ -1,4 +1,4 @@
-.PHONY: lint format type-check security docstrings validate-config quality quality-static \
+.PHONY: lint format type-check security docstrings validate-config test-unit test-unit-fast quality quality-static \
 	start-redpanda stop-redpanda inference-sec inference-prices training-sec training-prices
 
 CLIENTS_SRC := packages/secform4strategy-clients/src
@@ -7,6 +7,10 @@ FLAT_SERVICES := training inference sec-feature-pipeline/master-index sec-featur
 	sec-feature-pipeline/kafka-to-store
 # Services importing through the src package (`from src.config import config`)
 PACKAGE_SERVICES := prices-feature-pipeline/target prices-feature-pipeline/yahoo_connect
+# Every project with its own environment, in test order
+PROJECTS := packages/secform4strategy-clients $(FLAT_SERVICES) $(PACKAGE_SERVICES)
+# Extra pytest arguments, e.g. make test-unit PYTEST_ARGS='-k next_print'
+PYTEST_ARGS ?=
 
 # --- Code quality (shared root config in pyproject.toml, applied repo-wide) ---
 lint:
@@ -34,8 +38,21 @@ validate-config:
 	PYTHONPATH=$(CLIENTS_SRC) uv run python -c "import glob, pathlib; \
 	from secform4strategy_clients.feature_groups import load_feature_group_catalog as load; \
 	[print(p, sorted(load(pathlib.Path(p), 1))) for p in sorted(glob.glob('**/src/spec.yaml', recursive=True))]"
+# Unit tests run per project in its own environment; projects without test files yet are skipped
+test-unit:
+	@status=0; for svc in $(PROJECTS); do \
+		if [ -n "$$(find $$svc/tests/unit -name 'test_*.py' 2>/dev/null)" ]; then \
+			echo "--- $$svc"; (cd $$svc && uv run --all-extras pytest tests/unit --cov=src --cov-report=term-missing:skip-covered $(PYTEST_ARGS)) || status=1; \
+		fi; \
+	done; exit $$status
+test-unit-fast:
+	@status=0; for svc in $(PROJECTS); do \
+		if [ -n "$$(find $$svc/tests/unit -name 'test_*.py' 2>/dev/null)" ]; then \
+			echo "--- $$svc"; (cd $$svc && uv run --all-extras pytest tests/unit -q -p no:cacheprovider $(PYTEST_ARGS)) || status=1; \
+		fi; \
+	done; exit $$status
 # Fast checks run by the pre-commit hook; type-check joins once its backlog is cleared
-quality-static: lint docstrings security validate-config
+quality-static: lint docstrings security validate-config test-unit-fast
 quality: format quality-static type-check
 	@echo "Quality checks complete."
 

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import sklearn
-from constants import Column
+from constants import Col
 from secform4strategy_clients.ports import OrderType, Side, TimeInForce
 
 if TYPE_CHECKING:
@@ -69,5 +69,5 @@ class InferencePipeline:
             threshold: Prediction value below which a short is placed.
             order: How each order is placed.
         """
-        for ticker in predictions_df.loc[predictions_df[Column.PREDICTIONS] < threshold, Column.TICKER]:
+        for ticker in predictions_df.loc[predictions_df[Col.PREDICTIONS] < threshold, Col.TICKER]:
             self.broker.place_order(ticker, order.qty, order.side, order.order_type, order.time_in_force)

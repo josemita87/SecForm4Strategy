@@ -4,7 +4,7 @@
 feature_groups:
   bt4:
     primary_key: [key]
-    event_time: date
+    event_time: accepted_at
   bi4:
     primary_key: [key]
-    event_time: date
+    event_time: accepted_at

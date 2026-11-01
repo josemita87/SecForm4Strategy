@@ -4,22 +4,26 @@ import logging
 import subprocess
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import model
 import pandas as pd
 import simulation
 import sklearn
 from config import config
-from constants import Column, FeatureGroup
+from constants import Col, FeatureGroup
+from paths import SPEC_PATH
 from pyiceberg.catalog import load_catalog
 from secform4strategy_clients.feature_groups import load_feature_group_catalog
 from secform4strategy_clients.feature_store import IcebergFeatureStore
 from secform4strategy_clients.model_store import LocalModelStore
 from secform4strategy_clients.ports import ModelMetadata
 
+if TYPE_CHECKING:
+    from secform4strategy_clients.ports import FeatureStore
+
 # Configure structured logging (the handler needs the log directory to exist)
-Path(config.log_path).parent.mkdir(parents=True, exist_ok=True)
+config.log_path.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s %(levelname)s %(message)s',
@@ -32,23 +36,23 @@ logger = logging.getLogger(__name__)
 
 
 if __name__ == '__main__':
-    feature_store = IcebergFeatureStore(
+    feature_store: FeatureStore = IcebergFeatureStore(
         load_catalog('default'),
         config.feature_store_namespace,
-        load_feature_group_catalog(Path(__file__).parent / 'spec.yaml', config.feature_group_version),
+        load_feature_group_catalog(SPEC_PATH, config.feature_group_version),
     )
     # pandas reads a tuple as one label, so the columns go as a list
     data = feature_store.read(FeatureGroup.RT4).drop(columns=list(config.columns_to_drop), errors='ignore')
     logger.info(f'Loaded data with shape: {data.shape}')
 
     # Chronological split, purged: training keeps only labels already known when the test period starts
-    data = data.sort_values(Column.TIMESTAMP)
-    test_start = data[Column.TIMESTAMP].iloc[int(len(data) * (1 - config.train_test_ratio))]
-    train, test = data[data[Column.LABEL_KNOWN_AT] < test_start], data[data[Column.TIMESTAMP] >= test_start]
+    data = data.sort_values(Col.ACCEPTED_AT)
+    test_start = data[Col.ACCEPTED_AT].iloc[int(len(data) * (1 - config.train_test_ratio))]
+    train, test = data[data[Col.LABEL_KNOWN_AT] < test_start], data[data[Col.ACCEPTED_AT] >= test_start]
     features = [col for col in data.columns if col not in (config.target_feature, *config.identification_features)]
     X_train, y_train = train.drop(columns=[config.target_feature]), train[config.target_feature]
     X_test, y_test = test.drop(columns=[config.target_feature]), test[config.target_feature]
-    logger.info(f'Train {len(train)} rows, test {len(test)} rows from {datetime.fromtimestamp(test_start / 1000, UTC)}')
+    logger.info(f'Train {len(train)} rows, test {len(test)} rows from {test_start}')
 
     # Train on arrays in `features` order (the order inference must follow); preprocessing is fitted on train only
     params = {**config.model_params, 'random_state': config.random_state}
@@ -65,8 +69,8 @@ if __name__ == '__main__':
             'zero': pd.Series(0.0, index=y_test.index),
             'train_mean': pd.Series(y_train.mean(), index=y_test.index),
             **(
-                {'ticker_history': X_test[Column.AVG_TARGET_EXPANDING].fillna(y_train.mean())}
-                if Column.AVG_TARGET_EXPANDING in X_test
+                {'ticker_history': X_test[Col.AVG_TARGET_EXPANDING].fillna(y_train.mean())}
+                if Col.AVG_TARGET_EXPANDING in X_test
                 else {}
             ),
         },
@@ -97,7 +101,7 @@ if __name__ == '__main__':
             model_params=params,
             train_rows=len(X_train),
             test_rows=len(X_test),
-            test_start=datetime.fromtimestamp(test_start / 1000, UTC),
+            test_start=test_start.to_pydatetime(),
             metrics=metrics,
         ),
     )

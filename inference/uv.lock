@@ -171,7 +171,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1,<2" },
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "scikit-learn", specifier = "==1.9.1" },
-    { name = "secform4strategy-clients", extras = ["feature-store", "broker", "model-store"], directory = "../packages/secform4strategy-clients" },
+    { name = "secform4strategy-clients", extras = ["feature-store", "broker", "model-store"], editable = "../packages/secform4strategy-clients" },
 ]
 
 [[package]]
@@ -678,7 +678,7 @@ wheels = [
 [[package]]
 name = "secform4strategy-clients"
 version = "0.1.0"
-source = { directory = "../packages/secform4strategy-clients" }
+source = { editable = "../packages/secform4strategy-clients" }
 
 [package.optional-dependencies]
 broker = [

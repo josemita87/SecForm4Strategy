@@ -2,12 +2,12 @@
 
 import logging
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
 import pandas as pd
 from config import config
-from constants import Column, FeatureGroup
+from constants import Col, FeatureGroup
 from inference_pipeline import InferencePipeline, OrderSpec
+from paths import SPEC_PATH
 from pyiceberg.catalog import load_catalog
 from secform4strategy_clients.broker import AlpacaClient
 from secform4strategy_clients.feature_groups import load_feature_group_catalog
@@ -15,7 +15,7 @@ from secform4strategy_clients.feature_store import IcebergFeatureStore
 from secform4strategy_clients.model_store import LocalModelStore
 
 # Configure logging (the file handler needs the log directory to exist)
-Path(config.log_path).parent.mkdir(parents=True, exist_ok=True)
+config.log_path.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s %(levelname)s %(message)s',
@@ -38,7 +38,7 @@ if __name__ == '__main__':
             IcebergFeatureStore(
                 load_catalog('default'),
                 config.feature_store_namespace,
-                load_feature_group_catalog(Path(__file__).parent / 'spec.yaml', config.feature_group_version),
+                load_feature_group_catalog(SPEC_PATH, config.feature_group_version),
             ).read(FeatureGroup.BIR4)
             if config.use_feature_store
             else pd.read_csv(config.csv_path)
@@ -48,7 +48,7 @@ if __name__ == '__main__':
     )
 
     # The pipeline applies the preprocessing fitted at training time, on arrays in the trained feature order
-    predictions = data.assign(**{Column.PREDICTIONS: model.predict(data[list(features)].to_numpy())})
+    predictions = data.assign(**{Col.PREDICTIONS: model.predict(data[list(features)].to_numpy())})
     pipeline.execute_trades(
         predictions,
         config.prediction_threshold,

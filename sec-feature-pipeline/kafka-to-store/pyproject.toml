@@ -15,4 +15,4 @@ dependencies = [
 package = false
 
 [tool.uv.sources]
-secform4strategy-clients = { path = "../../packages/secform4strategy-clients" }
+secform4strategy-clients = { path = "../../packages/secform4strategy-clients", editable = true }

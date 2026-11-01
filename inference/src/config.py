@@ -16,29 +16,29 @@ class Config(BaseSettings):
     """Settings for Alpaca, the feature store, trading and logging."""
 
     # Alpaca API credentials
-    alpaca_api_key: SecretStr = Field(..., json_schema_extra={'env': 'ALPACA_API_KEY'})
-    alpaca_api_secret: SecretStr = Field(..., json_schema_extra={'env': 'ALPACA_API_SECRET'})
-    alpaca_base_url: str = Field(..., json_schema_extra={'env': 'ALPACA_BASE_URL'})
+    alpaca_api_key: SecretStr
+    alpaca_api_secret: SecretStr
+    alpaca_base_url: str
 
     # Iceberg feature store; the catalog itself is configured by PYICEBERG_CATALOG__DEFAULT__* (docs/configuration.md)
-    feature_store_namespace: str = Field('secform4strategy', json_schema_extra={'env': 'FEATURE_STORE_NAMESPACE'})
-    feature_group_version: int = Field(..., json_schema_extra={'env': 'FEATURE_GROUP_VERSION'})
+    feature_store_namespace: str = 'secform4strategy'
+    feature_group_version: int
     # Read inference data from the feature store, or from csv_path when off
-    use_feature_store: bool = Field(True, json_schema_extra={'env': 'USE_FEATURE_STORE'})
-    csv_path: Path = Field(default=CSV_PATH, json_schema_extra={'env': 'CSV_PATH'})
+    use_feature_store: bool = True
+    csv_path: Path = CSV_PATH
 
     # Trading settings
-    qty: float = Field(..., gt=0, json_schema_extra={'env': 'QTY'})
-    side: Side = Field('sell', json_schema_extra={'env': 'SIDE'})
-    order_type: OrderType = Field('market', json_schema_extra={'env': 'ORDER_TYPE'})
-    time_in_force: TimeInForce = Field('gtc', json_schema_extra={'env': 'TIME_IN_FORCE'})
-    prediction_threshold: float = Field(..., json_schema_extra={'env': 'PREDICTION_THRESHOLD'})
+    qty: float = Field(gt=0)
+    side: Side = 'sell'
+    order_type: OrderType = 'market'
+    time_in_force: TimeInForce = 'gtc'
+    prediction_threshold: float
 
     # Logging
-    log_path: Path = Field(default=LOG_PATH, json_schema_extra={'env': 'LOG_PATH'})
+    log_path: Path = LOG_PATH
 
     # Models
-    model_path: Path = Field(default=MODEL_PATH, json_schema_extra={'env': 'MODEL_PATH'})
+    model_path: Path = MODEL_PATH
 
 
 config = Config()

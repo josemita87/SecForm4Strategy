@@ -123,7 +123,7 @@ Each service is its own `uv` project (own `pyproject.toml` + `uv.lock`) and Dock
 - **ML:** scikit-learn `HistGradientBoostingRegressor` in a `Pipeline` with its preprocessing (regression on forward returns).
 - **Market data / filings:** `yfinance`, SEC EDGAR.
 - **Broker:** Alpaca (paper trading).
-- **Config:** `pydantic-settings` for env/secret knobs, plus YAML spec templates for static specs (feature-group catalogs, aggregation policy, feature-selection lists).
+- **Config:** `pydantic-settings` for env/secret knobs, plus YAML spec templates for static specs (feature-group catalogs, cluster window, feature-selection lists).
 - **Quality gate:** ruff (lint + format), mypy, pydoclint, and bandit, all driven by one shared config in `pyproject.toml`.
 
 ---

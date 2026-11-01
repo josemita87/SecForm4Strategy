@@ -21,4 +21,15 @@ dependencies = [
 package = false
 
 [tool.uv.sources]
-secform4strategy-clients = { path = "../../packages/secform4strategy-clients" }
+secform4strategy-clients = { path = "../../packages/secform4strategy-clients", editable = true }
+
+[dependency-groups]
+dev = ["pytest>=8.3,<10", "pytest-cov>=6,<8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+addopts = ["--strict-markers", "--strict-config", "--tb=short"]
+markers = ["unit: fast, offline tests (tests/unit)"]
+# A dependency of quixstreams (authlib) warns about its own httpx integration
+filterwarnings = ["ignore::authlib.deprecate.AuthlibDeprecationWarning"]

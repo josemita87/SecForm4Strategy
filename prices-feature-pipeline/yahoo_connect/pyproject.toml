@@ -18,4 +18,13 @@ dependencies = [
 package = false
 
 [tool.uv.sources]
-secform4strategy-clients = { path = "../../packages/secform4strategy-clients" }
+secform4strategy-clients = { path = "../../packages/secform4strategy-clients", editable = true }
+
+[dependency-groups]
+dev = ["pytest>=8.3,<10", "pytest-cov>=6,<8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = ["--strict-markers", "--strict-config", "--tb=short"]
+markers = ["unit: fast, offline tests (tests/unit)"]

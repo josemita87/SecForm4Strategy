@@ -14,7 +14,7 @@ class FeatureGroup(str, Enum):
     BI4 = 'bi4'
 
 
-class Column(StrEnum):
+class Col(StrEnum):
     """Columns this service reads or writes."""
 
     COMPANY_CIK = 'company_cik'
@@ -33,6 +33,7 @@ class Column(StrEnum):
     REMAINING_SHARES = 'remaining_shares'
     DIRECT_HOLDING = 'direct_holding'
     INDIRECT_HOLDING = 'indirect_holding'
-    TIMESTAMP = 'timestamp'
+    ACCEPTED_AT = 'accepted_at'
+    POSITION = 'position'
     DATE = 'date'
     LINK = 'link'

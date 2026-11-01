@@ -35,8 +35,7 @@ def build_pipeline(X: pd.DataFrame, params: dict[str, Any]) -> Pipeline:
     categorical_cols = [position[col] for col in X.select_dtypes(include=['bool', 'category', 'object']).columns]
 
     # Columns of any other dtype (e.g. datetimes) are dropped by the transformer
-    ignored = sorted(set(X.columns) - set(X.columns[continuous_cols + categorical_cols]))
-    if ignored:
+    if ignored := sorted(set(X.columns) - set(X.columns[continuous_cols + categorical_cols])):
         logger.warning(f'Columns ignored by the model (unsupported dtype): {ignored}')
 
     preprocessor = ColumnTransformer(

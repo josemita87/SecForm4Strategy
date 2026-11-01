@@ -19,31 +19,40 @@ class MarketDataClient:
     """Look up market-data fields for a ticker via yfinance."""
 
     def daily_bars(self, symbol: str, start: date | None = None) -> pd.DataFrame:
-        """Return the daily open and close history for ``symbol``.
+        """Return the daily history for ``symbol``: adjusted open and close, the close as traded, and corporate actions.
 
-        Hides the yfinance specifics (``download`` and its column layout) behind a
-        tidy three-column frame.
+        ``open`` and ``close`` are adjusted for later splits and dividends (as yfinance's
+        ``auto_adjust`` does), so returns between any two days are comparable.
+        ``close_as_traded`` is the price on the day itself, in that day's shares: yfinance's
+        split-adjusted ``Close`` times every split ratio after that day. ``split`` (ratio) and
+        ``dividend`` (per share) are the day's corporate actions, 0 when none.
 
         Args:
             symbol: Ticker symbol to download.
             start: Optional inclusive start date; when None, the full available
                 history is returned (``period='max'``).
 
-        Prices are split- and dividend-adjusted (``auto_adjust``).
-
         Returns:
-            A DataFrame with ``date``, ``open`` and ``close`` columns.
+            A DataFrame with ``date``, ``open``, ``close``, ``close_as_traded``, ``split`` and ``dividend`` columns.
         """
         # Without a start yfinance returns only its default one-month period, so ask for all of it
-        window = {'start': start} if start is not None else {'period': 'max'}
-        bars: pd.DataFrame = yf.download(symbol, **window, auto_adjust=True, multi_level_index=False)[
-            ['Open', 'Close']
-        ].reset_index()
-        bars.columns = ['date', 'open', 'close']
-        return bars
+        window = {'start': start} if start else {'period': 'max'}
+        bars: pd.DataFrame = yf.download(symbol, **window, auto_adjust=False, actions=True, multi_level_index=False)
+        # A split's ratio sits on its first post-split day; each day is scaled by the splits strictly after it
+        later_splits = bars['Stock Splits'].replace(0, 1)[::-1].cumprod()[::-1].shift(-1, fill_value=1)
+        return pd.DataFrame(
+            {
+                'date': bars.index,
+                'open': bars['Open'] * bars['Adj Close'] / bars['Close'],
+                'close': bars['Adj Close'],
+                'close_as_traded': bars['Close'] * later_splits,
+                'split': bars['Stock Splits'],
+                'dividend': bars['Dividends'],
+            }
+        ).reset_index(drop=True)
 
     def price_histories(self, symbols: Iterable[str], starts: Mapping[str, date] | None = None) -> pd.DataFrame:
-        """Return concatenated daily open/close history for many symbols, tagged by ticker.
+        """Return concatenated daily history (``daily_bars``) for many symbols, tagged by ticker.
 
         Best-effort: a symbol whose download fails (delisted, renamed) is logged
         and skipped rather than aborting the whole batch. The result uses
@@ -56,7 +65,8 @@ class MarketDataClient:
                 absent from the mapping fetch their full available history.
 
         Returns:
-            A DataFrame with ``date``, ``open``, ``close`` and ``ticker`` columns.
+            A DataFrame with ``date``, ``open``, ``close``, ``close_as_traded``, ``split``, ``dividend`` and
+            ``ticker`` columns.
         """
         starts = starts or {}
         frames = []
@@ -68,11 +78,23 @@ class MarketDataClient:
 
         if not frames:
             logger.warning('No price history downloaded for any symbol')
-            return pd.DataFrame(columns=['date', 'open', 'close', 'ticker'])
-
+        # Typed even when empty, so callers can rely on the column dtypes
         return (
-            pd.concat(frames, ignore_index=True)
-            .astype({'open': 'float32', 'close': 'float32', 'ticker': 'category'})
+            (
+                pd.concat(frames, ignore_index=True)
+                if frames
+                else pd.DataFrame(columns=['date', 'open', 'close', 'close_as_traded', 'split', 'dividend', 'ticker'])
+            )
+            .astype(
+                {
+                    'open': 'float32',
+                    'close': 'float32',
+                    'close_as_traded': 'float32',
+                    'split': 'float32',
+                    'dividend': 'float32',
+                    'ticker': 'category',
+                }
+            )
             .assign(date=lambda df: pd.to_datetime(df['date']))
             .sort_values(['ticker', 'date'], ignore_index=True)
         )

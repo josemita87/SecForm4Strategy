@@ -1,17 +1,25 @@
-"""Entry point: wires the ports from config and refreshes the prices (P) feature group."""
+"""Entry point: reads the tickers to price, refreshes their daily bars, and stores them in the prices (P) group."""
 
 import logging
 import time
-from pathlib import Path
+from typing import TYPE_CHECKING
 
+import numpy as np
+import pandas as pd
 from pyiceberg.catalog import load_catalog
+from pyiceberg.exceptions import NoSuchTableError
 from secform4strategy_clients.feature_groups import load_feature_group_catalog
 from secform4strategy_clients.feature_store import IcebergFeatureStore
 from secform4strategy_clients.market_data import MarketDataClient
+from tqdm import tqdm
 
+from src import prices
 from src.config import config
-from src.constants import FeatureGroup
-from src.ingestion import PriceIngestor
+from src.constants import Col, FeatureGroup
+from src.paths import SPEC_PATH
+
+if TYPE_CHECKING:
+    from secform4strategy_clients.ports import FeatureStore
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -29,11 +37,18 @@ if __name__ == '__main__':
         raise RuntimeError('No run mode selected: set SYSTEM_INFERENCE or SYSTEM_TRAINING')
 
     time.sleep(config.delay)
-    PriceIngestor(
-        feature_store=IcebergFeatureStore(
-            load_catalog('default'),
-            config.feature_store_namespace,
-            load_feature_group_catalog(Path(__file__).parent / 'spec.yaml', config.feature_group_version),
-        ),
-        market_data=MarketDataClient(),
-    ).process_tickers(source, where, config.buffer_size)
+    store: FeatureStore = IcebergFeatureStore(
+        load_catalog('default'),
+        config.feature_store_namespace,
+        load_feature_group_catalog(SPEC_PATH, config.feature_group_version),
+    )
+    tickers = np.unique(store.read(source, where=where)[Col.TICKER]).tolist()
+    try:
+        stored = store.read(FeatureGroup.PRICES, where={Col.TICKER: tickers})
+    except NoSuchTableError:
+        # The first run creates the price table, so every ticker fetches its full history
+        stored = pd.DataFrame({Col.TICKER: [], Col.DATE: pd.to_datetime([]), Col.CLOSE: [], Col.CLOSE_AS_TRADED: []})
+
+    batches = prices.new_prices(MarketDataClient(), tickers, prices.resume_points(stored), config.buffer_size)
+    for batch in tqdm(batches, total=-(-len(tickers) // config.buffer_size), desc='Pricing tickers', unit='batch'):
+        store.push(FeatureGroup.PRICES, batch)

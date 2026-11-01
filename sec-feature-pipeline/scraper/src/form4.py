@@ -5,8 +5,24 @@ default to empty models, so a missing branch reads as ``None`` values rather tha
 failing the document; elements not declared here are ignored.
 """
 
-from pydantic import ConfigDict
+from datetime import datetime
+from typing import Annotated
+from zoneinfo import ZoneInfo
+
+from pydantic import BaseModel, BeforeValidator, ConfigDict
 from pydantic_xml import BaseXmlModel, attr, element, wrapped
+
+#: EDGAR's ``ACCEPTANCE-DATETIME`` stamp (``YYYYMMDDHHMMSS``, US/Eastern) as an aware datetime.
+EdgarTimestamp = Annotated[
+    datetime,
+    BeforeValidator(
+        lambda stamp: (
+            datetime.strptime(stamp, '%Y%m%d%H%M%S').replace(tzinfo=ZoneInfo('America/New_York'))
+            if isinstance(stamp, str)
+            else stamp
+        )
+    ),
+]
 
 
 class Node(BaseXmlModel, search_mode='unordered'):
@@ -59,10 +75,11 @@ class ReportingOwner(Node):
 
 
 class Coding(Node):
-    """Transaction code and whether an equity swap was involved."""
+    """Transaction code, whether an equity swap was involved, and the footnotes attached to the coding."""
 
     code: str | None = element(tag='transactionCode', default=None)
     equity_swap: str | None = element(tag='equitySwapInvolved', default=None)
+    footnotes: list[FootnoteRef] = element(default_factory=list)
 
 
 class Amounts(Node):
@@ -85,6 +102,7 @@ class Position(Node):
 class Transaction(Position):
     """One reported transaction; both tables share this layout."""
 
+    security_title: Value = element(tag='securityTitle', default_factory=Value)
     date: Value = element(tag='transactionDate', default_factory=Value)
     coding: Coding = element(tag='transactionCoding', default_factory=Coding)
     amounts: Amounts = element(tag='transactionAmounts', default_factory=Amounts)
@@ -120,3 +138,15 @@ class OwnershipDocument(Node, tag='ownershipDocument'):
     non_derivative: NonDerivativeTable = element(tag='nonDerivativeTable', default_factory=NonDerivativeTable)
     derivative: DerivativeTable = element(tag='derivativeTable', default_factory=DerivativeTable)
     footnotes: list[Footnote] = wrapped('footnotes', element(tag='footnote', default_factory=list))
+
+
+class Submission(BaseModel):
+    """A filing's full EDGAR submission: when SEC accepted it, from the header, and its ownership document."""
+
+    model_config = ConfigDict(frozen=True)
+
+    accepted_at: EdgarTimestamp
+    document: Annotated[
+        OwnershipDocument,
+        BeforeValidator(lambda xml: OwnershipDocument.from_xml(xml) if isinstance(xml, str | bytes) else xml),
+    ]

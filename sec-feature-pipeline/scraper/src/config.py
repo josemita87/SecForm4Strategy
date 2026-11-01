@@ -10,28 +10,29 @@ class Config(BaseSettings):
     """Settings for the scraper service loaded from environment variables."""
 
     # Kafka settings
-    kafka_broker_address: str = Field(..., json_schema_extra={'env': 'KAFKA_BROKER_ADDRESS'})
-    kafka_input_topic: str = Field(..., json_schema_extra={'env': 'KAFKA_INPUT_TOPIC'})
-    kafka_output_topic: str = Field(..., json_schema_extra={'env': 'KAFKA_OUTPUT_TOPIC'})
-    auto_offset_reset: str = Field(..., json_schema_extra={'env': 'AUTO_OFFSET_RESET'})
-    consumer_group: str = Field(..., json_schema_extra={'env': 'CONSUMER_GROUP'})
+    kafka_broker_address: str
+    kafka_input_topic: str
+    kafka_output_topic: str
+    auto_offset_reset: str
+    consumer_group: str
 
     # SEC fair access requires a real name and contact email, e.g. 'Jane Doe jane@example.com'
-    sec_user_agent: str = Field(..., pattern=r'^\S.*\s\S+@\S+\.\S+$', json_schema_extra={'env': 'SEC_USER_AGENT'})
+    sec_user_agent: str = Field(pattern=r'^\S.*\s\S+@\S+\.\S+$')
+    # Requests per second; SEC allows 10 per IP, shared by master-index and the scraper
+    sec_max_rate: float = Field(8, gt=0, le=10)
 
     # System Settings
-    buffer_size: int = Field(..., json_schema_extra={'env': 'BUFFER_SIZE'})
-    sleep_time: float = Field(..., json_schema_extra={'env': 'SLEEP_TIME'})
-    poll_timeout: int = Field(..., json_schema_extra={'env': 'POLL_TIMEOUT'})
-    delay: int = Field(..., json_schema_extra={'env': 'DELAY'})
-    mode: Literal['historical', 'live', 'last_quarter'] = Field(..., json_schema_extra={'env': 'MODE'})
+    buffer_size: int
+    poll_timeout: int
+    delay: int
+    mode: Literal['historical', 'live', 'last_quarter']
 
     # Training Settings
-    test_size: int = Field(400, json_schema_extra={'env': 'TEST_SIZE'})
-    test_trial: bool = Field(False, json_schema_extra={'env': 'TEST_TRIAL'})
+    test_size: int = 400
+    test_trial: bool = False
 
     # Inference Settings
-    days_back: int = Field(1, json_schema_extra={'env': 'DAYS_BACK'})
+    days_back: int = 1
 
 
 config = Config()

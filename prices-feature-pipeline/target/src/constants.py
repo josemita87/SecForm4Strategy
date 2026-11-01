@@ -22,12 +22,22 @@ class FeatureGroup(str, Enum):
     BIR4 = 'bir4'
 
 
-class Column(StrEnum):
+class Col(StrEnum):
     """Columns this service reads, writes, or joins on."""
 
+    KEY = 'key'
     TICKER = 'ticker'
     DATE = 'date'
-    TIMESTAMP = 'timestamp'
+    ACCEPTED_AT = 'accepted_at'
+    ACCESSION = 'accession'
+    POSITION = 'position'
+    OWNERSHIP = 'ownership'
+    INSIDER_CIK = 'insider_cik'
+    OWNER_CODE = 'owner_code'
+    CODING = 'coding'
+    DERIVATIVE = 'derivative'
+    RULE_10B5_1 = 'rule105b1'
+    EQUITY_SWAP = 'equity_swap'
     COMPANY_CIK = 'company_cik'
     ACQUIRED_DISPOSED = 'acquired_disposed'
     PRICE = 'price'
@@ -35,7 +45,11 @@ class Column(StrEnum):
     REMAINING_SHARES = 'remaining_shares'
     DIRECT_HOLDING = 'direct_holding'
     INDIRECT_HOLDING = 'indirect_holding'
+    PRICE_TO_CLOSE = 'price_to_close'
+    CLOSE_AS_TRADED = 'close_as_traded'
     TX_VALUE = 'tx_value'
+    DERIVATIVE_SHARES = 'derivative_shares'
+    DERIVATIVE_VALUE = 'derivative_value'
     REMAINING_VALUE = 'remaining_value'
     OPEN = 'open'
     CLOSE = 'close'
@@ -47,10 +61,26 @@ class Column(StrEnum):
     LABEL_KNOWN_AT = 'label_known_at'
     AVG_TARGET_EXPANDING = 'avg_target_expanding'
 
+    # One disclosure row: everything disclosed for a ticker before its next market print
+    NEXT_PRINT = 'next_print'
+    N_FILINGS = 'n_filings'
+    N_INSIDERS = 'n_insiders'
+    OFFICER = 'officer'
+    DIRECTOR = 'director'
+    SALE = 'sale'
+    GIFT = 'gift'
+    TAX_WITHHOLDING = 'tax_withholding'
+    EXERCISE = 'exercise'
+    FILING_LAG_DAYS = 'filing_lag_days'
+    INSIDERS_RECENT = 'insiders_recent'
+    FILINGS_RECENT = 'filings_recent'
+    OFFICERS_RECENT = 'officers_recent'
+
     # Join keys and intermediates, never stored
     SNAPSHOT = 'snapshot'
     LAST_CLOSE = 'last_close'
-    CLOSED_AT = 'closed_at'
+    CLOSE_DAY = 'close_day'
+    ACCEPTED_DAY = 'accepted_day'
     ENTRY_DAY = 'entry_day'
     ENTRY_PRICE = 'entry_price'
     PRINTS_AT = 'prints_at'
@@ -70,6 +100,8 @@ class Direction(str, Enum):
 MARKET_TZ = 'America/New_York'
 MARKET_OPEN = pd.Timedelta(hours=9, minutes=30)
 MARKET_CLOSE = pd.Timedelta(hours=16)
+#: Longest wait for an entry or exit price; a longer gap in a ticker's bars leaves its label missing.
+MAX_PRICE_GAP = pd.Timedelta(days=7)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,10 +131,10 @@ class ReferenceData:
         return cls(
             market_caps=pd.DataFrame(
                 {
-                    Column.TICKER: caps['ticker'].astype(str),
-                    Column.SNAPSHOT: pd.to_datetime(caps['fbd']),
-                    Column.MARKET_CAP: caps['marketcap'],
+                    Col.TICKER: caps['ticker'].astype(str),
+                    Col.SNAPSHOT: pd.to_datetime(caps['fbd']),
+                    Col.MARKET_CAP: caps['marketcap'],
                 }
-            ).sort_values(Column.SNAPSHOT),
+            ).sort_values(Col.SNAPSHOT),
             companies=pd.DataFrame(json.loads(companies_path.read_text(encoding='utf-8'))),
         )

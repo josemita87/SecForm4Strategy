@@ -1,11 +1,13 @@
 # SecForm4Strategy
 
-SEC Form 4 insider-trading ML system: Python 3.14 microservices (one uv project each) plus the shared `packages/secform4strategy-clients`. Design notes live in `docs/` (`configuration.md`, `development.md`).
+SEC Form 4 insider-trading ML system: Python 3.14 microservices (one uv project each) plus the shared `packages/secform4strategy-clients`. Design notes live in `docs/` (`configuration.md`, `development.md`, `form4-parsing.md`).
 
 ## Commands
 
 ```bash
-make quality-static   # ruff, pydoclint, bandit, validate-config (also the pre-commit hook)
+make quality-static   # ruff, pydoclint, bandit, validate-config, unit tests (also the pre-commit hook)
+make test-unit        # unit tests with coverage, each project in its own environment
+make test-unit-fast   # the same without coverage
 make type-check       # mypy, one run per service
 make quality          # format + quality-static + type-check
 make validate-config  # every spec.yaml feature-group catalog against FeatureGroupSpec
@@ -29,7 +31,8 @@ make validate-config  # every spec.yaml feature-group catalog against FeatureGro
 - **Inline single-use names:** a constant or local used once is inlined at its use site.
 - **Imports at module top.** No imports inside functions; each client module imports its SDK at the top (one module per extra). `if TYPE_CHECKING:` only for third-party or first-party names used solely in annotations; standard-library imports always stay at the top.
 - **Secrets:** credentials are `SecretStr` in config and stay wrapped until the adapter hands them to its SDK (`get_secret_value()` at that call only). SEC requests carry one honest `User-Agent` from `SEC_USER_AGENT`.
-- **Constants:** enums over raw strings, including DataFrame columns (a `Column(StrEnum)` per service); static data in YAML specs, validated at load.
+- **Paths:** every file location a service uses is a constant in its `src/paths.py` (anchored on `__file__` there and nowhere else); config path fields default to them.
+- **Constants:** enums over raw strings, including DataFrame columns (a short `Col(StrEnum)` per service); static data in YAML specs, validated at load.
 - **Tests:** `unittest.mock` and `pytest_mock` are banned; substitute typed in-memory port implementations.
 
 ## Git

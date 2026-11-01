@@ -13,7 +13,7 @@ class FeatureGroup(str, Enum):
     BIR4 = 'bir4'
 
 
-class Column(StrEnum):
+class Col(StrEnum):
     """Columns this service reads or writes."""
 
     TICKER = 'ticker'

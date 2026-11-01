@@ -1,5 +1,6 @@
 """The transaction record the scraper publishes: one per Form 4 transaction."""
 
+from datetime import datetime
 from typing import Annotated
 
 import xxhash
@@ -13,19 +14,20 @@ Ticker = Annotated[Code | None, AfterValidator(lambda t: None if t in {'NONE', '
 
 
 class Trade(BaseModel):
-    """One insider transaction; pydantic coerces the filing's raw text, and ``model_dump()`` is the record.
+    """One insider transaction; pydantic coerces the filing's raw text, and ``model_dump(mode='json')`` is the record.
 
     The four relationship flags are inputs only: the record carries them as ``owner_code``.
-    ``accession`` and ``position`` (the transaction's index in its table) only identify the record.
+    ``accession`` names the filing and ``position`` is the transaction's index in its table, so downstream
+    steps can group transactions by filing and order them within it.
     """
 
     model_config = ConfigDict(frozen=True)
 
     link: str
-    timestamp: int = Field(description='SEC acceptance time, epoch ms')
+    accepted_at: datetime = Field(description='When SEC accepted the filing, the moment it became public')
     derivative: bool
-    accession: str = Field(exclude=True)
-    position: int = Field(exclude=True)
+    accession: str
+    position: int
     company_cik: str | None = None
     ticker: Ticker = None
     insider_cik: str | None = None

@@ -111,8 +111,8 @@ class _FakeProducer:
     def __exit__(self, *exc):
         return False
 
-    def produce(self, topic, value, key, timestamp):
-        self.produced.append({'topic': topic, 'value': value, 'key': key, 'timestamp': timestamp})
+    def produce(self, topic, value, key):
+        self.produced.append({'topic': topic, 'value': value, 'key': key})
 
     def flush(self):
         self.flushed += 1
@@ -197,14 +197,11 @@ def test_kafka_producer_serializes_and_flushes(monkeypatch):
     client = KafkaClient(broker_address='b:9092')
     client.produce(
         'out',
-        [('k1', {'a': 1}, 111), ('k2', {'a': 2}, 222)],
+        [('k1', {'a': 1}), ('k2', {'a': 2})],
     )
     producer = holder['app'].producer
     assert producer.flushed == 1
-    assert [(p['key'], p['value'], p['timestamp']) for p in producer.produced] == [
-        ('k1', {'a': 1}, 111),
-        ('k2', {'a': 2}, 222),
-    ]
+    assert [(p['key'], p['value']) for p in producer.produced] == [('k1', {'a': 1}), ('k2', {'a': 2})]
 
 
 def test_kafka_consume_with_offsets_and_commit(monkeypatch):
@@ -238,8 +235,18 @@ def test_market_data_daily_bars_returns_tidy_frame(monkeypatch):
 
     def _download(symbol, **kwargs):
         captured.update(symbol=symbol, **kwargs)
-        idx = pd.to_datetime(['2024-01-01', '2024-01-02'])
-        return pd.DataFrame({'Open': [9.5, 10.5], 'High': [10.5, 11.5], 'Close': [10.0, 11.0]}, index=idx)
+        # A 2-for-1 split takes effect on day 3; Close is split-adjusted, Adj Close also dividend-adjusted
+        idx = pd.to_datetime(['2024-01-01', '2024-01-02', '2024-01-03'])
+        return pd.DataFrame(
+            {
+                'Open': [9.5, 10.5, 10.0],
+                'Close': [10.0, 11.0, 12.0],
+                'Adj Close': [9.0, 9.9, 12.0],
+                'Stock Splits': [0.0, 0.0, 2.0],
+                'Dividends': [0.0, 0.25, 0.0],
+            },
+            index=idx,
+        )
 
     fake = types.ModuleType('yfinance')
     fake.download = _download
@@ -249,15 +256,25 @@ def test_market_data_daily_bars_returns_tidy_frame(monkeypatch):
 
     out = MarketDataClient().daily_bars('AAPL', start=date(2024, 1, 1))
     # Caller's symbol and start thread straight through to yfinance.download, with flat columns.
-    assert captured == {'symbol': 'AAPL', 'start': date(2024, 1, 1), 'auto_adjust': True, 'multi_level_index': False}
+    assert captured == {
+        'symbol': 'AAPL',
+        'start': date(2024, 1, 1),
+        'auto_adjust': False,
+        'actions': True,
+        'multi_level_index': False,
+    }
     # Without a start, the full history is requested rather than yfinance's one-month default.
     captured.clear()
     MarketDataClient().daily_bars('AAPL')
     assert captured['period'] == 'max' and 'start' not in captured
-    # The yfinance 'Open'/'Close' columns are reshaped into a tidy (date, open, close) frame.
-    assert list(out.columns) == ['date', 'open', 'close']
-    assert out['open'].tolist() == [9.5, 10.5]
-    assert out['close'].tolist() == [10.0, 11.0]
+    # Adjusted open/close (as auto_adjust computes them), and the close as traded before the split.
+    assert list(out.columns) == ['date', 'open', 'close', 'close_as_traded', 'split', 'dividend']
+    assert out['open'].round(6).tolist() == [8.55, 9.45, 10.0]
+    assert out['close'].tolist() == [9.0, 9.9, 12.0]
+    assert out['close_as_traded'].tolist() == [20.0, 22.0, 12.0]
+    # The day's corporate actions pass through
+    assert out['split'].tolist() == [0.0, 0.0, 2.0]
+    assert out['dividend'].tolist() == [0.0, 0.25, 0.0]
 
 
 def test_market_data_price_histories_tags_skips_and_downcasts(monkeypatch):
@@ -268,7 +285,16 @@ def test_market_data_price_histories_tags_skips_and_downcasts(monkeypatch):
         if symbol == 'BAD':
             raise ValueError('delisted')
         idx = pd.to_datetime(['2024-01-02', '2024-01-01'])  # deliberately unsorted
-        return pd.DataFrame({'Open': [10.5, 9.5], 'Close': [11.0, 10.0]}, index=idx)
+        return pd.DataFrame(
+            {
+                'Open': [10.5, 9.5],
+                'Close': [11.0, 10.0],
+                'Adj Close': [11.0, 10.0],
+                'Stock Splits': [0.0, 0.0],
+                'Dividends': [0.0, 0.0],
+            },
+            index=idx,
+        )
 
     fake = types.ModuleType('yfinance')
     fake.download = _download
@@ -285,6 +311,7 @@ def test_market_data_price_histories_tags_skips_and_downcasts(monkeypatch):
     # Storage-friendly dtypes and (ticker, date) ordering.
     assert out['open'].dtype == 'float32'
     assert out['close'].dtype == 'float32'
+    assert out['close_as_traded'].dtype == 'float32'
     assert isinstance(out['ticker'].dtype, pd.CategoricalDtype)
     aapl = out[out['ticker'] == 'AAPL']
     assert aapl['date'].is_monotonic_increasing
@@ -301,7 +328,7 @@ def test_market_data_price_histories_empty_when_all_fail(monkeypatch):
     MarketDataClient = _fresh(monkeypatch, 'market_data').MarketDataClient
 
     out = MarketDataClient().price_histories(['BAD'])
-    assert list(out.columns) == ['date', 'open', 'close', 'ticker']
+    assert list(out.columns) == ['date', 'open', 'close', 'close_as_traded', 'split', 'dividend', 'ticker']
     assert out.empty
 
 

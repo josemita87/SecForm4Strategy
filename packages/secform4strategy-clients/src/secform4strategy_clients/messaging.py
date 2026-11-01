@@ -3,8 +3,8 @@
 Pure infrastructure: one client per external service. ``KafkaClient`` covers both
 consuming and producing. The consumer returns raw messages as a list of dicts and
 performs no field parsing, DataFrame construction or cleaning. The producer
-serializes and publishes records the caller has already shaped (keys, timestamps
-and any value transformations are the caller's responsibility).
+serializes and publishes records the caller has already shaped (keys and any value
+transformations are the caller's responsibility); the broker stamps each message's time.
 """
 
 import json
@@ -144,7 +144,7 @@ class KafkaClient:
         tp = TopicPartition(topic=self._input_topic.name, partition=partition, offset=offset + 1)
         self._consumer.commit(offsets=[tp])
 
-    def produce(self, topic_name: str, messages: Iterable[tuple[str, Mapping[str, Any], int | None]]) -> None:
+    def produce(self, topic_name: str, messages: Iterable[tuple[str, Mapping[str, Any]]]) -> None:
         """Produce a batch of messages to a topic and flush.
 
         The caller owns all message shaping; this method only serializes and
@@ -153,9 +153,7 @@ class KafkaClient:
 
         Args:
             topic_name: The Kafka topic to publish to.
-            messages: An iterable of ``(key, value, timestamp)`` tuples, where
-                ``value`` is the record dict and ``timestamp`` is epoch millis (or
-                ``None`` to let the broker assign one).
+            messages: ``(key, value)`` pairs, ``value`` being the JSON-serialisable record.
         """
         if (topic := self._produce_topics.get(topic_name)) is None:
             topic = self._produce_topics[topic_name] = self.app.topic(
@@ -163,12 +161,7 @@ class KafkaClient:
             )
 
         with self.app.get_producer() as producer:
-            for key, value, timestamp in messages:
+            for key, value in messages:
                 serialized = topic.serialize(key=key, value=value)
-                producer.produce(
-                    topic=topic.name,
-                    value=serialized.value,
-                    key=serialized.key,
-                    timestamp=timestamp,
-                )
+                producer.produce(topic=topic.name, value=serialized.value, key=serialized.key)
             producer.flush()

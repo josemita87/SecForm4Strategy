@@ -15,9 +15,15 @@ Each service lists the feature groups it touches, keyed by the reference the cod
 | `event_time` | yes | Event-time column |
 | `name` | no | Feature-group name; defaults to the reference key |
 
-`version` is not in the file: `load_feature_group_catalog` injects it from `FEATURE_GROUP_VERSION`, so one template serves every version. Entries are validated against `FeatureGroupSpec` and unknown keys are rejected; `make validate-config` checks every catalog. A change to a table's key or column types needs a new version, since a table's schema is fixed when it is created.
+`version` is not in the file: `load_feature_group_catalog` injects it from `FEATURE_GROUP_VERSION`, so one template serves every version. Entries are validated against `FeatureGroupSpec` and unknown keys are rejected; `make validate-config` checks every catalog. The version stays at 1 while nothing is deployed: a change to a table's key or columns means rebuilding the tables (drop them, or start a fresh lakehouse), since a table's schema is fixed when it is created. Bump it once stored data must be kept.
 
-The transaction `key` is deterministic: a hash of the filing's accession, its table (derivative or not) and the transaction's position in that table. A filed accession never changes, so every redelivery (feed re-polls, Kafka retries, backfill reruns) upserts the same row instead of adding a duplicate. Version 2 introduced this key; version 1 keyed on accession, remaining shares and the derivative flag, which collided.
+The transaction `key` is deterministic: a hash of the filing's accession, its table (derivative or not) and the transaction's position in that table. A filed accession never changes, so every redelivery (feed re-polls, Kafka retries, backfill reruns) upserts the same row instead of adding a duplicate. 
+
+Current formats:
+
+- **BT4/BI4** (one row per transaction): the scraper's record, including `accession` and `position` (the transaction's place in its filing's table), `accepted_at` as a UTC timestamp, and share and holding counts as `float64`.
+- **P** (one row per ticker and day): split- and dividend-adjusted `open`/`close` for returns, `close_as_traded` (the close in that day's shares, undoing later splits) for valuation, and the day's `split` and `dividend`.
+- **RT4/BIR4** (one row per ticker and next market print, key `<ticker>@<next print>`): every filing disclosed before that tradable price, valued at the as-traded close of the last trading day before the acceptance day, with the reported `price` (missing if none) and `price_to_close`, the cluster features above, and for RT4 the label and `label_known_at`.
 
 | Service | Groups | Role |
 | --- | --- | --- |
@@ -32,14 +38,16 @@ The transaction `key` is deterministic: a hash of the filing's accession, its ta
 **training**
 
 - `columns_to_drop`: removed before the model sees the frame.
-- `identification_features`: kept for traceability, excluded from the model inputs. `timestamp` (acceptance) and `label_known_at` (exit close) drive the chronological, purged train/test split: the test set is the latest `TRAIN_TEST_RATIO` of filings, and training keeps only labels known before it starts.
+- `identification_features`: kept for traceability, excluded from the model inputs. `accepted_at` (acceptance) and `label_known_at` (exit close), both UTC timestamps, drive the chronological, purged train/test split: the test set is the latest `TRAIN_TEST_RATIO` of filings, and training keeps only labels known before it starts.
 - `model_params`: keyword arguments for `HistGradientBoostingRegressor` (`random_state` comes from `RANDOM_STATE`).
 
 Inference has only its catalog: the model's input columns and their order come from the trained model's metadata (`features`).
 
 **target**
 
-- `agg_dict`: per-column aggregation that collapses same-ticker, same-day transactions into one daily row (`computations.data_aggregation`). Values are pandas aggregation names, except the `mode_first` token, which resolves to the most frequent value (first on ties).
+- `cluster_window_days` (30): how far back each disclosure row counts its ticker's distinct insiders, officers and filings (`insiders_recent`, `officers_recent`, `filings_recent`), ending at the row's acceptance.
+
+Target collapses transactions into one row per ticker and *next market print* (the first 09:30 open or 16:00 close after acceptance): everything disclosed before a tradable price, with stock and derivative quantities apart, code and role flags, filing and insider counts and the filing lag (`aggregate_disclosures` in target `main.py`). One row per trading opportunity keeps every filing timed at its own window and gives each label once.
 
 ## Reference data (target)
 

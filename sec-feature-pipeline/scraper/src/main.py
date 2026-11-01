@@ -4,13 +4,16 @@ import logging
 import time
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from config import config
 from parser import parse_filing
 from secform4strategy_clients.edgar import EdgarClient
 from secform4strategy_clients.messaging import KafkaClient
 from secform4strategy_clients.ports import Filing
+
+if TYPE_CHECKING:
+    from secform4strategy_clients.ports import Filings
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -34,7 +37,7 @@ def select_filings(
     selected = []
     for msg, offset in records:
         try:
-            filing = Filing(msg['accession'], msg['file_path'], datetime.fromtimestamp(msg['timestamp'] / 1000, UTC))
+            filing = Filing(msg['accession'], msg['file_path'], datetime.fromisoformat(msg['filed_at']))
         except KeyError, TypeError, ValueError, OverflowError, OSError:
             logger.error(f'Malformed filing message: {msg}')
             continue
@@ -46,17 +49,17 @@ def select_filings(
 
 
 if __name__ == '__main__':
-    kafka = KafkaClient(
+    kafka: KafkaClient = KafkaClient(
         broker_address=config.kafka_broker_address,
         consumer_group=config.consumer_group,
         auto_offset_reset=config.auto_offset_reset,
     )
-    edgar = EdgarClient(config.sec_user_agent)
+    edgar: Filings = EdgarClient(config.sec_user_agent, config.sec_max_rate)
     max_age = timedelta(days=config.days_back) if config.mode == 'live' else None
 
     def produce(records: list[dict[str, Any]]) -> None:
-        """Publish transaction records to the output topic, keyed by their key and stamped at acceptance."""
-        kafka.produce(config.kafka_output_topic, ((record['key'], record, record['timestamp']) for record in records))
+        """Publish transaction records to the output topic, keyed by their key (each carries its ``accepted_at``)."""
+        kafka.produce(config.kafka_output_topic, ((record['key'], record) for record in records))
         logger.debug(f'Produced {len(records)} messages')
 
     time.sleep(config.delay)
@@ -69,7 +72,7 @@ if __name__ == '__main__':
         # Commit per produced batch and at the end, so transaction-less filings are not re-consumed
         buffer: list[dict[str, Any]] = []
         for filing, offset in selected:
-            buffer.extend(parse_filing(filing, edgar, config.sleep_time))
+            buffer.extend(parse_filing(filing, edgar))
             if len(buffer) >= config.buffer_size:
                 produce(buffer)
                 kafka.commit_offset(offset)

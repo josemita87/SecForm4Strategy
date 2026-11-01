@@ -22,7 +22,7 @@ repos:
   - repo: local
     hooks:
       - id: quality-static
-        name: make quality-static (lint, docstrings, bandit, config validation)
+        name: make quality-static (lint, docstrings, bandit, config validation, unit tests)
         entry: make quality-static
         language: system
         pass_filenames: false

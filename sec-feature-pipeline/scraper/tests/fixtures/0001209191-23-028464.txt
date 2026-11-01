@@ -1,0 +1,659 @@
+<SEC-DOCUMENT>0001209191-23-028464.txt : 20230510
+<SEC-HEADER>0001209191-23-028464.hdr.sgml : 20230510
+<ACCEPTANCE-DATETIME>20230510161710
+ACCESSION NUMBER:		0001209191-23-028464
+CONFORMED SUBMISSION TYPE:	4
+PUBLIC DOCUMENT COUNT:		2
+CONFORMED PERIOD OF REPORT:	20230508
+FILED AS OF DATE:		20230510
+DATE AS OF CHANGE:		20230510
+
+REPORTING-OWNER:	
+
+	OWNER DATA:	
+		COMPANY CONFORMED NAME:			Alphabet Inc.
+		CENTRAL INDEX KEY:			0001652044
+		STANDARD INDUSTRIAL CLASSIFICATION:	SERVICES-COMPUTER PROGRAMMING, DATA PROCESSING, ETC. [7370]
+		STATE OF INCORPORATION:			DE
+		FISCAL YEAR END:			1231
+
+	FILING VALUES:
+		FORM TYPE:		4
+		SEC ACT:		1934 Act
+		SEC FILE NUMBER:	001-41536
+		FILM NUMBER:		23906623
+
+	BUSINESS ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PARKWAY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+		BUSINESS PHONE:		650-253-0000
+
+	MAIL ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PARKWAY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+
+REPORTING-OWNER:	
+
+	OWNER DATA:	
+		COMPANY CONFORMED NAME:			GV 2019 GP, L.L.C.
+		CENTRAL INDEX KEY:			0001845038
+		STATE OF INCORPORATION:			DE
+		FISCAL YEAR END:			1231
+
+	FILING VALUES:
+		FORM TYPE:		4
+		SEC ACT:		1934 Act
+		SEC FILE NUMBER:	001-41536
+		FILM NUMBER:		23906629
+
+	BUSINESS ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PKWY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+		BUSINESS PHONE:		650-335-5278
+
+	MAIL ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PKWY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+
+REPORTING-OWNER:	
+
+	OWNER DATA:	
+		COMPANY CONFORMED NAME:			GV 2019 GP, L.P.
+		CENTRAL INDEX KEY:			0001845039
+		STATE OF INCORPORATION:			DE
+		FISCAL YEAR END:			1231
+
+	FILING VALUES:
+		FORM TYPE:		4
+		SEC ACT:		1934 Act
+		SEC FILE NUMBER:	001-41536
+		FILM NUMBER:		23906628
+
+	BUSINESS ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PKWY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+		BUSINESS PHONE:		650-335-5278
+
+	MAIL ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PKWY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+
+REPORTING-OWNER:	
+
+	OWNER DATA:	
+		COMPANY CONFORMED NAME:			GV 2019, L.P.
+		CENTRAL INDEX KEY:			0001845041
+		STATE OF INCORPORATION:			DE
+		FISCAL YEAR END:			1231
+
+	FILING VALUES:
+		FORM TYPE:		4
+		SEC ACT:		1934 Act
+		SEC FILE NUMBER:	001-41536
+		FILM NUMBER:		23906627
+
+	BUSINESS ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PKWY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+		BUSINESS PHONE:		650-335-5278
+
+	MAIL ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PKWY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+
+REPORTING-OWNER:	
+
+	OWNER DATA:	
+		COMPANY CONFORMED NAME:			GV 2021, L.P.
+		CENTRAL INDEX KEY:			0001861202
+		STATE OF INCORPORATION:			DE
+		FISCAL YEAR END:			1231
+
+	FILING VALUES:
+		FORM TYPE:		4
+		SEC ACT:		1934 Act
+		SEC FILE NUMBER:	001-41536
+		FILM NUMBER:		23906624
+
+	BUSINESS ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PARKWAY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+		BUSINESS PHONE:		650-253-0000
+
+	MAIL ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PARKWAY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+
+REPORTING-OWNER:	
+
+	OWNER DATA:	
+		COMPANY CONFORMED NAME:			GV 2021 GP, L.L.C.
+		CENTRAL INDEX KEY:			0001861206
+		STATE OF INCORPORATION:			DE
+		FISCAL YEAR END:			1231
+
+	FILING VALUES:
+		FORM TYPE:		4
+		SEC ACT:		1934 Act
+		SEC FILE NUMBER:	001-41536
+		FILM NUMBER:		23906626
+
+	BUSINESS ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PARKWAY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+		BUSINESS PHONE:		650-253-0000
+
+	MAIL ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PARKWAY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+
+REPORTING-OWNER:	
+
+	OWNER DATA:	
+		COMPANY CONFORMED NAME:			GV 2021 GP, L.P.
+		CENTRAL INDEX KEY:			0001861216
+		STATE OF INCORPORATION:			DE
+		FISCAL YEAR END:			1231
+
+	FILING VALUES:
+		FORM TYPE:		4
+		SEC ACT:		1934 Act
+		SEC FILE NUMBER:	001-41536
+		FILM NUMBER:		23906625
+
+	BUSINESS ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PARKWAY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+		BUSINESS PHONE:		650-253-0000
+
+	MAIL ADDRESS:	
+		STREET 1:		1600 AMPHITHEATRE PARKWAY
+		CITY:			MOUNTAIN VIEW
+		STATE:			CA
+		ZIP:			94043
+
+ISSUER:		
+
+	COMPANY DATA:	
+		COMPANY CONFORMED NAME:			Prime Medicine, Inc.
+		CENTRAL INDEX KEY:			0001894562
+		STANDARD INDUSTRIAL CLASSIFICATION:	BIOLOGICAL PRODUCTS (NO DIAGNOSTIC SUBSTANCES) [2836]
+		IRS NUMBER:				000000000
+		STATE OF INCORPORATION:			DE
+		FISCAL YEAR END:			1231
+
+	BUSINESS ADDRESS:	
+		STREET 1:		21 ERIE ST.
+		CITY:			CAMBRIDGE
+		STATE:			MA
+		ZIP:			02139
+		BUSINESS PHONE:		617-465-0013
+
+	MAIL ADDRESS:	
+		STREET 1:		21 ERIE ST.
+		CITY:			CAMBRIDGE
+		STATE:			MA
+		ZIP:			02139
+</SEC-HEADER>
+<DOCUMENT>
+<TYPE>4
+<SEQUENCE>1
+<FILENAME>doc4.xml
+<DESCRIPTION>FORM 4 SUBMISSION
+<TEXT>
+<XML>
+<?xml version="1.0"?>
+<ownershipDocument>
+
+    <schemaVersion>X0407</schemaVersion>
+
+    <documentType>4</documentType>
+
+    <periodOfReport>2023-05-08</periodOfReport>
+
+    <notSubjectToSection16>0</notSubjectToSection16>
+
+    <issuer>
+        <issuerCik>0001894562</issuerCik>
+        <issuerName>Prime Medicine, Inc.</issuerName>
+        <issuerTradingSymbol>PRME</issuerTradingSymbol>
+    </issuer>
+
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0001845038</rptOwnerCik>
+            <rptOwnerName>GV 2019 GP, L.L.C.</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerAddress>
+            <rptOwnerStreet1>1600 AMPHITHEATRE PARKWAY</rptOwnerStreet1>
+            <rptOwnerStreet2></rptOwnerStreet2>
+            <rptOwnerCity>MOUNTAIN VIEW</rptOwnerCity>
+            <rptOwnerState>CA</rptOwnerState>
+            <rptOwnerZipCode>94043</rptOwnerZipCode>
+            <rptOwnerStateDescription></rptOwnerStateDescription>
+        </reportingOwnerAddress>
+        <reportingOwnerRelationship>
+            <isDirector>0</isDirector>
+            <isOfficer>0</isOfficer>
+            <isTenPercentOwner>1</isTenPercentOwner>
+            <isOther>0</isOther>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0001845039</rptOwnerCik>
+            <rptOwnerName>GV 2019 GP, L.P.</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerAddress>
+            <rptOwnerStreet1>1600 AMPHITHEATRE PARKWAY</rptOwnerStreet1>
+            <rptOwnerStreet2></rptOwnerStreet2>
+            <rptOwnerCity>MOUNTAIN VIEW</rptOwnerCity>
+            <rptOwnerState>CA</rptOwnerState>
+            <rptOwnerZipCode>94043</rptOwnerZipCode>
+            <rptOwnerStateDescription></rptOwnerStateDescription>
+        </reportingOwnerAddress>
+        <reportingOwnerRelationship>
+            <isDirector>0</isDirector>
+            <isOfficer>0</isOfficer>
+            <isTenPercentOwner>1</isTenPercentOwner>
+            <isOther>0</isOther>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0001845041</rptOwnerCik>
+            <rptOwnerName>GV 2019, L.P.</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerAddress>
+            <rptOwnerStreet1>1600 AMPHITHEATRE PARKWAY</rptOwnerStreet1>
+            <rptOwnerStreet2></rptOwnerStreet2>
+            <rptOwnerCity>MOUNTAIN VIEW</rptOwnerCity>
+            <rptOwnerState>CA</rptOwnerState>
+            <rptOwnerZipCode>94043</rptOwnerZipCode>
+            <rptOwnerStateDescription></rptOwnerStateDescription>
+        </reportingOwnerAddress>
+        <reportingOwnerRelationship>
+            <isDirector>0</isDirector>
+            <isOfficer>0</isOfficer>
+            <isTenPercentOwner>1</isTenPercentOwner>
+            <isOther>0</isOther>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0001861206</rptOwnerCik>
+            <rptOwnerName>GV 2021 GP, L.L.C.</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerAddress>
+            <rptOwnerStreet1>1600 AMPHITHEATRE PARKWAY</rptOwnerStreet1>
+            <rptOwnerStreet2></rptOwnerStreet2>
+            <rptOwnerCity>MOUNTAIN VIEW</rptOwnerCity>
+            <rptOwnerState>CA</rptOwnerState>
+            <rptOwnerZipCode>94043</rptOwnerZipCode>
+            <rptOwnerStateDescription></rptOwnerStateDescription>
+        </reportingOwnerAddress>
+        <reportingOwnerRelationship>
+            <isDirector>0</isDirector>
+            <isOfficer>0</isOfficer>
+            <isTenPercentOwner>1</isTenPercentOwner>
+            <isOther>0</isOther>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0001861216</rptOwnerCik>
+            <rptOwnerName>GV 2021 GP, L.P.</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerAddress>
+            <rptOwnerStreet1>1600 AMPHITHEATRE PARKWAY</rptOwnerStreet1>
+            <rptOwnerStreet2></rptOwnerStreet2>
+            <rptOwnerCity>MOUNTAIN VIEW</rptOwnerCity>
+            <rptOwnerState>CA</rptOwnerState>
+            <rptOwnerZipCode>94043</rptOwnerZipCode>
+            <rptOwnerStateDescription></rptOwnerStateDescription>
+        </reportingOwnerAddress>
+        <reportingOwnerRelationship>
+            <isDirector>0</isDirector>
+            <isOfficer>0</isOfficer>
+            <isTenPercentOwner>1</isTenPercentOwner>
+            <isOther>0</isOther>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0001861202</rptOwnerCik>
+            <rptOwnerName>GV 2021, L.P.</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerAddress>
+            <rptOwnerStreet1>1600 AMPHITHEATRE PARKWAY</rptOwnerStreet1>
+            <rptOwnerStreet2></rptOwnerStreet2>
+            <rptOwnerCity>MOUNTAIN VIEW</rptOwnerCity>
+            <rptOwnerState>CA</rptOwnerState>
+            <rptOwnerZipCode>94043</rptOwnerZipCode>
+            <rptOwnerStateDescription></rptOwnerStateDescription>
+        </reportingOwnerAddress>
+        <reportingOwnerRelationship>
+            <isDirector>0</isDirector>
+            <isOfficer>0</isOfficer>
+            <isTenPercentOwner>1</isTenPercentOwner>
+            <isOther>0</isOther>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0001652044</rptOwnerCik>
+            <rptOwnerName>Alphabet Inc.</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerAddress>
+            <rptOwnerStreet1>1600 AMPHITHEATRE PARKWAY</rptOwnerStreet1>
+            <rptOwnerStreet2></rptOwnerStreet2>
+            <rptOwnerCity>MOUNTAIN VIEW</rptOwnerCity>
+            <rptOwnerState>CA</rptOwnerState>
+            <rptOwnerZipCode>94043</rptOwnerZipCode>
+            <rptOwnerStateDescription></rptOwnerStateDescription>
+        </reportingOwnerAddress>
+        <reportingOwnerRelationship>
+            <isDirector>0</isDirector>
+            <isOfficer>0</isOfficer>
+            <isTenPercentOwner>1</isTenPercentOwner>
+            <isOther>0</isOther>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+
+    <aff10b5One>1</aff10b5One>
+
+    <nonDerivativeTable>
+        <nonDerivativeTransaction>
+            <securityTitle>
+                <value>Common Stock</value>
+            </securityTitle>
+            <transactionDate>
+                <value>2023-05-08</value>
+            </transactionDate>
+            <deemedExecutionDate></deemedExecutionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>S</transactionCode>
+                <equitySwapInvolved>0</equitySwapInvolved>
+                <footnoteId id="F1"/>
+            </transactionCoding>
+            <transactionTimeliness>
+                <value></value>
+            </transactionTimeliness>
+            <transactionAmounts>
+                <transactionShares>
+                    <value>100772</value>
+                </transactionShares>
+                <transactionPricePerShare>
+                    <value>14.1282</value>
+                    <footnoteId id="F2"/>
+                </transactionPricePerShare>
+                <transactionAcquiredDisposedCode>
+                    <value>D</value>
+                </transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>11421476</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>I</value>
+                </directOrIndirectOwnership>
+                <natureOfOwnership>
+                    <value>By GV 2019, L.P.</value>
+                    <footnoteId id="F3"/>
+                </natureOfOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+        <nonDerivativeTransaction>
+            <securityTitle>
+                <value>Common Stock</value>
+            </securityTitle>
+            <transactionDate>
+                <value>2023-05-09</value>
+            </transactionDate>
+            <deemedExecutionDate></deemedExecutionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>S</transactionCode>
+                <equitySwapInvolved>0</equitySwapInvolved>
+                <footnoteId id="F1"/>
+            </transactionCoding>
+            <transactionTimeliness>
+                <value></value>
+            </transactionTimeliness>
+            <transactionAmounts>
+                <transactionShares>
+                    <value>321238</value>
+                </transactionShares>
+                <transactionPricePerShare>
+                    <value>14.0787</value>
+                    <footnoteId id="F4"/>
+                </transactionPricePerShare>
+                <transactionAcquiredDisposedCode>
+                    <value>D</value>
+                </transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>11100238</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>I</value>
+                </directOrIndirectOwnership>
+                <natureOfOwnership>
+                    <value>By GV 2019, L.P.</value>
+                    <footnoteId id="F3"/>
+                </natureOfOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+        <nonDerivativeHolding>
+            <securityTitle>
+                <value>Common Stock</value>
+            </securityTitle>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>1762440</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>I</value>
+                </directOrIndirectOwnership>
+                <natureOfOwnership>
+                    <value>By GV 2021, L.P.</value>
+                    <footnoteId id="F5"/>
+                </natureOfOwnership>
+            </ownershipNature>
+        </nonDerivativeHolding>
+    </nonDerivativeTable>
+
+    <footnotes>
+        <footnote id="F1">This transaction was entered into pursuant to a Rule 10b5-1 trading plan adopted by the reporting person on April 6, 2023.</footnote>
+        <footnote id="F2">The price reported in Column 4 is a weighted average price. These shares were sold in multiple transactions at prices ranging from $13.90 to $14.32, inclusive. The reporting person undertakes to provide to the Issuer, any security holder of the Issuer, or the staff of the U.S. Securities and Exchange Commission, upon request, full information regarding the number of shares sold at each separate price within the ranges set forth in this footnote 2 and in footnote 4 of this Form 4.</footnote>
+        <footnote id="F3">The securities reported in this row are directly beneficially owned by GV 2019, L.P. (the &quot;2019 Partnership&quot;).  The general partner of the 2019 Partnership is GV 2019 GP, L.P. (the &quot;2019 GP&quot;).  The general partner of the 2019 GP is GV 2019 GP, L.L.C. (&quot;GV 2019 LLC&quot;).  The sole member of GV 2019 LLC is Alphabet Holdings LLC (&quot;Alphabet Holdings&quot;).  The sole member of Alphabet Holdings is XXVI Holdings Inc. (&quot;XXVI&quot;).  The controlling stockholder of XXVI is Alphabet Inc.  Each of the 2019 GP, GV 2019 LLC, Alphabet Holdings, XXVI, and Alphabet Inc. may be deemed to indirectly beneficially own (as the term is defined in Rule 13d-3 of the Securities Exchange Act of 1934, as amended (the &quot;Act&quot;)) the securities directly beneficially owned by the 2019 Partnership.  Each of the aforementioned parties disclaims beneficial ownership of such securities except to the extent of its pecuniary interest therein.</footnote>
+        <footnote id="F4">The price reported in Column 4 is a weighted average price. These shares were sold in multiple transactions at prices ranging from $14.00 to $14.215, inclusive.</footnote>
+        <footnote id="F5">The securities reported in this row are directly beneficially owned by GV 2021, L.P. (the &quot;2021 Partnership&quot;).  The general partner of the 2021 Partnership is GV 2021 GP, L.P. (the &quot;2021 GP&quot;).  The general partner of the 2021 GP is GV 2021 GP, L.L.C. (&quot;GV 2021 LLC&quot;).  The sole member of GV 2021 LLC is Alphabet Holdings.  The sole member of Alphabet Holdings is XXVI.  The controlling stockholder of XXVI is Alphabet Inc.  Each of the 2021 GP, GV 2021 LLC, Alphabet Holdings, XXVI, and Alphabet Inc. may be deemed to indirectly beneficially own (as the term is defined in Rule 13d-3 of the Act) the securities directly beneficially owned by the 2021 Partnership.  Each of the aforementioned parties disclaims beneficial ownership of such securities except to the extent of its pecuniary interest therein.</footnote>
+    </footnotes>
+
+    <remarks></remarks>
+
+    <ownerSignature>
+        <signatureName>/s/ Inga Goldbard, General Counsel of GV 2019 GP, L.L.C.</signatureName>
+        <signatureDate>2023-05-10</signatureDate>
+    </ownerSignature>
+
+    <ownerSignature>
+        <signatureName>/s/ Inga Goldbard, General Counsel of GV 2019 GP, L.P.</signatureName>
+        <signatureDate>2023-05-10</signatureDate>
+    </ownerSignature>
+
+    <ownerSignature>
+        <signatureName>/s/ Inga Goldbard, General Counsel of GV 2019, L.P.</signatureName>
+        <signatureDate>2023-05-10</signatureDate>
+    </ownerSignature>
+
+    <ownerSignature>
+        <signatureName>/s/ Inga Goldbard, General Counsel of GV 2021 GP, L.L.C.</signatureName>
+        <signatureDate>2023-05-10</signatureDate>
+    </ownerSignature>
+
+    <ownerSignature>
+        <signatureName>/s/ Inga Goldbard, General Counsel of GV 2021 GP, L.P.</signatureName>
+        <signatureDate>2023-05-10</signatureDate>
+    </ownerSignature>
+
+    <ownerSignature>
+        <signatureName>/s/ Inga Goldbard, General Counsel of GV 2021, L.P.</signatureName>
+        <signatureDate>2023-05-10</signatureDate>
+    </ownerSignature>
+
+    <ownerSignature>
+        <signatureName>/s/ Inga Goldbard, Attorney-in-fact of Alphabet Inc.</signatureName>
+        <signatureDate>2023-05-10</signatureDate>
+    </ownerSignature>
+</ownershipDocument>
+</XML>
+</TEXT>
+</DOCUMENT>
+<DOCUMENT>
+<TYPE>EX-24
+<SEQUENCE>2
+<FILENAME>attachment1.htm
+<DESCRIPTION>EX-24 DOCUMENT
+<TEXT>
+<HTML>
+<HEAD>
+</HEAD>
+<BODY>
+<PRE>
+POWER OF ATTORNEY
+
+      Know all by these presents, that each of the undersigned hereby makes,
+constitutes and appoints each of Inga Goldbard and Kim Burr, or either of them
+acting singly, the undersigned's true and lawful attorney-in-fact (each of such
+persons being referred to herein as the "Attorney-in-Fact"), with full power to
+act for the undersigned and in the undersigned's name, place and stead, in any
+and all capacities, to:
+
+1.	Prepare, execute and submit to the Securities and Exchange Commission
+("SEC"), Prime Medicine, Inc. (the "Company"), and/or any national securities
+exchange on which the Company's securities are listed any and all reports
+(including any amendments thereto) the undersigned is required to file with the
+SEC, or which the Attorney-in-Fact considers it advisable to file with the SEC,
+under Section 13 or Section 16 of the Securities Exchange Act of 1934 (the
+"Exchange Act") or any rule or regulation thereunder, or under Rule 144 under
+the Securities Act of 1933 ("Rule 144"), with respect to the any security of the
+Company, including Forms 3, 4 and 5, Schedules 13D and 13G, and Forms 144; and
+
+2.	Obtain, as the undersigned's representative and on the undersigned's behalf,
+information regarding transactions in the Company's equity securities from any
+third party, including the Company and any brokers, dealers, employee benefit
+plan administrators and trustees, and the undersigned hereby authorizes any such
+third party to release any such information to the Attorney-in-Fact.
+
+      The undersigned acknowledges that:
+
+a.	This Power of Attorney authorizes, but does not require, the Attorney-in-Fact
+to act in his or her discretion on information provided to such Attorney-in-Fact
+without independent verification of such information;
+
+b.	Any documents prepared or executed by the Attorney-in-Fact on behalf of the
+undersigned pursuant to this Power of Attorney will be in such form and will
+contain such information as the Attorney-in-Fact, in his or her discretion,
+deems necessary or desirable;
+
+c.	Neither the Company nor the Attorney-in-Fact assumes any liability for the
+undersigned's responsibility to comply with the requirements of Section 13 or
+Section 16 of the Exchange Act or Rule 144, any liability of the undersigned for
+any failure to comply with such requirements, or any liability of the
+undersigned for disgorgement of profits under Section 16(b) of the Exchange Act;
+and
+
+d.	This Power of Attorney does not relieve the undersigned from responsibility
+for compliance with the undersigned's obligations under Section 13 or Section 16
+of the Exchange Act, including, without limitation, the reporting requirements
+under Section 13 or Section 16 of the Exchange Act.
+
+      The undersigned hereby grants to the Attorney-in-Fact full power and
+authority to do and perform each and every act and thing requisite, necessary or
+advisable to be done in connection with the foregoing, as fully, to all intents
+and purposes, as the undersigned might or could do in person, hereby ratifying
+and confirming all that the Attorney-in-Fact shall lawfully do or cause to be
+done by authority of this Power of Attorney.
+
+      This Power of Attorney shall remain in full force and effect until the
+earlier of (i) the date the undersigned is no longer required to file Forms 4 or
+5 or Schedules 13D or 13G or Forms 144 with respect to the undersigned's direct
+or indirect holdings of or transactions in securities of the Company, (ii) the
+date the Attorney-in-Fact is no longer employed by GV Management Company, L.L.C.
+or an affiliate thereof, or (iii) the date the undersigned revokes this Power of
+Attorney in a signed writing delivered to the Attorney-in-Fact. This Power of
+Attorney revokes all previous powers of attorney with respect to the subject
+matter of this Power of Attorney.
+
+      IN WITNESS WHEREOF, the undersigned have executed this Power of Attorney
+this 17th day of April, 2023.
+
+Alphabet Holdings LLC
+
+By:	/s/ Kathryn W. Hall
+Name: 	Kathryn W. Hall
+Title:	Secretary
+
+
+XXVI Holdings Inc.
+
+By:	/s/ Kathryn W. Hall
+Name: 	Kathryn W. Hall
+Title:	Assistant Secretary
+
+
+Alphabet Inc.
+
+By:	/s/ Kathryn W. Hall
+Name: 	Kathryn W. Hall
+Title:	Assistant Secretary
+
+</PRE>
+</BODY>
+</HTML>
+</TEXT>
+</DOCUMENT>
+</SEC-DOCUMENT>

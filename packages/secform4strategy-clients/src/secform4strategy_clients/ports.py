@@ -110,7 +110,7 @@ class MarketData(Protocol):
     """Daily price history by ticker symbol."""
 
     def price_histories(self, symbols: Iterable[str], starts: Mapping[str, date] | None = None) -> pd.DataFrame:
-        """Return daily open/close history (``date``, ``open``, ``close``, ``ticker``) for many symbols."""
+        """Return daily bars (``date``, adjusted ``open``/``close``, ``close_as_traded``, ``split``, ``dividend``)."""
         ...
 
 

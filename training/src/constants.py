@@ -13,9 +13,9 @@ class FeatureGroup(str, Enum):
     RT4 = 'rt4'
 
 
-class Column(StrEnum):
+class Col(StrEnum):
     """Columns this service reads or writes."""
 
-    TIMESTAMP = 'timestamp'
+    ACCEPTED_AT = 'accepted_at'
     LABEL_KNOWN_AT = 'label_known_at'
     AVG_TARGET_EXPANDING = 'avg_target_expanding'
