@@ -23,7 +23,7 @@ Current formats:
 
 - **BT4/BI4** (one row per transaction): the scraper's record, including `accession` and `position` (the transaction's place in its filing's table), `accepted_at` as a UTC timestamp, and share and holding counts as `float64`.
 - **P** (one row per ticker and day): split- and dividend-adjusted `open`/`close` for returns, `close_as_traded` (the close in that day's shares, undoing later splits) for valuation, and the day's `split` and `dividend`.
-- **RT4/BIR4** (one row per ticker and next market print, key `<ticker>@<next print>`): every filing disclosed before that tradable price, valued at the as-traded close of the last trading day before the acceptance day, with the reported `price` (missing if none) and `price_to_close`, the cluster features above, and for RT4 the label and `label_known_at`.
+- **RT4/BIR4** (one row per ticker and next market print, key `<ticker>@<next print>`): every filing disclosed before that tradable price, valued at the as-traded close of the last trading day before the acceptance day, with the reported `price` (missing if none) and `price_to_close`, the cluster features below, and for RT4 the label and `label_known_at`. A row's `avg_target_expanding` averages its ticker's labels already known at its acceptance; RT4 keeps every labelled row, the average missing until a label is known.
 
 | Service | Groups | Role |
 | --- | --- | --- |
@@ -51,7 +51,7 @@ Target collapses transactions into one row per ticker and *next market print* (t
 
 ## Reference data (target)
 
-`prices-feature-pipeline/target/src/data/` holds static company data joined onto every daily transaction row (`add_company_context`):
+`prices-feature-pipeline/target/src/data/` holds static company data joined onto every disclosure row (`add_company_context`):
 
 - `mcaps.parquet`: monthly market-cap snapshots (`ticker`, `marketcap`, `fbd` = first business day), 1992 to 2024-08. Each row takes the latest snapshot strictly before its acceptance day.
 - `companies.json`: `{field: {cik: value}}` for `ticker`, `sic`, `sic_group` and `exchange`, keyed by zero-padded issuer CIK.

@@ -59,9 +59,9 @@ quality: format quality-static type-check
 
 #Running docker containers for redpanda cluster
 start-redpanda:
-	docker-compose -f redpanda.yml up -d
+	docker-compose -f docker-compose/redpanda.yml up -d
 stop-redpanda:
-	docker-compose -f redpanda.yml down
+	docker-compose -f docker-compose/redpanda.yml down
 
 
 inference-sec:

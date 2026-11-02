@@ -1,5 +1,5 @@
 {
-    "hopsworks": {
+    "feature_groups": {
         "bt4": "Basic Training Transactions",
         "rt4": "Return Training Transactions",
         "bi4": "Basic Inference Transactions",

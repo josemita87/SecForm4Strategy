@@ -6,11 +6,12 @@
 
 | Target | Runs |
 | --- | --- |
-| `make quality-static` | ruff, pydoclint, bandit (high severity), `validate-config`; also the pre-commit hook |
+| `make quality-static` | ruff, pydoclint, bandit (high severity), `validate-config`, `test-unit-fast`; also the pre-commit hook |
+| `make test-unit` | unit tests with coverage, each project in its own environment (`test-unit-fast`: without coverage) |
 | `make type-check` | mypy, per service |
 | `make quality` | `format`, then `quality-static`, then `type-check` |
 
-CI (`.github/workflows/quality.yml`) runs `quality-static` on every push to `master` and every pull request, and `type-check` as a non-blocking job until the Kafka client is removed.
+CI (`.github/workflows/quality.yml`) runs `quality-static` (unit tests included) on every push to `master` and every pull request, and `type-check` as a non-blocking job until the Kafka client is removed.
 
 The pre-commit hook (`uv run pre-commit install`; `uv run pre-commit run --all-files` to run it by hand) also checks file size (1 MB), private keys, merge markers and YAML/TOML syntax. `type-check` joins the hook once its backlog is cleared.
 

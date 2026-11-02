@@ -39,12 +39,16 @@ is a new adapter that satisfies the port, with no service change.
 `FeatureStore.read` filters with a plain mapping, `{column: value}`, where an
 iterable value means "any of". Each adapter translates it to its own query.
 
+`secform4strategy_clients.fakes` holds typed in-memory implementations of the
+ports for tests, one module per port (`fakes.filings`, `fakes.market_data`), each
+bound to its Protocol so `make type-check` fails when one drifts.
+
 ```toml
 # in a service pyproject.toml
 dependencies = ["secform4strategy-clients[feature-store,messaging]"]
 
 [tool.uv.sources]
-secform4strategy-clients = { path = "../../packages/secform4strategy-clients" }  # depth varies per service
+secform4strategy-clients = { path = "../../packages/secform4strategy-clients", editable = true }  # depth varies per service
 ```
 
 ## Usage

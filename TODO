@@ -2,7 +2,7 @@
 
 Long-running work, in the order chosen. Check items off as they land; keep the notes short.
 
-## 1. Disclosure-time pipeline (active)
+## 1. Disclosure-time pipeline
 
 The edge is speed from disclosure, so disclosure time is the one timestamp everywhere.
 
@@ -13,7 +13,7 @@ The edge is speed from disclosure, so disclosure time is the one timestamp every
 - [x] Scraper age filter compares filing publication times (was a no-op in live mode)
 - [x] Look-ahead bias: `compute_target` enters at the first price after acceptance (same-day close in session, next open otherwise), not at the trade date; `compute_RT4` only averages labels whose exit close printed before acceptance; every label changes, so BT4/RT4 are rebuilt
 - [x] Backfill de-duplication: the master index lists a filing once per filer; master-index keeps one row per accession, and transaction keys use the accession (not the filer-dependent link), so backfill and live discovery agree
-- [ ] Backfill throughput: `EdgarClient` caps requests at 10/s and waits only the remainder of the gap, so a sequential scrape now runs at ~8.5 filings/s (measured; was ~2/s with fixed sleeps), about 8 h for a year of ~250k unique Form 4s. Concurrency adds little beyond the cap; on AWS shard by quarter with a shared rate budget; add progress logging; start with 2-3 years of history
+- [ ] Backfill throughput: `EdgarClient` caps requests (8/s by default, SEC allows 10 per IP) and waits only the remainder of the gap; a sequential scrape ran at ~8.5 filings/s at the 10/s cap (was ~2/s with fixed sleeps), about 8-10 h for a year of ~250k unique Form 4s. Concurrency adds little beyond the cap; on AWS shard by quarter with a shared rate budget; add progress logging; start with 2-3 years of history
 - [ ] SEC errors and rate limits: a 403/429/503 reads as a filing without XML, so the scraper skips it and still commits its offset (the filing is lost); retry with backoff on non-200 and stop before the commit when retries run out. Needed by the concurrent backfill. Observed: a full 1,117-filing scrape at 10 requests/s lost 5 filings (53 transactions) this way; all parsed fine when retried
 - [ ] Auction execution (decided: daily granularity): live orders go to the auction the backtest enters at, market-on-open (`opg`) for filings accepted outside the session, market-on-close (`cls`) for in-session ones; replaces today's `market`/`gtc` on run; verify Alpaca's submission windows for `opg`/`cls` before relying on them; lands with the live scorer
 - [ ] AWS: monthly market-cap refresh as a scheduled job (EventBridge -> Lambda on the `MarketData` port, snapshot stamped at fetch time) writing the reference table on S3/Iceberg; market-cap snapshots end 2024-08 until then
@@ -36,20 +36,20 @@ The edge is speed from disclosure, so disclosure time is the one timestamp every
 - [ ] mypy: last 6 errors are the Kafka client (`messaging.py`); goes with the SQS migration, then `type-check` joins the pre-commit hook
 - [x] Unit tests per project (81): Form 4 parsing on real fixtures (10b5-1, joint filings, holdings, keys, tickers), filing messages both ways, price refresh and rebasing, next print, disclosure aggregation and clusters, valuation, labels and their safeguards, known-label mean; shared typed fakes with mypy conformance; `make test-unit` in the gate
 - [ ] Tests still to write: kafka-to-store cleaning, training (split, evaluate, model save/load), inference (scoring, order placement); integration tier against a temporary Iceberg catalog
-- [ ] Inference coverage: inference drops BIR4 rows with any missing value (v4: 276 of 579 scored; `price_to_close` is missing when no price was reported), although the model handles missing values natively; decide which columns a scored row must have
-- [ ] Feature store rebuild: no Hopsworks credentials are available, so BT4/BI4/RT4/BIR4 are rebuilt (with the new labels and dtypes) on the S3/Iceberg store of the AWS migration, not on Hopsworks
+- [ ] Inference coverage: inference drops BIR4 rows with any missing value (local sample: 205 of 431 scored; `price_to_close` is missing when no price was reported, `avg_target_expanding` before a ticker's first known label), although the model handles missing values natively; decide which columns a scored row must have
+- [ ] Feature store on AWS: BT4/BI4/P/RT4/BIR4 rebuilt from scratch on Iceberg in S3 + Glue (the local store is a SQLite catalog in `.lakehouse/`)
 - [ ] alpaca-py: smoke-test the broker adapter against the paper account (replaced alpaca-trade-api for Python 3.14)
 - [ ] Scraper holdings (`parser._holdings`, strategy decision, deferred): holdings are set only when both direct and indirect are present; kept as is for now
 - [x] Transaction key = accession + table + position (the old accession + remaining shares + derivative key collided, ~1.5% of transactions overwritten); share and holding columns float64 (were int32/int64: truncated fractional shares, could overflow)
 - [ ] Market half days: entry and exit assume a 16:00 ET close, but NYSE closes at 13:00 on a few days a year, so a filing accepted between 13:00 and 16:00 on such a day enters at a close that printed before it (look-ahead); take session times from an exchange calendar (`exchange_calendars`); the same calendar should drive `next_print`, which treats exchange holidays as trading days
 - [x] Price adjustments on incremental refresh: yahoo_connect fetches the last 30 stored days again and refetches a ticker's full history when their adjustment factors moved or a split/dividend follows them; never stores a bar before its close has printed
-- [ ] AWS migration: branch from `master` once the items above land
+- [ ] AWS migration: under way on `feat/aws-migration`, from `master` at 0.4
 
 ## 4. Python 3.15 (blocked)
 
-3.14 is done everywhere. 3.15 waits on Lambda GA (preview only) and on cp315 wheels: hopsworks (`<3.15`), confluent-kafka, quixstreams -> rocksdict.
+3.14 is done everywhere. 3.15 waits on Lambda GA (preview only) and on cp315 wheels: confluent-kafka and quixstreams -> rocksdict (gone with the move to SQS).
 
-- [ ] Kafka/Hopsworks-free services (incl. the live path) to 3.15 after Lambda GA
+- [ ] Kafka-free services (incl. the live path) to 3.15 after Lambda GA
 - [ ] `frozendict` (PEP 814) for module constants; comprehension unpacking (PEP 798); Tachyon profiler (PEP 799) on the live path
 
 ## Done
