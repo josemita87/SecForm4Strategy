@@ -2,7 +2,6 @@
 
 import logging
 import time
-from collections.abc import Hashable
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -12,8 +11,8 @@ from secform4strategy_clients.feature_groups import load_feature_group_catalog
 from secform4strategy_clients.feature_store import IcebergFeatureStore
 
 from src.config import config
-from src.constants import MARKET_CLOSE, MARKET_OPEN, MARKET_TZ, MAX_PRICE_GAP, Col, FeatureGroup, ReferenceData
-from src.helpers import acceptance_day, as_of_keys, next_print, normalize_prices
+from src.constants import MARKET_CLOSE, MARKET_OPEN, MAX_PRICE_WAIT, Col, FeatureGroup, ReferenceData
+from src.helpers import acceptance_day, as_of_keys, instant, next_print, normalize_prices
 from src.paths import SPEC_PATH
 
 if TYPE_CHECKING:
@@ -34,8 +33,8 @@ def aggregate_disclosures(transactions: pd.DataFrame) -> pd.DataFrame:
     complete at its latest acceptance and loses no trading opportunity. Stock and derivative
     quantities stay apart; remaining shares count each insider's position after their last
     stock transaction (ordered by acceptance, trade date and place in the filing's table, so
-    buys and sales alike) in each ownership line (direct, indirect), and stock holdings each
-    filing once. Transaction codes and insider roles
+    buys and sales alike) in each ownership line (direct, indirect), and stock holdings come
+    from each insider's latest filing, since every filing restates them. Transaction codes and insider roles
     become flags; ``filing_lag_days`` runs from the earliest trade to acceptance.
 
     Args:
@@ -45,6 +44,8 @@ def aggregate_disclosures(transactions: pd.DataFrame) -> pd.DataFrame:
         One row per ``ticker`` and ``next_print``, keyed ``<ticker>@<next print>``.
     """
     stock = ~transactions[Col.DERIVATIVE].astype(bool)
+
+    # Per transaction: next print, stock vs derivative shares, reported stock price, code and role flags
     tx = transactions.assign(
         **{
             Col.NEXT_PRINT: next_print(transactions[Col.ACCEPTED_AT]),
@@ -60,7 +61,10 @@ def aggregate_disclosures(transactions: pd.DataFrame) -> pd.DataFrame:
             Col.EXERCISE: transactions[Col.CODING].isin(['M', 'C', 'X']),
         }
     )
+
+    # Group by 'ticker' and 'next_print'. Txs between 2 prints taken as a single opportunity trade.
     keys = [Col.TICKER, Col.NEXT_PRINT]
+    latest = tx[stock].sort_values([Col.ACCEPTED_AT, Col.DATE, Col.POSITION])
     rows = (
         tx.groupby(keys, observed=True)
         .agg(
@@ -72,7 +76,7 @@ def aggregate_disclosures(transactions: pd.DataFrame) -> pd.DataFrame:
                 Col.N_INSIDERS: (Col.INSIDER_CIK, 'nunique'),
                 Col.SHARES: (Col.SHARES, 'sum'),
                 Col.DERIVATIVE_SHARES: (Col.DERIVATIVE_SHARES, 'sum'),
-                Col.PRICE: (Col.PRICE, 'mean'),
+                Col.REPORTED_PRICE: (Col.PRICE, 'mean'),
                 **{
                     flag: (flag, 'any')
                     for flag in (
@@ -88,18 +92,19 @@ def aggregate_disclosures(transactions: pd.DataFrame) -> pd.DataFrame:
                 },
             }
         )
+        # Traded accounts: each insider's last balance per ownership line, summed into one `remaining_shares`
         .join(
-            tx[stock]
-            .sort_values([Col.ACCEPTED_AT, Col.DATE, Col.POSITION])
-            .groupby([*keys, Col.INSIDER_CIK, Col.OWNERSHIP], observed=True, dropna=False)[Col.REMAINING_SHARES]
+            latest.groupby([*keys, Col.INSIDER_CIK, Col.OWNERSHIP], observed=True, dropna=False)[Col.REMAINING_SHARES]
             .last()
             .groupby(level=keys)
             .sum()
         )
+        # Untraded accounts: each insider's latest filed holdings, summed with direct and indirect kept apart
         .join(
-            tx[stock]
-            .groupby([*keys, Col.ACCESSION], observed=True)[[Col.DIRECT_HOLDING, Col.INDIRECT_HOLDING]]
-            .first()
+            latest.groupby([*keys, Col.INSIDER_CIK], observed=True, dropna=False)[
+                [Col.DIRECT_HOLDING, Col.INDIRECT_HOLDING]
+            ]
+            .last()
             .groupby(level=keys)
             .sum()
         )
@@ -129,6 +134,7 @@ def add_cluster_features(rows: pd.DataFrame, transactions: pd.DataFrame, window:
         The rows with ``insiders_recent``, ``officers_recent`` and ``filings_recent``.
     """
     rows = rows.sort_values([Col.TICKER, Col.ACCEPTED_AT])
+    # tuple() is needed: GroupBy has a `keys` attribute, so dict() would read it as a mapping
     by_ticker = dict(tuple(transactions.sort_values(Col.ACCEPTED_AT).groupby(Col.TICKER, observed=True)))
     counts = []
     for ticker, group in rows.groupby(Col.TICKER, observed=True, sort=True):
@@ -149,7 +155,7 @@ def add_cluster_features(rows: pd.DataFrame, transactions: pd.DataFrame, window:
     return rows.join(recent)
 
 
-def add_value_features(transactions: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
+def add_value_features(rows: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
     """Value each row's share counts in USD at its ticker's as-traded close on the last day before acceptance.
 
     Training and inference both run this step, so the model sees the same features in
@@ -157,23 +163,22 @@ def add_value_features(transactions: pd.DataFrame, prices: pd.DataFrame) -> pd.D
     acceptance time, and in that day's shares, like the filing's counts. Values are
     therefore comparable across transaction types and across later splits. ``tx_value``,
     ``derivative_value`` (notional: underlying shares at the stock's close),
-    ``remaining_value``, ``direct_holding`` and ``indirect_holding`` become USD values; the
-    share counts go. The reported ``price`` is kept as is and compared with the close as
+    ``remaining_value``, ``direct_holding`` and ``indirect_holding`` become USD values, and
+    ``total_held`` is their sum (traded accounts after the trade plus untraded ones); the
+    share counts go. ``reported_price`` is kept as is and compared with the close as
     ``price_to_close`` (missing when no price was reported).
 
     Args:
-        transactions: Disclosure rows prepared by ``as_of_keys``, with reported ``price`` (missing if none) and
+        rows: Disclosure rows from ``aggregate_disclosures``, with ``reported_price`` (missing if none) and
             share columns.
         prices: Daily bars prepared by ``normalize_prices``, with ``close_as_traded``.
 
     Returns:
-        The transactions with USD value columns and ``price_to_close``.
+        The rows with USD value columns and ``price_to_close``.
     """
     # Backward and not exact: the last trading day strictly before the acceptance day (weekends and holidays skipped)
     valued = pd.merge_asof(
-        transactions.assign(**{Col.ACCEPTED_DAY: acceptance_day(transactions[Col.ACCEPTED_AT])}).sort_values(
-            Col.ACCEPTED_DAY
-        ),
+        rows.assign(**{Col.ACCEPTED_DAY: acceptance_day(rows[Col.ACCEPTED_AT])}).sort_values(Col.ACCEPTED_DAY),
         prices[[Col.TICKER, Col.DATE, Col.CLOSE_AS_TRADED]].rename(
             columns={Col.DATE: Col.CLOSE_DAY, Col.CLOSE_AS_TRADED: Col.LAST_CLOSE}
         ),
@@ -183,16 +188,17 @@ def add_value_features(transactions: pd.DataFrame, prices: pd.DataFrame) -> pd.D
         direction='backward',
         allow_exact_matches=False,
     )
-    # Each USD value column and the share count it values
-    for value, count in (
-        (Col.TX_VALUE, Col.SHARES),
-        (Col.DERIVATIVE_VALUE, Col.DERIVATIVE_SHARES),
-        (Col.REMAINING_VALUE, Col.REMAINING_SHARES),
-        (Col.DIRECT_HOLDING, Col.DIRECT_HOLDING),
-        (Col.INDIRECT_HOLDING, Col.INDIRECT_HOLDING),
-    ):
-        valued[value] = valued[count] * valued[Col.LAST_CLOSE]
-    valued[Col.PRICE_TO_CLOSE] = valued[Col.PRICE] / valued[Col.LAST_CLOSE]
+    # Each USD value column and the share count it values, all multiplied by the row's close at once
+    counts = {
+        Col.TX_VALUE: Col.SHARES,
+        Col.DERIVATIVE_VALUE: Col.DERIVATIVE_SHARES,
+        Col.REMAINING_VALUE: Col.REMAINING_SHARES,
+        Col.DIRECT_HOLDING: Col.DIRECT_HOLDING,
+        Col.INDIRECT_HOLDING: Col.INDIRECT_HOLDING,
+    }
+    valued[list(counts)] = valued[list(counts.values())].mul(valued[Col.LAST_CLOSE], axis=0).to_numpy()
+    valued[Col.TOTAL_HELD] = valued[Col.REMAINING_VALUE] + valued[Col.DIRECT_HOLDING] + valued[Col.INDIRECT_HOLDING]
+    valued[Col.PRICE_TO_CLOSE] = valued[Col.REPORTED_PRICE] / valued[Col.LAST_CLOSE]
     return valued.drop(
         columns=[
             Col.LAST_CLOSE,
@@ -205,26 +211,26 @@ def add_value_features(transactions: pd.DataFrame, prices: pd.DataFrame) -> pd.D
     )
 
 
-def compute_target(transactions: pd.DataFrame, prices: pd.DataFrame, period: int) -> pd.DataFrame:
+def compute_target(rows: pd.DataFrame, prices: pd.DataFrame, period: int) -> pd.DataFrame:
     """Label each disclosure row with the forward return from the first price a trader could act on.
 
     Every trading day offers two prices, its 09:30 open and its 16:00 close (US/Eastern).
-    A filing accepted at ``accepted_at`` enters at the first of them strictly
-    after acceptance: the same day's close when accepted in session, the next open
-    otherwise. It exits at the first close ``period`` days after the entry day;
-    ``label_known_at`` (UTC) is that exit close. A transaction stays unlabelled when its
+    A row enters at its ``next_print``, or at the first actual print after it when that
+    print did not happen (an exchange holiday, a gap in the ticker's bars). It exits at
+    the first close ``period`` days after the entry day;
+    ``label_known_at`` (UTC) is that exit close. A row stays unlabelled when its
     exit falls after its ticker's last bar, or when the entry or exit price is more than
-    ``MAX_PRICE_GAP`` away (a gap in the ticker's bars).
+    ``MAX_PRICE_WAIT`` away (a gap in the ticker's bars).
 
     Args:
-        transactions: Disclosure rows prepared by ``as_of_keys``.
+        rows: Disclosure rows from ``aggregate_disclosures``, with ``next_print``.
         prices: Daily bars prepared by ``normalize_prices``, with adjusted ``open`` and ``close``.
         period: Days between the entry day and the exit.
 
     Returns:
         The rows with ``pct_change`` and ``label_known_at``.
     """
-    assert transactions[Col.ACCEPTED_AT].notna().all(), 'Acceptance times contain NaT'
+    assert rows[Col.NEXT_PRINT].notna().all(), 'Next prints contain NaT'
 
     # One row per tradable price: each day's open and close, stamped at the moment it prints
     events = pd.concat(
@@ -234,7 +240,7 @@ def compute_target(transactions: pd.DataFrame, prices: pd.DataFrame, period: int
                     Col.TICKER: prices[Col.TICKER],
                     Col.ENTRY_DAY: prices[Col.DATE],
                     Col.ENTRY_PRICE: prices[col],
-                    Col.PRINTS_AT: (prices[Col.DATE].dt.tz_localize(MARKET_TZ) + offset).dt.tz_convert('UTC'),
+                    Col.PRINTS_AT: instant(prices[Col.DATE] + offset),
                 }
             )
             for col, offset in ((Col.OPEN, MARKET_OPEN), (Col.CLOSE, MARKET_CLOSE))
@@ -242,14 +248,14 @@ def compute_target(transactions: pd.DataFrame, prices: pd.DataFrame, period: int
     ).dropna(subset=[Col.ENTRY_PRICE])
 
     start = pd.merge_asof(
-        transactions.sort_values(Col.ACCEPTED_AT),
+        rows.sort_values(Col.NEXT_PRINT),
         events.sort_values(Col.PRINTS_AT),
-        left_on=Col.ACCEPTED_AT,
+        left_on=Col.NEXT_PRINT,
         right_on=Col.PRINTS_AT,
         by=Col.TICKER,
         direction='forward',
-        allow_exact_matches=False,
-        tolerance=MAX_PRICE_GAP,
+        allow_exact_matches=True,
+        tolerance=MAX_PRICE_WAIT,
     )
     start[Col.EXIT_DUE] = start[Col.ENTRY_DAY] + pd.to_timedelta(period, unit='D')
     # Only exits the ticker's own bars already reach can be labelled
@@ -264,10 +270,10 @@ def compute_target(transactions: pd.DataFrame, prices: pd.DataFrame, period: int
         by=Col.TICKER,
         direction='forward',
         allow_exact_matches=True,
-        tolerance=MAX_PRICE_GAP,
+        tolerance=MAX_PRICE_WAIT,
     )
     es[Col.PCT_CHANGE] = ((es[Col.EXIT_PRICE] - es[Col.ENTRY_PRICE]) / es[Col.ENTRY_PRICE]).round(5)
-    es[Col.LABEL_KNOWN_AT] = (es[Col.EXIT_DATE].dt.tz_localize(MARKET_TZ) + MARKET_CLOSE).dt.tz_convert('UTC')
+    es[Col.LABEL_KNOWN_AT] = instant(es[Col.EXIT_DATE] + MARKET_CLOSE)
 
     es = es.drop(
         columns=[
@@ -283,51 +289,66 @@ def compute_target(transactions: pd.DataFrame, prices: pd.DataFrame, period: int
     return es
 
 
-def known_label_mean(labels: pd.DataFrame, rows: pd.DataFrame) -> np.ndarray:
+def known_label_mean(labels: pd.DataFrame, rows: pd.DataFrame) -> pd.Series:
     """Return, for each row, the mean ``pct_change`` of its ticker's labels already known at its acceptance.
 
-    A label counts once its ``label_known_at`` (the exit close) is at or before the row's
+    A label counts once its ``label_known_at`` (the exit close) is strictly before the row's
     ``accepted_at``, so no return still unrealised at acceptance leaks in. Training (each RT4
     row against RT4) and inference (each BIR4 row against RT4) use this one rule.
 
     Args:
         labels: Labelled rows with ``ticker``, ``label_known_at`` and ``pct_change``.
-        rows: Rows with ``ticker`` and ``accepted_at``, in the order of the result.
+        rows: Rows with ``ticker`` and ``accepted_at``, uniquely indexed.
 
     Returns:
-        The mean per row; NaN where no label of its ticker was known yet.
+        The mean per row, indexed like ``rows``; NaN where no label of its ticker was known yet.
     """
-    means = np.full(len(rows), np.nan)
-    by_ticker: dict[Hashable, pd.DataFrame] = dict(
-        tuple(labels.sort_values(Col.LABEL_KNOWN_AT).groupby(Col.TICKER, observed=True))
+    # Each ticker's running mean return, in the order its labels became known
+    known = labels.dropna(subset=[Col.PCT_CHANGE]).sort_values(Col.LABEL_KNOWN_AT)
+    returns = known.groupby(Col.TICKER, observed=True)[Col.PCT_CHANGE]
+    known = known.assign(
+        **{
+            # Group-wise transforms: one value per label, indexed like `known`, so each lands on its own row
+            Col.AVG_TARGET_EXPANDING: returns.cumsum() / (returns.cumcount() + 1),
+            # The as-of keys must match the rows' dtypes: labels read from the store may differ
+            Col.TICKER: known[Col.TICKER].astype(str),
+            Col.LABEL_KNOWN_AT: known[Col.LABEL_KNOWN_AT].dt.as_unit('ns'),
+        }
     )
-    accepted = rows[Col.ACCEPTED_AT].to_numpy('datetime64[ns]')
-    for ticker, positions in rows.groupby(Col.TICKER, observed=True).indices.items():
-        if (known := by_ticker.get(ticker)) is None:
-            continue
-        pct = known[Col.PCT_CHANGE].to_numpy(np.float64)
-        # Prefix sums over the labels in the order they became known; a search counts each row's known ones
-        sums, counts = (np.r_[0, np.cumsum(a)] for a in (np.nan_to_num(pct), ~np.isnan(pct)))
-        n = np.searchsorted(known[Col.LABEL_KNOWN_AT].to_numpy('datetime64[ns]'), accepted[positions], side='right')
-        means[positions] = np.divide(sums[n], counts[n], out=np.full(len(n), np.nan), where=counts[n] > 0)
+    # Each row takes the latest running mean known strictly before its acceptance (a close publishes just after 16:00)
+    ordered = rows.sort_values(Col.ACCEPTED_AT)
+    means: pd.Series = (
+        pd.merge_asof(
+            ordered[[Col.TICKER, Col.ACCEPTED_AT]],
+            known[[Col.TICKER, Col.LABEL_KNOWN_AT, Col.AVG_TARGET_EXPANDING]],
+            left_on=Col.ACCEPTED_AT,
+            right_on=Col.LABEL_KNOWN_AT,
+            by=Col.TICKER,
+            direction='backward',
+            allow_exact_matches=False,
+        )[Col.AVG_TARGET_EXPANDING]
+        .set_axis(ordered.index)
+        .reindex(rows.index)
+    )
     return means
 
 
-def add_company_context(transactions: pd.DataFrame, reference: ReferenceData) -> pd.DataFrame:
-    """Attach each transaction's market cap, exchange, SIC code and SIC group.
+def add_company_context(rows: pd.DataFrame, reference: ReferenceData) -> pd.DataFrame:
+    """Attach each row's market cap, exchange, SIC code and SIC group.
 
-    Market cap is the latest monthly snapshot strictly before the filing's acceptance
-    day, so it is what a trader knew at disclosure; the rest is looked up by issuer CIK.
+    Market cap is the latest monthly snapshot strictly before the row's acceptance day
+    (its latest filing's), so it is what a trader knew at disclosure; the rest is looked up by issuer CIK.
 
     Args:
-        transactions: Transactions prepared by ``as_of_keys``, with ``company_cik``.
+        rows: Disclosure rows from ``aggregate_disclosures``, with ``company_cik``.
         reference: Market-cap snapshots and the company table.
 
     Returns:
-        The transactions with ``market_cap``, ``exchange``, ``sic`` and ``sic_group`` columns.
+        The rows with ``market_cap``, ``exchange``, ``sic`` and ``sic_group`` columns.
     """
+    # Keyed on the acceptance day (midnight), so excluding exact matches skips that day's own snapshot
     enriched = pd.merge_asof(
-        transactions.assign(**{Col.SNAPSHOT: acceptance_day(transactions[Col.ACCEPTED_AT])}).sort_values(Col.SNAPSHOT),
+        rows.assign(**{Col.SNAPSHOT: acceptance_day(rows[Col.ACCEPTED_AT])}).sort_values(Col.SNAPSHOT),
         reference.market_caps,
         on=Col.SNAPSHOT,
         by=Col.TICKER,

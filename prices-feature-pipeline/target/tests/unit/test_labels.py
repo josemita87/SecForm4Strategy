@@ -31,13 +31,13 @@ def means(*rows: tuple[str, str]) -> list[float]:
 
 
 class TestKnownLabelMean:
-    """Only labels whose exit close is at or before acceptance count."""
+    """Only labels whose exit close is strictly before acceptance count."""
 
     def test_only_labels_already_known_count(self) -> None:
         assert means(('AAA', '2024-03-05 18:00')) == [0.10]
 
-    def test_a_label_known_at_the_very_moment_counts(self) -> None:
-        assert means(('AAA', '2024-03-10 16:00')) == [0.15000000000000002]
+    def test_a_label_known_at_the_very_moment_does_not_count_yet(self) -> None:
+        assert means(('AAA', '2024-03-10 16:00')) == [0.10]
 
     def test_missing_returns_are_skipped(self) -> None:
         assert means(('AAA', '2024-03-13 18:00')) == [0.15000000000000002]

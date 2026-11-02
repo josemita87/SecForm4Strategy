@@ -41,6 +41,7 @@ class Col(StrEnum):
     COMPANY_CIK = 'company_cik'
     ACQUIRED_DISPOSED = 'acquired_disposed'
     PRICE = 'price'
+    REPORTED_PRICE = 'reported_price'
     SHARES = 'shares'
     REMAINING_SHARES = 'remaining_shares'
     DIRECT_HOLDING = 'direct_holding'
@@ -51,6 +52,7 @@ class Col(StrEnum):
     DERIVATIVE_SHARES = 'derivative_shares'
     DERIVATIVE_VALUE = 'derivative_value'
     REMAINING_VALUE = 'remaining_value'
+    TOTAL_HELD = 'total_held'
     OPEN = 'open'
     CLOSE = 'close'
     MARKET_CAP = 'market_cap'
@@ -101,7 +103,7 @@ MARKET_TZ = 'America/New_York'
 MARKET_OPEN = pd.Timedelta(hours=9, minutes=30)
 MARKET_CLOSE = pd.Timedelta(hours=16)
 #: Longest wait for an entry or exit price; a longer gap in a ticker's bars leaves its label missing.
-MAX_PRICE_GAP = pd.Timedelta(days=7)
+MAX_PRICE_WAIT = pd.Timedelta(days=7)
 
 
 @dataclass(frozen=True, slots=True)

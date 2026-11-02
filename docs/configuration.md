@@ -23,7 +23,7 @@ Current formats:
 
 - **BT4/BI4** (one row per transaction): the scraper's record, including `accession` and `position` (the transaction's place in its filing's table), `accepted_at` as a UTC timestamp, and share and holding counts as `float64`.
 - **P** (one row per ticker and day): split- and dividend-adjusted `open`/`close` for returns, `close_as_traded` (the close in that day's shares, undoing later splits) for valuation, and the day's `split` and `dividend`.
-- **RT4/BIR4** (one row per ticker and next market print, key `<ticker>@<next print>`): every filing disclosed before that tradable price, valued at the as-traded close of the last trading day before the acceptance day, with the reported `price` (missing if none) and `price_to_close`, the cluster features below, and for RT4 the label and `label_known_at`. A row's `avg_target_expanding` averages its ticker's labels already known at its acceptance; RT4 keeps every labelled row, the average missing until a label is known.
+- **RT4/BIR4** (one row per ticker and next market print, key `<ticker>@<next print>`): every filing disclosed before that tradable price, valued at the as-traded close of the last trading day before the acceptance day, with `reported_price`, the mean price reported on its stock transactions (missing if none), `price_to_close`, USD values of the traded shares, the positions left and `total_held` (traded plus untraded accounts), the cluster features below, and for RT4 the label and `label_known_at`. A row's `avg_target_expanding` averages its ticker's labels already known at its acceptance; RT4 keeps every labelled row, the average missing until a label is known.
 
 | Service | Groups | Role |
 | --- | --- | --- |

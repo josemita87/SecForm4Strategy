@@ -34,6 +34,10 @@ class TestValuation:
     def test_derivative_shares_are_valued_at_the_stocks_close(self) -> None:
         assert valued(derivative=True, shares=4.0)['derivative_value'] == 4.0 * 200.0
 
+    def test_total_held_adds_traded_and_untraded_accounts(self) -> None:
+        row = valued(remaining_shares=5.0, direct_holding=2.0, indirect_holding=1.0)
+        assert row['total_held'] == (5.0 + 2.0 + 1.0) * 200.0
+
     def test_share_counts_give_way_to_usd_values(self) -> None:
         assert not {'shares', 'derivative_shares', 'remaining_shares'} & set(valued().index)
 

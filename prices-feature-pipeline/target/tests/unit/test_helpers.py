@@ -6,7 +6,7 @@ Under test:
 
 import pandas as pd
 import pytest
-from src.helpers import acceptance_day, next_print
+from src.helpers import instant, next_print, wall_clock
 
 from tests.factories import ny
 
@@ -31,9 +31,13 @@ class TestNextPrint:
         assert next_print(pd.Series([ny(accepted)])).iloc[0] == ny(expected)
 
 
-class TestAcceptanceDay:
-    """The calendar day in New York, whatever the UTC date."""
+class TestMarketClock:
+    """Instants map to New York wall-clock times and back."""
 
     def test_a_late_evening_acceptance_keeps_its_new_york_day(self) -> None:
         # 23:30 in New York is already the next day in UTC
-        assert acceptance_day(pd.Series([ny('2024-03-05 23:30')])).iloc[0] == pd.Timestamp('2024-03-05')
+        assert wall_clock(pd.Series([ny('2024-03-05 23:30')])).dt.normalize().iloc[0] == pd.Timestamp('2024-03-05')
+
+    def test_a_wall_clock_time_round_trips_across_daylight_saving(self) -> None:
+        moments = pd.Series([ny('2024-03-08 16:00'), ny('2024-03-11 16:00')])
+        assert instant(wall_clock(moments)).equals(moments)

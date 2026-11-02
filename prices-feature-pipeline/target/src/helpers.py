@@ -1,4 +1,6 @@
-"""Frame preparation shared by the target steps: normalized bars, as-of keys, acceptance days and next prints."""
+"""Frame preparation shared by the target steps: bars, as-of keys, market clock, acceptance days, next prints."""
+
+import calendar
 
 import numpy as np
 import pandas as pd
@@ -26,15 +28,21 @@ def as_of_keys(transactions: pd.DataFrame) -> pd.DataFrame:
     return transactions.assign(**columns).sort_values(Col.ACCEPTED_AT)
 
 
+def wall_clock(instants: pd.Series) -> pd.Series:
+    """Return tz-aware instants as naive New York wall-clock times, the calendar of daily bars."""
+    local: pd.Series = instants.dt.tz_convert(MARKET_TZ).dt.tz_localize(None)
+    return local
+
+
+def instant(wall_clock: pd.Series) -> pd.Series:
+    """Return naive New York wall-clock times as UTC instants."""
+    utc: pd.Series = wall_clock.dt.tz_localize(MARKET_TZ).dt.tz_convert('UTC')
+    return utc
+
+
 def acceptance_day(accepted_at: pd.Series) -> pd.Series:
-    """Return each acceptance's calendar day in New York as naive ns midnight, the key of daily bars and snapshots."""
-    day: pd.Series = (
-        pd.to_datetime(accepted_at, utc=True)
-        .dt.tz_convert(MARKET_TZ)
-        .dt.tz_localize(None)
-        .dt.normalize()
-        .dt.as_unit('ns')
-    )
+    """Return each acceptance's New York calendar day at naive midnight, the as-of key of daily bars and snapshots."""
+    day: pd.Series = wall_clock(accepted_at).dt.normalize()
     return day
 
 
@@ -51,14 +59,16 @@ def next_print(accepted_at: pd.Series) -> pd.Series:
     Returns:
         The next print after each acceptance.
     """
-    local = pd.to_datetime(accepted_at, utc=True).dt.tz_convert(MARKET_TZ).dt.tz_localize(None)
-    day, weekday = local.dt.normalize(), ~local.dt.day_name().isin(('Saturday', 'Sunday'))
+    local = wall_clock(accepted_at)
+    day, weekday = local.dt.normalize(), local.dt.dayofweek < calendar.SATURDAY
     since_midnight = local - day
-    prints = np.where(
-        weekday & (since_midnight < MARKET_OPEN),
-        day + MARKET_OPEN,
-        np.where(weekday & (since_midnight < MARKET_CLOSE), day + MARKET_CLOSE, day + pd.offsets.BDay(1) + MARKET_OPEN),
-    )
-    return pd.Series(
-        pd.DatetimeIndex(prints).tz_localize(MARKET_TZ).tz_convert('UTC').as_unit('ns'), index=accepted_at.index
+    return instant(
+        pd.Series(
+            np.select(
+                condlist=(weekday & (since_midnight < MARKET_OPEN), weekday & (since_midnight < MARKET_CLOSE)),
+                choicelist=(day + MARKET_OPEN, day + MARKET_CLOSE),
+                default=day + pd.offsets.BDay(1) + MARKET_OPEN,
+            ),
+            index=accepted_at.index,
+        )
     )

@@ -7,7 +7,7 @@ feature_groups:
     event_time: accepted_at
 
 columns_to_drop: [key]
-identification_features: [ticker, next_print, date, company_cik, price, accepted_at, label_known_at]
+identification_features: [ticker, next_print, date, company_cik, reported_price, accepted_at, label_known_at]
 
 model_params:
   max_iter: 300

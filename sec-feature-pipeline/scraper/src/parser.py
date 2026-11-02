@@ -54,8 +54,8 @@ def trades(document: OwnershipDocument, accession: str, link: str, accepted_at: 
     """Map an ownership document to one trade per transaction of its first reporting owner.
 
     A transaction is flagged Rule 10b5-1 by the filing's checkbox or by a footnote attached
-    anywhere in it mentioning ``10b5-1``. Holdings are summed from the transaction's own table and
-    stay 0 unless the filing lists both direct and indirect ones.
+    anywhere in it mentioning ``10b5-1``. Holdings are summed per ownership from the transaction's
+    own table, 0 when the table lists none.
 
     Args:
         document: The filing's ownership document.
@@ -103,7 +103,7 @@ def trades(document: OwnershipDocument, accession: str, link: str, accepted_at: 
                             'position': position,
                         }
                         | {name: value for name, value in fields.items() if value}
-                        | (holdings._asdict() if all(holdings) else {})
+                        | holdings._asdict()
                     )
                 )
             except ValidationError as e:

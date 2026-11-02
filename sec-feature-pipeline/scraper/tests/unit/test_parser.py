@@ -91,11 +91,14 @@ class TestOwners:
 
 
 class TestHoldings:
-    """Holdings are set only when the filing lists both direct and indirect ones."""
+    """Holdings are summed per ownership from the table, whichever of them it lists."""
 
     def test_both_listed_sets_them(self) -> None:
         record = parse(BOTH_HOLDINGS)[0]
         assert (record['direct_holding'], record['indirect_holding']) == (547990.0, pytest.approx(6535.45))
+
+    def test_an_indirect_holding_alone_is_kept(self) -> None:
+        assert {(r['direct_holding'], r['indirect_holding']) for r in parse(JOINT_FILING)} == {(0.0, 1762440.0)}
 
     def test_none_listed_leaves_them_zero(self) -> None:
         assert {(r['direct_holding'], r['indirect_holding']) for r in parse(OWNERSHIP_LINES)} == {(0.0, 0.0)}

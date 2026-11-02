@@ -46,7 +46,7 @@ class TestQuantities:
 
     def test_the_price_averages_reported_stock_prices_only(self) -> None:
         row = one_row({'price': 10.0}, {'position': 1, 'price': 0.0}, {'derivative': True, 'price': 50.0})
-        assert row['price'] == 10.0
+        assert row['reported_price'] == 10.0
 
     def test_remaining_shares_take_each_insiders_last_transaction_per_ownership_line(self) -> None:
         row = one_row(
@@ -56,6 +56,17 @@ class TestQuantities:
             {'insider_cik': 'I2', 'accession': 'A-2', 'remaining_shares': 300.0},
         )
         assert row['remaining_shares'] == 1100.0 + 50.0 + 300.0
+
+    def test_holdings_count_once_per_insider_from_their_latest_filing(self) -> None:
+        row = one_row(
+            {'accession': 'A-1', 'accepted_at': '2024-03-05 17:00', 'direct_holding': 500.0, 'indirect_holding': 20.0},
+            {'accession': 'A-2', 'accepted_at': '2024-03-05 19:30', 'direct_holding': 500.0, 'indirect_holding': 25.0},
+            {'accession': 'A-3', 'insider_cik': 'I2', 'direct_holding': 100.0},
+        )
+        assert (row['direct_holding'], row['indirect_holding']) == (500.0 + 100.0, 25.0)
+
+    def test_holdings_of_a_filing_without_an_insider_cik_are_kept(self) -> None:
+        assert one_row({'insider_cik': None, 'direct_holding': 500.0})['direct_holding'] == 500.0
 
     def test_holdings_count_each_filing_once_from_its_stock_table(self) -> None:
         holdings = {'direct_holding': 500.0, 'indirect_holding': 20.0}
