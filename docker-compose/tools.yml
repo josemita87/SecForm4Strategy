@@ -1,0 +1,16 @@
+name: secform4strategy-tools
+
+# One-off checks on the shared lakehouse, run in the target image (it has pyiceberg and pandas)
+services:
+  lakehouse-summary:
+    build:
+      context: ..
+      dockerfile: prices-feature-pipeline/target/Dockerfile
+    environment:
+      PYICEBERG_CATALOG__DEFAULT__TYPE: sql
+      PYICEBERG_CATALOG__DEFAULT__URI: sqlite:////lakehouse/catalog.db
+      PYICEBERG_CATALOG__DEFAULT__WAREHOUSE: file:///lakehouse/warehouse
+    volumes:
+      - ../.lakehouse:/lakehouse
+      - ../scripts:/scripts:ro
+    command: ["uv", "run", "--no-sync", "python", "/scripts/lakehouse_summary.py"]

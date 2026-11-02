@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 # Configure structured logging (the handler needs the log directory to exist)
 config.log_path.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
     handlers=[
         logging.StreamHandler(),

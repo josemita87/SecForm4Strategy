@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
 )
 
@@ -99,8 +99,8 @@ if __name__ == '__main__':
             timeout=config.poll_timeout,
         )
         if records:
-            feature_store.push(
-                target, validate_and_reduce_mem_storage(pd.DataFrame(records).drop_duplicates().dropna())
-            )
+            rows = validate_and_reduce_mem_storage(pd.DataFrame(records).drop_duplicates().dropna())
+            feature_store.push(target, rows)
+            logger.info(f'Upserted {len(rows)} of {len(records)} transactions into {target.name}')
 
     logger.info('No more messages to consume. Exiting kafka-to-store...')

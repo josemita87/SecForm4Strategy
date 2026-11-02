@@ -22,7 +22,7 @@ When a corporate insider sells their own company's stock, they must disclose it 
 
 ## Architecture
 
-![Architecture](docs/diagrams/architecture.drawio.svg)
+![Architecture](docs/diagrams/architecture.svg)
 
 Two pipelines feed one feature store, and the same services run as two systems, **training** and **inference**, selected by Compose files and env files:
 
@@ -43,7 +43,7 @@ A filing accepted after the close enters at the next open; one accepted during t
 | Group | One row per | Key | Holds | Produced by | Read by |
 | --- | --- | --- | --- | --- | --- |
 | `BT4` / `BI4` | transaction (training / inference) | hash of accession, table, position | the parsed Form 4 transaction, `accepted_at` | kafka-to-store | yahoo_connect, target |
-| `P` | ticker and day | ticker, date | adjusted open/close, close as traded, split, dividend | yahoo_connect | target |
+| `P` | ticker and day | `<ticker>@<date>` | adjusted open/close, close as traded, split, dividend | yahoo_connect | target |
 | `RT4` | ticker and next market print | `<ticker>@<next print>` | features, label, `label_known_at` | target | training |
 | `BIR4` | ticker and next market print | `<ticker>@<next print>` | the same features, no label yet | target | inference |
 
@@ -81,7 +81,8 @@ Services depend on Protocols (`FeatureStore`, `Filings`, `MarketData`, `Broker`,
 ├── training/                            # model training and evaluation
 ├── inference/                           # scoring and order placement
 ├── packages/secform4strategy-clients/   # ports, adapters and fakes shared by every service
-├── docker-compose/                      # Redpanda and the training / inference stacks
+├── docker-compose/                      # Redpanda, the training / inference stacks and the lakehouse summary tool
+├── scripts/                             # lakehouse_summary.py, run in a container by make lakehouse-summary
 ├── docs/                                # configuration, development, Form 4 parsing, diagrams
 ├── Makefile                             # quality gate, tests and compose entry points
 └── pyproject.toml                       # repo-wide ruff, mypy, pydoclint and bandit config
@@ -125,20 +126,25 @@ ALPACA_BASE_URL=https://paper-api.alpaca.markets
 
 ### Bring up the pipeline
 
+Each stage is one `make` target; images are rebuilt on every run, so code changes are picked up.
+
 ```bash
-# 1. Start the Redpanda (Kafka) cluster
-make start-redpanda
+make start-redpanda      # Kafka (Redpanda), console at http://localhost:8080
 
-# 2a. Training system: transactions first, then prices and targets
-make training-sec
-make training-prices
+# Training system
+make training-sec        # master-index → scraper → kafka-to-store: BT4
+make training-prices     # yahoo_connect, then target once prices are in: P, RT4
+make training-model      # fits the model on RT4, saves it to .artifacts/
 
-# 2b. or the inference system
-make inference-sec
-make inference-prices
+# Inference system
+make inference-sec       # live filings from the Atom feed: BI4
+make inference-prices    # P, BIR4
+make inference-model     # scores BIR4 with the saved model, places paper orders
+
+make lakehouse-summary   # row counts, time spans and the latest RT4/BIR4 rows, between any two stages
 ```
 
-The feature store lives in `.lakehouse/` at the repo root (git-ignored), shared by the containers through a volume. Then run the standalone `training` or `inference` service against it.
+The feature store lives in `.lakehouse/` and the model in `.artifacts/` at the repo root (both git-ignored), shared by the containers through volumes; `rm -rf .lakehouse .artifacts` starts from scratch. Run settings sit in the env files next to each Compose file: master-index picks what the training scrape covers (`MODE` in `training-master.env`: the current quarter, the last `YEARS` years, or one `YEAR` / `QUARTER`; `SHUFFLE=True` publishes in random order, so a scrape stopped early is a random sample), and inference trades `QTY` shares below `PREDICTION_THRESHOLD` (`inference-model.env`). Only the SEC stacks need `SEC_USER_AGENT`, and only `inference-model` needs `.credentials.env`.
 
 ### Code quality and tests
 

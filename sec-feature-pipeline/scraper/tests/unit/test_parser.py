@@ -107,7 +107,22 @@ class TestHoldings:
 class TestTicker:
     """Symbols are normalized; placeholders for "no symbol" become missing."""
 
-    @pytest.mark.parametrize(('raw', 'ticker'), [(' nvda ', 'NVDA'), ('NONE', None), ('n/a', None), ('---', None)])
+    @pytest.mark.parametrize(
+        ('raw', 'ticker'),
+        [
+            (' nvda ', 'NVDA'),
+            ('NONE', None),
+            ('n/a', None),
+            ('---', None),
+            ('(SIRI)', 'SIRI'),
+            ('NASDAQ: aapl', 'AAPL'),
+            ('BRK.B', 'BRK-B'),
+            ('brk/b', 'BRK-B'),
+            ('WLY/WLYB', 'WLY'),
+            ('ABC, ABCD', 'ABC'),
+            ('()', None),
+        ],
+    )
     def test_ticker_normalization(self, raw: str, ticker: str | None) -> None:
         trade = Trade.model_validate(
             {

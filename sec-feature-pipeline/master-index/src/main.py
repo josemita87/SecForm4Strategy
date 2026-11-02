@@ -1,6 +1,7 @@
 """Entry point: fetches SEC Form 4 filing links and produces them to Kafka."""
 
 import logging
+import random
 import time
 from collections.abc import Iterable
 from datetime import UTC, datetime
@@ -16,9 +17,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
 )
+
+# httpx logs every SEC request at INFO; progress is logged per batch instead
+logging.getLogger('httpx').setLevel(logging.WARNING)
 
 FORM_TYPE = '4'
 
@@ -52,6 +56,7 @@ if __name__ == '__main__':
         """Publish filings to the output topic one batch at a time (each produce call flushes)."""
         for start in range(0, len(messages := build_messages(data)), config.buffer_size):
             kafka.produce(config.kafka_output_topic, messages[start : start + config.buffer_size])
+        logger.info(f'Published {len(messages)} filings')
 
     logger.info(f'Master index started in {config.mode} mode -> {config.kafka_output_topic}')
 
@@ -65,13 +70,17 @@ if __name__ == '__main__':
             time.sleep(config.secs_between_iterations)
     else:
         now = datetime.now(UTC)
-        quarters = (
-            ((year, q) for year in range(now.year - config.years, now.year + 1) for q in range(1, 5))
-            if config.mode == 'historical'
-            else ((now.year, (now.month - 1) // 3 + 1),)
-        )
+        match config.mode:
+            case 'historical':
+                quarters = tuple(
+                    (year, q) for year in range(now.year - config.years, now.year + 1) for q in range(1, 5)
+                )
+            case 'quarter' if config.year and config.quarter:
+                quarters = ((config.year, config.quarter),)
+            case _:
+                quarters = ((now.year, (now.month - 1) // 3 + 1),)
         for year, quarter in quarters:
             if (index := edgar.fetch_master_index(year, quarter, FORM_TYPE)) is None:
                 logger.warning(f'No master index for {year} QTR{quarter}')
                 continue
-            produce(index)
+            produce(random.Random(0).sample(index, len(index)) if config.shuffle else index)

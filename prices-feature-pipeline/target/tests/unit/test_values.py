@@ -48,5 +48,8 @@ class TestPriceToClose:
     def test_a_reported_price_is_divided_by_the_close(self) -> None:
         assert valued(price=220.0)['price_to_close'] == 1.1
 
+    def test_a_price_in_another_unit_leaves_it_missing(self) -> None:
+        assert math.isnan(valued(price=7983.0)['price_to_close'])
+
     def test_no_reported_price_leaves_it_missing(self) -> None:
         assert math.isnan(valued(price=0.0)['price_to_close'])

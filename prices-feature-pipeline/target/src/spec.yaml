@@ -3,7 +3,7 @@
 # Feature-group catalog
 feature_groups:
   p:
-    primary_key: [ticker, date]
+    primary_key: [key]  # <ticker>@<date>
     event_time: date
   bt4:
     primary_key: [key]

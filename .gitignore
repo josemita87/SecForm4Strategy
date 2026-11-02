@@ -41,3 +41,6 @@ site-packages/
 
 # Local Iceberg feature store (catalog + warehouse)
 .lakehouse/
+
+# Model artifacts shared by the training and inference containers
+.artifacts/

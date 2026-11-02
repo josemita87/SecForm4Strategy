@@ -22,8 +22,8 @@ services:
       - training-master.env
     environment:
       <<: *shared-env
-      # SEC fair access: a real name and contact email, from the host environment
-      SEC_USER_AGENT: ${SEC_USER_AGENT:?set SEC_USER_AGENT to "Name email@domain"}
+      # SEC fair access: a real name and contact email from the host environment, validated at boot
+      SEC_USER_AGENT: ${SEC_USER_AGENT:-}
     ports:
       - "9000:9000"
     restart:
@@ -41,8 +41,8 @@ services:
       - training-scraper.env
     environment:
       <<: *shared-env
-      # SEC fair access: a real name and contact email, from the host environment
-      SEC_USER_AGENT: ${SEC_USER_AGENT:?set SEC_USER_AGENT to "Name email@domain"}
+      # SEC fair access: a real name and contact email from the host environment, validated at boot
+      SEC_USER_AGENT: ${SEC_USER_AGENT:-}
     ports:
       - "9001:9001"
     restart:
@@ -91,6 +91,8 @@ services:
       - "9003:9003"
     restart:
       "on-failure:5"
+    profiles:
+      - prices
 
   target:
     build:
@@ -109,6 +111,23 @@ services:
     restart:
       "on-failure:5"
     depends_on:
-      - yahoo-connect
+      yahoo-connect:
+        condition: service_completed_successfully
     profiles:
       - prices
+
+  # Fits the model on RT4 and saves it with its metadata to .artifacts/, where inference loads it
+  training:
+    build:
+      context: ../..
+      dockerfile: training/Dockerfile
+    env_file:
+      - training-model.env
+    environment:
+      <<: *shared-env
+      GIT_SHA: ${GIT_SHA:-}
+    volumes:
+      - ../../.lakehouse:/lakehouse
+      - ../../.artifacts:/artifacts
+    profiles:
+      - model

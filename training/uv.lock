@@ -828,6 +828,12 @@ requires-dist = [
 ]
 provides-extras = ["feature-store", "model-store", "broker", "messaging", "edgar", "market-data"]
 
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3,<10" },
+    { name = "pytest-cov", specifier = ">=6,<8" },
+]
+
 [[package]]
 name = "six"
 version = "1.17.0"

@@ -32,7 +32,8 @@ class IcebergFeatureStore:
     table is created by its first push and its schema is fixed then: later pushes
     are aligned to it (absent columns become null) and a new column needs a new
     feature-group version. Pushes upsert by ``primary_key``, replacing whole rows;
-    within one push the last row per key wins.
+    within one push the last row per key wins. Keys are one column: pyiceberg 0.12's upsert
+    crashes the process on a composite key, so a composite identity is joined into one string.
 
     Attributes:
         catalog: The Iceberg catalog holding the tables.

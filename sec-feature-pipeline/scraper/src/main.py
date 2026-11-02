@@ -17,9 +17,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
 )
+
+# httpx logs every SEC request at INFO; progress is logged per batch instead
+logging.getLogger('httpx').setLevel(logging.WARNING)
 
 
 def select_filings(
@@ -42,7 +45,7 @@ def select_filings(
             logger.error(f'Malformed filing message: {msg}')
             continue
         if max_age is not None and filing.filed_at < datetime.now(UTC) - max_age:
-            logger.info(f'Filing too old: {filing.filed_at}')
+            logger.debug(f'Filing too old: {filing.filed_at}')
             continue
         selected.append((filing, offset))
     return selected
@@ -60,24 +63,27 @@ if __name__ == '__main__':
     def produce(records: list[dict[str, Any]]) -> None:
         """Publish transaction records to the output topic, keyed by their key (each carries its ``accepted_at``)."""
         kafka.produce(config.kafka_output_topic, ((record['key'], record) for record in records))
-        logger.debug(f'Produced {len(records)} messages')
 
     time.sleep(config.delay)
     logger.info(f'Scraper started: {config.kafka_input_topic} -> {config.kafka_output_topic}')
 
     while True:
         records = kafka.consume_with_offsets(config.kafka_input_topic, config.buffer_size, config.poll_timeout)
-        selected = select_filings(records, max_age)[: config.test_size if config.test_trial else None]
+        selected = select_filings(records, max_age)
 
         # Commit per produced batch and at the end, so transaction-less filings are not re-consumed
         buffer: list[dict[str, Any]] = []
+        produced = 0
         for filing, offset in selected:
             buffer.extend(parse_filing(filing, edgar))
             if len(buffer) >= config.buffer_size:
                 produce(buffer)
                 kafka.commit_offset(offset)
-                buffer = []
+                produced, buffer = produced + len(buffer), []
         if selected:
             if buffer:
                 produce(buffer)
             kafka.commit_offset(selected[-1][1])
+            logger.info(
+                f'{len(selected)} filings -> {produced + len(buffer)} transactions, offset {selected[-1][1]} committed'
+            )

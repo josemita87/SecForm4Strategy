@@ -1,5 +1,6 @@
 """The transaction record the scraper publishes: one per Form 4 transaction."""
 
+import re
 from datetime import datetime
 from typing import Annotated
 
@@ -9,8 +10,23 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 #: Codes and symbols as downstream joins expect them: stripped and upper-case.
 Code = Annotated[str, StringConstraints(strip_whitespace=True, to_upper=True)]
 
-#: A trading symbol, or None where the filer wrote a placeholder for "no symbol".
-Ticker = Annotated[Code | None, AfterValidator(lambda t: None if t in {'NONE', 'N/A', 'NA', '-', '--', '---'} else t)]
+
+def _symbol(ticker: str | None) -> str | None:
+    """Return the filer's ticker as Yahoo spells it, or None for a placeholder or an empty one.
+
+    Filers write symbols freehand: ``(SIRI)``, ``NASDAQ: AAPL``, ``BRK.B``, ``WLY/WLYB``. An exchange
+    prefix and enclosing punctuation go, a one-letter share class joins with a dash, and of several
+    symbols the first is kept.
+    """
+    if not ticker or ticker in {'NONE', 'N/A', 'NA', '-', '--', '---'}:
+        return None
+    first = re.split(r'[,;\s]+', ticker.rsplit(':', 1)[-1].strip(' ()[]*"\''))[0]
+    base, _, share_class = first.replace('.', '/').partition('/')
+    return (f'{base}-{share_class}' if len(share_class) == 1 else base) or None
+
+
+#: A trading symbol as Yahoo spells it, or None where the filer wrote none.
+Ticker = Annotated[Code | None, AfterValidator(_symbol)]
 
 
 class Trade(BaseModel):

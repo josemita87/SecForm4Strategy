@@ -17,7 +17,7 @@ from secform4strategy_clients.model_store import LocalModelStore
 # Configure logging (the file handler needs the log directory to exist)
 config.log_path.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
     handlers=[
         logging.StreamHandler(),

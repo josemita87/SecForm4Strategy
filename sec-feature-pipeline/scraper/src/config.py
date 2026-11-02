@@ -25,11 +25,7 @@ class Config(BaseSettings):
     buffer_size: int
     poll_timeout: int
     delay: int
-    mode: Literal['historical', 'live', 'last_quarter']
-
-    # Training Settings
-    test_size: int = 400
-    test_trial: bool = False
+    mode: Literal['historical', 'live', 'last_quarter', 'quarter']
 
     # Inference Settings
     days_back: int = 1

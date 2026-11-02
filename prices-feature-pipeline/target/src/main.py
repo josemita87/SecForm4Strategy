@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
 )
 
@@ -166,7 +166,7 @@ def add_value_features(rows: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame
     ``remaining_value``, ``direct_holding`` and ``indirect_holding`` become USD values, and
     ``total_held`` is their sum (traded accounts after the trade plus untraded ones); the
     share counts go. ``reported_price`` is kept as is and compared with the close as
-    ``price_to_close`` (missing when no price was reported).
+    ``price_to_close`` (missing when no price was reported, or when the ratio is outside 0.2-5x).
 
     Args:
         rows: Disclosure rows from ``aggregate_disclosures``, with ``reported_price`` (missing if none) and
@@ -198,7 +198,9 @@ def add_value_features(rows: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame
     }
     valued[list(counts)] = valued[list(counts.values())].mul(valued[Col.LAST_CLOSE], axis=0).to_numpy()
     valued[Col.TOTAL_HELD] = valued[Col.REMAINING_VALUE] + valued[Col.DIRECT_HOLDING] + valued[Col.INDIRECT_HOLDING]
-    valued[Col.PRICE_TO_CLOSE] = valued[Col.REPORTED_PRICE] / valued[Col.LAST_CLOSE]
+    # A ratio outside 0.2x-5x is a unit error (an ADR priced in local currency, a total typed as a price), not a price
+    ratio = valued[Col.REPORTED_PRICE] / valued[Col.LAST_CLOSE]
+    valued[Col.PRICE_TO_CLOSE] = ratio.where(ratio.between(0.2, 5))
     return valued.drop(
         columns=[
             Col.LAST_CLOSE,
@@ -285,7 +287,6 @@ def compute_target(rows: pd.DataFrame, prices: pd.DataFrame, period: int) -> pd.
             Col.EXIT_PRICE,
         ]
     )
-    logger.debug(f'Target computation completed. Shape: {es.shape}')
     return es
 
 
@@ -391,7 +392,9 @@ if __name__ == '__main__':
         # Every labelled row is kept, its average missing until a label of its ticker is known
         RT4 = compute_target(daily, P, config.delta_period).dropna(subset=[Col.LABEL_KNOWN_AT, Col.PCT_CHANGE])
         store.push(FeatureGroup.RT4, RT4.assign(**{Col.AVG_TARGET_EXPANDING: known_label_mean(RT4, RT4)}))
+        logger.info(f'Pushed {len(RT4)} labelled rows of {len(daily)} disclosure rows to RT4')
     else:
         # BIR4 has no realized return yet; its average covers the RT4 labels known at each row's acceptance
         BIR4 = daily.assign(**{Col.AVG_TARGET_EXPANDING: known_label_mean(store.read(FeatureGroup.RT4), daily)})
         store.push(FeatureGroup.BIR4, BIR4)
+        logger.info(f'Pushed {len(BIR4)} disclosure rows to BIR4')

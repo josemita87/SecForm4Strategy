@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from secform4strategy_clients.ports import FeatureStore
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
 )
 
@@ -51,4 +51,8 @@ if __name__ == '__main__':
 
     batches = prices.new_prices(MarketDataClient(), tickers, prices.resume_points(stored), config.buffer_size)
     for batch in tqdm(batches, total=-(-len(tickers) // config.buffer_size), desc='Pricing tickers', unit='batch'):
-        store.push(FeatureGroup.PRICES, batch)
+        # One key column: pyiceberg's upsert crashes on composite keys
+        store.push(
+            FeatureGroup.PRICES,
+            batch.assign(**{Col.KEY: batch[Col.TICKER].astype(str) + '@' + batch[Col.DATE].dt.strftime('%Y-%m-%d')}),
+        )

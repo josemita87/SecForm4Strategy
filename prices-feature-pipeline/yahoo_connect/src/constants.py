@@ -20,6 +20,7 @@ class FeatureGroup(str, Enum):
 class Col(StrEnum):
     """Columns this service reads or writes."""
 
+    KEY = 'key'
     TICKER = 'ticker'
     DATE = 'date'
     CLOSE = 'close'

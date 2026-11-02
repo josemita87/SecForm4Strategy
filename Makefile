@@ -1,5 +1,6 @@
 .PHONY: lint format type-check security docstrings validate-config test-unit test-unit-fast quality quality-static \
-	start-redpanda stop-redpanda inference-sec inference-prices training-sec training-prices
+	start-redpanda stop-redpanda inference-sec inference-prices inference-model training-sec training-prices \
+	training-model lakehouse-summary
 
 CLIENTS_SRC := packages/secform4strategy-clients/src
 # Services importing flat from src/ (`from config import config`)
@@ -66,14 +67,24 @@ stop-redpanda:
 
 inference-sec:
 	docker-compose -f docker-compose/system-inference/services-inference.yml \
-	--profile sec up
+	--profile sec up --build
 inference-prices:
 	docker-compose -f docker-compose/system-inference/services-inference.yml \
-	--profile prices up
+	--profile prices up --build
 
 training-sec:
 	docker-compose -f docker-compose/system-training/services-training.yml \
-	--profile sec up
+	--profile sec up --build
 training-prices:
 	docker-compose -f docker-compose/system-training/services-training.yml \
-	--profile prices up
+	--profile prices up --build
+training-model:
+	GIT_SHA=$$(git rev-parse HEAD) docker-compose -f docker-compose/system-training/services-training.yml \
+	--profile model up --build
+inference-model:
+	docker-compose -f docker-compose/system-inference/services-inference.yml \
+	--profile model up --build
+
+# Row counts, time spans and the latest model rows of every feature-store table
+lakehouse-summary:
+	docker-compose -f docker-compose/tools.yml run --rm --build lakehouse-summary
