@@ -44,3 +44,13 @@ site-packages/
 
 # Model artifacts shared by the training and inference containers
 .artifacts/
+
+# Claude Code MCP servers (local tooling)
+.mcp.json
+
+# Terraform vars
+.terraform/
+*.tfstate
+*.tfvars
+!*.tfvars.example
+tfplan
