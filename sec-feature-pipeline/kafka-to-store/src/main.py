@@ -1,6 +1,8 @@
 """Entry point: consumes Kafka transactions, cleans them, and pushes them to the feature store."""
 
 import logging
+import sys
+from contextlib import closing
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -11,9 +13,10 @@ from pyiceberg.catalog import load_catalog
 from secform4strategy_clients.feature_groups import load_feature_group_catalog
 from secform4strategy_clients.feature_store import IcebergFeatureStore
 from secform4strategy_clients.messaging import KafkaClient
+from secform4strategy_clients.ports import RetryableError
 
 if TYPE_CHECKING:
-    from secform4strategy_clients.ports import FeatureStore
+    from secform4strategy_clients.ports import FeatureStore, MessageQueue
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -73,12 +76,6 @@ def validate_and_reduce_mem_storage(data: pd.DataFrame) -> pd.DataFrame:
 
 
 if __name__ == '__main__':
-    # Connect to the Kafka topic and the feature store
-    consumer: KafkaClient = KafkaClient(
-        broker_address=config.kafka_broker_address,
-        consumer_group=config.consumer_group,
-        auto_offset_reset=config.auto_offset_reset,
-    )
     feature_store: FeatureStore = IcebergFeatureStore(
         load_catalog('default'),
         config.feature_store_namespace,
@@ -86,21 +83,20 @@ if __name__ == '__main__':
     )
     # Route to the correct feature group (inference / training)
     target = FeatureGroup.BI4 if config.system_inference else FeatureGroup.BT4
+    logger.info(f'{config.kafka_input_topic} -> feature group {target.name} in {config.feature_store_namespace}')
 
-    logger.info(f'Connected to Kafka broker at {config.kafka_broker_address}')
-    logger.info(f'Connected to input topic at {config.kafka_input_topic}')
-    logger.info(f'Writing to feature group {target.name} in namespace {config.feature_store_namespace}')
-
-    is_finished = False
-    while not is_finished:
-        is_finished, records = consumer.consume_batch(
-            topic_name=config.kafka_input_topic,
-            buffer_size=config.buffer_size,
-            timeout=config.poll_timeout,
-        )
-        if records:
+    # Closing the consumer leaves its group, so the next run gets its partitions at once
+    queue: MessageQueue
+    with closing(KafkaClient(config.kafka_broker_address, config.consumer_group, config.auto_offset_reset)) as queue:
+        while messages := queue.receive(config.kafka_input_topic, config.buffer_size, config.poll_timeout):
+            records = [message.body for message in messages]
             rows = validate_and_reduce_mem_storage(pd.DataFrame(records).drop_duplicates().dropna())
-            feature_store.push(target, rows)
+            try:
+                feature_store.push(target, rows)
+            except RetryableError as error:
+                # Unacked, the batch is delivered again to the next run
+                sys.exit(f'Store unavailable, {len(messages)} messages left for a retry: {error}')
+            queue.ack(config.kafka_input_topic, messages)
             logger.info(f'Upserted {len(rows)} of {len(records)} transactions into {target.name}')
 
     logger.info('No more messages to consume. Exiting kafka-to-store...')

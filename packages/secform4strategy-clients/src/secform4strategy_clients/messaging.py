@@ -1,18 +1,34 @@
-"""Kafka client built on quixstreams.
+"""Kafka client built on quixstreams, implementing the ``MessageQueue`` port.
 
-Pure infrastructure: one client per external service. ``KafkaClient`` covers both
-consuming and producing. The consumer returns raw messages as a list of dicts and
-performs no field parsing, DataFrame construction or cleaning. The producer
-serializes and publishes records the caller has already shaped (keys and any value
-transformations are the caller's responsibility); the broker stamps each message's time.
+Pure infrastructure: it sends JSON records and returns them as ``Message``s, with no field
+parsing. A receipt is the message's ``(partition, offset)``. A Kafka commit covers every earlier
+offset of its partition, so ``ack`` commits only up to the first message left unacknowledged and
+seeks back to it: the next ``receive`` delivers it again, as a queue would. A message that is not
+JSON can never be processed, so it is logged and counts as acknowledged.
 """
 
 import json
+import logging
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
-from confluent_kafka import TopicPartition
+from confluent_kafka import KafkaException, TopicPartition
 from quixstreams import Application
+
+from secform4strategy_clients.ports import Message
+
+if TYPE_CHECKING:
+    from quixstreams.kafka import Consumer
+    from quixstreams.models import Topic
+
+logger = logging.getLogger(__name__)
+
+
+class KafkaReceipt(NamedTuple):
+    """Where a received message sits in its topic."""
+
+    partition: int
+    offset: int
 
 
 class KafkaClient:
@@ -54,114 +70,98 @@ class KafkaClient:
         }
         # Only forward the options given, so quixstreams keeps its own defaults for the rest
         self.app = Application(broker_address=broker_address, **{k: v for k, v in app_kwargs.items() if v is not None})
-        self._produce_topics: dict = {}
-        # Lazily created persistent manual-commit consumer (see consume_with_offsets).
-        self._consumer = None
-        self._input_topic = None
+        self._topics: dict[str, Topic] = {}
+        self._consumers: dict[str, Consumer] = {}
+        self._received: dict[str, list[KafkaReceipt]] = {}
+        self._undecodable: dict[str, set[KafkaReceipt]] = {}
 
-    def consume_batch(
-        self,
-        topic_name: str,
-        buffer_size: int,
-        timeout: int,
-        auto_commit_enable: bool = True,
-    ) -> tuple[bool, list[dict[str, Any]]]:
-        """Consume messages from a topic and return one batch of raw records.
+    def receive(self, queue: str, max_messages: int, wait_seconds: float) -> tuple[Message, ...]:
+        """Return up to ``max_messages`` messages, stopping early when a poll waits ``wait_seconds`` in vain.
 
         Args:
-            topic_name: The Kafka topic to consume from.
-            buffer_size: Number of messages to accumulate before returning a batch.
-            timeout: Poll timeout (seconds) for each consumer poll.
-            auto_commit_enable: Whether the consumer auto-commits offsets.
+            queue: Topic to read; one manual-commit consumer is kept per topic.
+            max_messages: Most messages to return.
+            wait_seconds: How long each poll waits for a message.
 
         Returns:
-            A tuple ``(finished, records)``. ``finished`` is ``True`` when the
-            topic is exhausted (poll returned nothing) and ``False`` when the
-            buffer filled up. ``records`` is a list of decoded message values.
+            The messages read, possibly none.
+
+        Raises:
+            KafkaException: The poll returned a broker error instead of a message.
         """
-        topic = self.app.topic(name=topic_name, value_deserializer='json', key_deserializer='string')
-
-        buffer: list[dict[str, Any]] = []
-        with self.app.get_consumer(auto_commit_enable=auto_commit_enable) as consumer:
-            consumer.subscribe(topics=[topic.name])
-
-            while True:
-                if not (message := consumer.poll(timeout)):
-                    return True, buffer
-
-                buffer.append(json.loads(message.value().decode('utf-8')))
-
-                if len(buffer) >= buffer_size:
-                    return False, buffer
-
-    def consume_with_offsets(self, topic_name: str, buffer_size: int, timeout: int) -> list[tuple[dict[str, Any], int]]:
-        """Consume a batch of ``(record, offset)`` pairs for manual-commit workflows.
-
-        Unlike ``consume_batch``, this keeps a single persistent consumer with
-        auto-commit disabled and surfaces each message's offset, so the caller can
-        commit (via ``commit_offset``) only after the batch is successfully
-        processed. Returns once the buffer is full, or once a poll returns nothing
-        and the buffer is non-empty (it keeps polling while the buffer is empty).
-
-        Args:
-            topic_name: The Kafka topic to consume from.
-            buffer_size: Number of messages to accumulate before returning.
-            timeout: Poll timeout (seconds) for each consumer poll.
-
-        Returns:
-            A list of ``(record, offset)`` tuples.
-        """
-        if self._consumer is None:
-            self._input_topic = self.app.topic(name=topic_name, value_deserializer='json', key_deserializer='string')
-            self._consumer = self.app.get_consumer(auto_commit_enable=False)
-            self._consumer.subscribe(topics=[self._input_topic.name])
-
-        buffer: list[tuple[dict[str, Any], int]] = []
-        while True:
-            if (message := self._consumer.poll(timeout)) is None:
-                if buffer:
-                    return buffer
-                continue
-
+        if (consumer := self._consumers.get(queue)) is None:
+            consumer = self._consumers[queue] = self.app.get_consumer(auto_commit_enable=False)
+            consumer.subscribe(topics=[queue])
+        messages: list[Message] = []
+        while len(messages) < max_messages and (record := consumer.poll(wait_seconds)) is not None:
+            if error := record.error():
+                raise KafkaException(error)
+            receipt = KafkaReceipt(record.partition(), record.offset())
+            self._received.setdefault(queue, []).append(receipt)
             try:
-                buffer.append((json.loads(message.value().decode('utf-8')), message.offset()))
-            except Exception:
-                continue
+                messages.append(Message(json.loads(record.value()), receipt))
+            except TypeError, ValueError:
+                logger.error(f'Dropping a message of {queue} that is not JSON at {receipt}: {record.value()!r:.200}')
+                self._undecodable.setdefault(queue, set()).add(receipt)
+        return tuple(messages)
 
-            if len(buffer) >= buffer_size:
-                return buffer
-
-    def commit_offset(self, offset: int, partition: int = 0) -> None:
-        """Commit ``offset + 1`` on the manual consumer's input-topic partition.
-
-        Must be called after ``consume_with_offsets`` has created the consumer.
+    def ack(self, queue: str, messages: Iterable[Message]) -> None:
+        """Commit, per partition, up to the first message received but not acknowledged, and seek back to it.
 
         Args:
-            offset: Offset of the last processed message; the committed position
-                is one past it.
-            partition: Partition index to commit on.
+            queue: Topic the messages were read from.
+            messages: The finished messages among those received since the last ``ack`` on this topic.
+
+        Raises:
+            TypeError: A message was not received by a ``KafkaClient``.
+            ValueError: A message was not received since the last ``ack`` on this topic.
+            KafkaException: The broker failed to commit a partition.
         """
-        tp = TopicPartition(topic=self._input_topic.name, partition=partition, offset=offset + 1)
-        self._consumer.commit(offsets=[tp])
+        acked = self._undecodable.pop(queue, set())
+        for message in messages:
+            if not isinstance(receipt := message.receipt, KafkaReceipt):
+                raise TypeError(f'Not a KafkaClient receipt: {receipt!r}')
+            acked.add(receipt)
+        if unknown := acked - set(received := self._received.pop(queue, [])):
+            raise ValueError(f'Not received from {queue} since the last ack: {sorted(unknown)}')
+        end: dict[int, int] = {}
+        first_unacked: dict[int, int] = {}
+        for receipt in sorted(received):
+            end[receipt.partition] = receipt.offset + 1
+            if receipt not in acked:
+                first_unacked.setdefault(receipt.partition, receipt.offset)
+        if not end:
+            return
+        consumer = self._consumers[queue]
+        committed = consumer.commit(
+            offsets=[
+                TopicPartition(queue, partition, first_unacked.get(partition, offset))
+                for partition, offset in end.items()
+            ],
+            asynchronous=False,
+        )
+        if failed := [partition for partition in committed or () if partition.error]:
+            raise KafkaException(f'Commit failed on {queue}: {failed}')
+        for partition, offset in first_unacked.items():
+            consumer.seek(TopicPartition(queue, partition, offset))
 
-    def produce(self, topic_name: str, messages: Iterable[tuple[str, Mapping[str, Any]]]) -> None:
-        """Produce a batch of messages to a topic and flush.
+    def close(self) -> None:
+        """Close every consumer, so it leaves its group and the next member gets its partitions at once."""
+        for consumer in self._consumers.values():
+            consumer.close()
+        self._consumers.clear()
 
-        The caller owns all message shaping; this method only serializes and
-        publishes. One producer is opened and flushed per call, so callers that
-        batch should call this once per batch.
+    def send(self, queue: str, messages: Iterable[tuple[str, Mapping[str, Any]]]) -> None:
+        """Publish ``(key, body)`` pairs to a topic and flush, so they are stored when this returns.
 
         Args:
-            topic_name: The Kafka topic to publish to.
-            messages: ``(key, value)`` pairs, ``value`` being the JSON-serialisable record.
+            queue: Topic to publish to.
+            messages: Keys and JSON-serialisable bodies, shaped by the caller.
         """
-        if (topic := self._produce_topics.get(topic_name)) is None:
-            topic = self._produce_topics[topic_name] = self.app.topic(
-                name=topic_name, value_serializer='json', key_serializer='string'
-            )
-
+        if (topic := self._topics.get(queue)) is None:
+            topic = self._topics[queue] = self.app.topic(name=queue, value_serializer='json', key_serializer='string')
         with self.app.get_producer() as producer:
-            for key, value in messages:
-                serialized = topic.serialize(key=key, value=value)
+            for key, body in messages:
+                serialized = topic.serialize(key=key, value=body)
                 producer.produce(topic=topic.name, value=serialized.value, key=serialized.key)
             producer.flush()

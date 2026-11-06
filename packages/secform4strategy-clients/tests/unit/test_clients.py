@@ -14,6 +14,7 @@ from datetime import date
 import pandas as pd
 import pytest
 from pydantic import SecretStr
+from secform4strategy_clients.ports import PermanentError
 
 
 def _fresh(monkeypatch, module):
@@ -23,17 +24,25 @@ def _fresh(monkeypatch, module):
 
 
 # --- AlpacaClient ---
-def test_alpaca_threads_credentials_and_places_order(monkeypatch):
-    client_calls = {}
-    orders = []
+class _FakeAPIError(Exception):
+    def __init__(self, status_code, message):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _install_fake_alpaca(monkeypatch, outcomes):
+    """Install a fake alpaca-py whose ``submit_order`` returns or raises each outcome in turn."""
+    calls = {'client': {}, 'orders': []}
 
     class _FakeTradingClient:
         def __init__(self, api_key, secret_key, paper, url_override):
-            client_calls.update(api_key=api_key, secret_key=secret_key, paper=paper, url_override=url_override)
+            calls['client'].update(api_key=api_key, secret_key=secret_key, paper=paper, url_override=url_override)
 
         def submit_order(self, order_data):
-            orders.append(order_data)
-            return 'order'
+            calls['orders'].append(order_data)
+            if isinstance(outcome := outcomes.pop(0), Exception):
+                raise outcome
+            return outcome
 
     def _module(name, **attrs):
         module = types.ModuleType(name)
@@ -41,30 +50,73 @@ def test_alpaca_threads_credentials_and_places_order(monkeypatch):
         monkeypatch.setitem(sys.modules, name, module)
 
     _module('alpaca')
+    _module('alpaca.common')
+    _module('alpaca.common.exceptions', APIError=_FakeAPIError)
     _module('alpaca.trading')
     _module('alpaca.trading.client', TradingClient=_FakeTradingClient)
     _module('alpaca.trading.enums', OrderSide=str, OrderType=str, TimeInForce=str)
-    _module('alpaca.trading.requests', OrderRequest=lambda **fields: fields)
+    _module('alpaca.trading.requests', OrderRequest=types.SimpleNamespace)
+    monkeypatch.setattr('secform4strategy_clients.retry.time.sleep', lambda _: None)
+    return calls
 
+
+def _alpaca(monkeypatch, outcomes):
+    calls = _install_fake_alpaca(monkeypatch, outcomes)
     client = _fresh(monkeypatch, 'broker').AlpacaClient(
         api_key=SecretStr('k'), api_secret=SecretStr('s'), base_url='https://paper-api.alpaca.markets'
     )
-    assert client_calls == {
+    return client, calls
+
+
+def test_alpaca_threads_credentials_and_places_order_with_its_client_id(monkeypatch):
+    client, calls = _alpaca(monkeypatch, ['order'])
+    assert calls['client'] == {
         'api_key': 'k',
         'secret_key': 's',
         'paper': True,
         'url_override': 'https://paper-api.alpaca.markets',
     }
+    assert client.place_order('AAPL', 1, 'sell', 'market', 'gtc', 'AAPL@2026-11-02T14:30Z') == 'order'
+    assert vars(calls['orders'][0]) == {
+        'symbol': 'AAPL',
+        'qty': 1,
+        'side': 'sell',
+        'type': 'market',
+        'time_in_force': 'gtc',
+        'client_order_id': 'AAPL@2026-11-02T14:30Z',
+    }
 
-    assert client.place_order('AAPL', 1, 'sell', 'market', 'gtc') == 'order'
-    assert orders == [{'symbol': 'AAPL', 'qty': 1.0, 'side': 'sell', 'type': 'market', 'time_in_force': 'gtc'}]
+
+def test_alpaca_repeated_client_id_means_already_placed(monkeypatch):
+    client, _ = _alpaca(monkeypatch, [_FakeAPIError(422, '{"message": "client_order_id must be unique"}')])
+    assert client.place_order('AAPL', 1, 'sell', 'market', 'gtc', 'k') is None
 
 
-# --- KafkaConsumer ---
+def test_alpaca_retries_a_server_error_with_the_same_client_id(monkeypatch):
+    client, calls = _alpaca(monkeypatch, [_FakeAPIError(503, 'unavailable'), 'order'])
+    assert client.place_order('AAPL', 1, 'sell', 'market', 'gtc', 'k') == 'order'
+    assert [order.client_order_id for order in calls['orders']] == ['k', 'k']
+
+
+def test_alpaca_other_client_id_rejection_is_permanent(monkeypatch):
+    client, _ = _alpaca(monkeypatch, [_FakeAPIError(422, '{"message": "client_order_id is too long"}')])
+    with pytest.raises(PermanentError, match='422'):
+        client.place_order('AAPL', 1, 'sell', 'market', 'gtc', 'k')
+
+
+def test_alpaca_rejection_is_permanent(monkeypatch):
+    client, calls = _alpaca(monkeypatch, [_FakeAPIError(403, 'not shortable')])
+    with pytest.raises(PermanentError, match='403'):
+        client.place_order('AAPL', 1, 'sell', 'market', 'gtc', 'k')
+    assert len(calls['orders']) == 1
+
+
+# --- KafkaClient ---
 class _FakeMessage:
-    def __init__(self, payload: bytes, offset: int = 0):
+    def __init__(self, payload: bytes, offset: int = 0, partition: int = 0):
         self._payload = payload
         self._offset = offset
+        self._partition = partition
 
     def value(self):
         return self._payload
@@ -72,18 +124,21 @@ class _FakeMessage:
     def offset(self):
         return self._offset
 
+    def partition(self):
+        return self._partition
+
+    def error(self):
+        return None
+
 
 class _FakeConsumer:
     def __init__(self, messages):
         self._messages = list(messages)
         self.subscribed = None
         self.committed = None
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
+        self.asynchronous = None
+        self.sought = []
+        self.closed = False
 
     def subscribe(self, topics):
         self.subscribed = topics
@@ -91,13 +146,14 @@ class _FakeConsumer:
     def poll(self, timeout):
         return self._messages.pop(0) if self._messages else None
 
-    def commit(self, offsets):
-        self.committed = offsets
+    def commit(self, offsets, asynchronous):
+        self.committed, self.asynchronous = offsets, asynchronous
 
+    def seek(self, partition):
+        self.sought.append(partition)
 
-class _FakeTopic:
-    def __init__(self, name):
-        self.name = name
+    def close(self):
+        self.closed = True
 
 
 class _FakeProducer:
@@ -118,7 +174,10 @@ class _FakeProducer:
         self.flushed += 1
 
 
-class _SerializedTopic(_FakeTopic):
+class _FakeTopic:
+    def __init__(self, name):
+        self.name = name
+
     def serialize(self, key, value):
         # Echo back key/value so the producer test can assert on them.
         return type('_Msg', (), {'key': key, 'value': value})()
@@ -130,17 +189,18 @@ class _FakeApplication:
         self.consumer = None
         self.producer = _FakeProducer()
 
-    def topic(self, name, value_deserializer=None, key_deserializer=None, value_serializer=None, key_serializer=None):
-        return _SerializedTopic(name)
+    def topic(self, name, value_serializer=None, key_serializer=None):
+        return _FakeTopic(name)
 
     def get_consumer(self, auto_commit_enable):
+        assert auto_commit_enable is False
         return self.consumer
 
     def get_producer(self):
         return self.producer
 
 
-def _install_fake_quixstreams(monkeypatch, messages):
+def _install_fake_kafka(monkeypatch, messages):
     fake = types.ModuleType('quixstreams')
     holder = {}
 
@@ -152,81 +212,118 @@ def _install_fake_quixstreams(monkeypatch, messages):
 
     fake.Application = _app_factory
     monkeypatch.setitem(sys.modules, 'quixstreams', fake)
+    ck = types.ModuleType('confluent_kafka')
+    ck.TopicPartition = lambda topic, partition, offset: (topic, partition, offset)
+    ck.KafkaException = RuntimeError
+    monkeypatch.setitem(sys.modules, 'confluent_kafka', ck)
     return holder
 
 
-def test_kafka_returns_raw_dicts_without_parsing(monkeypatch):
-    # A 'date' field stays a raw string — the client must NOT parse it.
-    msgs = [
-        _FakeMessage(b'{"a": 1, "date": "2026-01-01"}'),
-        _FakeMessage(b'{"a": 2, "date": "2026-01-02"}'),
-    ]
-    holder = _install_fake_quixstreams(monkeypatch, msgs)
-
-    KafkaClient = _fresh(monkeypatch, 'messaging').KafkaClient
-
-    consumer = KafkaClient(broker_address='b:9092', consumer_group='g', auto_offset_reset='earliest')
+def test_kafka_receive_returns_raw_bodies_until_a_poll_is_empty(monkeypatch):
+    # A 'date' field stays a raw string: the client must not parse it.
+    msgs = [_FakeMessage(b'{"a": 1, "date": "2026-01-01"}', offset=5), _FakeMessage(b'{"a": 2}', offset=6)]
+    holder = _install_fake_kafka(monkeypatch, msgs)
+    client = _fresh(monkeypatch, 'messaging').KafkaClient(
+        broker_address='b:9092', consumer_group='g', auto_offset_reset='earliest'
+    )
     assert holder['app'].kwargs['broker_address'] == 'b:9092'
     assert holder['app'].kwargs['consumer_group'] == 'g'
 
-    finished, records = consumer.consume_batch('td', buffer_size=10, timeout=1)
-    assert finished is True  # topic exhausted before buffer filled
-    assert records == [
-        {'a': 1, 'date': '2026-01-01'},
-        {'a': 2, 'date': '2026-01-02'},
+    messages = client.receive('td', max_messages=10, wait_seconds=1)
+    assert [m.body for m in messages] == [{'a': 1, 'date': '2026-01-01'}, {'a': 2}]
+    assert [m.receipt for m in messages] == [(0, 5), (0, 6)]
+    assert holder['app'].consumer.subscribed == ['td']
+    assert client.receive('td', max_messages=10, wait_seconds=1) == ()
+
+
+def test_kafka_receive_stops_at_max_messages(monkeypatch):
+    _install_fake_kafka(monkeypatch, [_FakeMessage(b'{"a": 1}'), _FakeMessage(b'{"a": 2}'), _FakeMessage(b'{"a": 3}')])
+    client = _fresh(monkeypatch, 'messaging').KafkaClient(broker_address='b', consumer_group='g')
+    assert [m.body for m in client.receive('td', max_messages=2, wait_seconds=1)] == [{'a': 1}, {'a': 2}]
+    assert [m.body for m in client.receive('td', max_messages=2, wait_seconds=1)] == [{'a': 3}]
+
+
+def test_kafka_receive_raises_a_broker_error(monkeypatch):
+    class _ErrorEvent(_FakeMessage):
+        def error(self):
+            return 'broker transport failure'
+
+    _install_fake_kafka(monkeypatch, [_ErrorEvent(b'')])
+    client = _fresh(monkeypatch, 'messaging').KafkaClient(broker_address='b', consumer_group='g')
+    with pytest.raises(RuntimeError, match='broker transport failure'):
+        client.receive('td', max_messages=10, wait_seconds=1)
+
+
+def test_kafka_ack_commits_past_the_highest_offset_per_partition(monkeypatch):
+    msgs = [
+        _FakeMessage(b'{}', offset=7, partition=0),
+        _FakeMessage(b'{}', offset=5, partition=0),
+        _FakeMessage(b'{}', offset=2, partition=1),
     ]
+    holder = _install_fake_kafka(monkeypatch, msgs)
+    client = _fresh(monkeypatch, 'messaging').KafkaClient(broker_address='b', consumer_group='g')
+
+    client.ack('td', client.receive('td', max_messages=10, wait_seconds=1))
+    assert holder['app'].consumer.committed == [('td', 0, 8), ('td', 1, 3)]
+    assert holder['app'].consumer.asynchronous is False
+    assert holder['app'].consumer.sought == []
 
 
-def test_kafka_returns_full_buffer_not_finished(monkeypatch):
-    msgs = [_FakeMessage(b'{"a": 1}'), _FakeMessage(b'{"a": 2}'), _FakeMessage(b'{"a": 3}')]
-    _install_fake_quixstreams(monkeypatch, msgs)
+def test_kafka_ack_stops_at_the_first_unacked_message_and_seeks_back_to_it(monkeypatch):
+    msgs = [_FakeMessage(b'{}', offset=offset) for offset in (4, 5, 6)]
+    holder = _install_fake_kafka(monkeypatch, msgs)
+    client = _fresh(monkeypatch, 'messaging').KafkaClient(broker_address='b', consumer_group='g')
 
-    KafkaClient = _fresh(monkeypatch, 'messaging').KafkaClient
-
-    consumer = KafkaClient(broker_address='b', consumer_group='g', auto_offset_reset='earliest')
-    finished, records = consumer.consume_batch('td', buffer_size=2, timeout=1)
-    assert finished is False  # buffer filled
-    assert records == [{'a': 1}, {'a': 2}]
+    first, _, last = client.receive('td', max_messages=10, wait_seconds=1)
+    client.ack('td', [first, last])
+    assert holder['app'].consumer.committed == [('td', 0, 5)]
+    assert holder['app'].consumer.sought == [('td', 0, 5)]
 
 
-def test_kafka_producer_serializes_and_flushes(monkeypatch):
-    holder = _install_fake_quixstreams(monkeypatch, [])
+def test_kafka_ack_rejects_a_message_not_received_since_the_last_ack(monkeypatch):
+    _install_fake_kafka(monkeypatch, [_FakeMessage(b'{}', offset=1)])
+    client = _fresh(monkeypatch, 'messaging').KafkaClient(broker_address='b', consumer_group='g')
+    received = client.receive('td', max_messages=10, wait_seconds=1)
+    client.ack('td', received)
+    with pytest.raises(ValueError, match='since the last ack'):
+        client.ack('td', received)
 
-    KafkaClient = _fresh(monkeypatch, 'messaging').KafkaClient
 
-    client = KafkaClient(broker_address='b:9092')
-    client.produce(
-        'out',
-        [('k1', {'a': 1}), ('k2', {'a': 2})],
-    )
+def test_kafka_drops_a_message_that_is_not_json_and_counts_it_as_acked(monkeypatch):
+    msgs = [_FakeMessage(b'not json', offset=3), _FakeMessage(b'{"a": 1}', offset=4)]
+    holder = _install_fake_kafka(monkeypatch, msgs)
+    client = _fresh(monkeypatch, 'messaging').KafkaClient(broker_address='b', consumer_group='g')
+
+    received = client.receive('td', max_messages=10, wait_seconds=1)
+    assert [m.body for m in received] == [{'a': 1}]
+    client.ack('td', received)
+    assert holder['app'].consumer.committed == [('td', 0, 5)]
+
+
+def test_kafka_ack_raises_when_a_partition_fails_to_commit(monkeypatch):
+    holder = _install_fake_kafka(monkeypatch, [_FakeMessage(b'{}', offset=1)])
+    client = _fresh(monkeypatch, 'messaging').KafkaClient(broker_address='b', consumer_group='g')
+    received = client.receive('td', max_messages=10, wait_seconds=1)
+    holder['app'].consumer.commit = lambda **_: [types.SimpleNamespace(error='rebalanced')]
+    with pytest.raises(RuntimeError, match='Commit failed'):
+        client.ack('td', received)
+
+
+def test_kafka_close_closes_the_consumers(monkeypatch):
+    holder = _install_fake_kafka(monkeypatch, [])
+    client = _fresh(monkeypatch, 'messaging').KafkaClient(broker_address='b', consumer_group='g')
+    client.receive('td', max_messages=1, wait_seconds=1)
+    client.close()
+    assert holder['app'].consumer.closed is True
+
+
+def test_kafka_send_serializes_and_flushes(monkeypatch):
+    holder = _install_fake_kafka(monkeypatch, [])
+    client = _fresh(monkeypatch, 'messaging').KafkaClient(broker_address='b:9092')
+    client.send('out', [('k1', {'a': 1}), ('k2', {'a': 2})])
     producer = holder['app'].producer
     assert producer.flushed == 1
     assert [(p['key'], p['value']) for p in producer.produced] == [('k1', {'a': 1}), ('k2', {'a': 2})]
-
-
-def test_kafka_consume_with_offsets_and_commit(monkeypatch):
-    msgs = [_FakeMessage(b'{"a": 1}', offset=5), _FakeMessage(b'{"a": 2}', offset=6)]
-    holder = _install_fake_quixstreams(monkeypatch, msgs)
-
-    captured = {}
-
-    class _TopicPartition:
-        def __init__(self, topic, partition, offset):
-            captured.update(topic=topic, partition=partition, offset=offset)
-
-    ck = types.ModuleType('confluent_kafka')
-    ck.TopicPartition = _TopicPartition
-    monkeypatch.setitem(sys.modules, 'confluent_kafka', ck)
-
-    KafkaClient = _fresh(monkeypatch, 'messaging').KafkaClient
-
-    client = KafkaClient(broker_address='b', consumer_group='g', auto_offset_reset='earliest')
-    batch = client.consume_with_offsets('td', buffer_size=10, timeout=1)
-    assert batch == [({'a': 1}, 5), ({'a': 2}, 6)]  # raw records paired with offsets
-
-    client.commit_offset(6)  # commits offset + 1
-    assert captured == {'topic': 'td', 'partition': 0, 'offset': 7}
-    assert holder['app'].consumer.committed is not None
 
 
 # --- MarketDataClient ---
@@ -283,7 +380,7 @@ def test_market_data_price_histories_tags_skips_and_downcasts(monkeypatch):
     def _download(symbol, start=None, **kwargs):
         starts_seen[symbol] = start
         if symbol == 'BAD':
-            raise ValueError('delisted')
+            return pd.DataFrame()
         idx = pd.to_datetime(['2024-01-02', '2024-01-01'])  # deliberately unsorted
         return pd.DataFrame(
             {
@@ -319,7 +416,7 @@ def test_market_data_price_histories_tags_skips_and_downcasts(monkeypatch):
 
 def test_market_data_price_histories_empty_when_all_fail(monkeypatch):
     def _download(symbol, **kwargs):
-        raise ValueError('nope')
+        return pd.DataFrame()
 
     fake = types.ModuleType('yfinance')
     fake.download = _download

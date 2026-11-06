@@ -9,6 +9,7 @@ import re
 from collections.abc import Iterable
 from datetime import datetime
 from typing import TYPE_CHECKING, NamedTuple
+from xml.etree.ElementTree import ParseError
 
 from form4 import ReportingOwner, Submission
 from pydantic import ValidationError
@@ -40,7 +41,7 @@ def parse_filing(filing: Filing, filings: Filings) -> list[dict[str, object]]:
         filings: SEC filings source.
 
     Returns:
-        The transaction records; none if the filing cannot be fetched or parsed (logged).
+        The transaction records; none if the submission holds no valid ownership document (logged).
     """
     if not (submission := _fetch_submission(full_url := f'https://www.sec.gov/Archives/{filing.file_path}', filings)):
         return []
@@ -157,15 +158,17 @@ def _fetch_submission(full_url: str, filings: Filings) -> Submission | None:
         filings: SEC filings source.
 
     Returns:
-        The submission, or None (logged) if fetching or parsing fails.
+        The submission, or None (logged) if it has no valid ownership document or acceptance time.
     """
-    try:
-        if (xml := re.search(r'<XML>\s*(<\?xml[^>]+?>.*?)</XML>', text := filings.get(full_url).text, re.DOTALL)) and (
-            accepted := re.search(r'<ACCEPTANCE-DATETIME>(\d{14})', text)
-        ):
+    if (xml := re.search(r'<XML>\s*(<\?xml[^>]+?>.*?)</XML>', text := filings.get(full_url).text, re.DOTALL)) and (
+        accepted := re.search(r'<ACCEPTANCE-DATETIME>(\d{14})', text)
+    ):
+        try:
             return Submission.model_validate({'accepted_at': accepted.group(1), 'document': xml.group(1).encode()})
+        # Malformed XML raises ParseError, which pydantic does not wrap in a ValidationError
+        except (ValidationError, ParseError) as e:
+            error = str(e)
+    else:
         error = 'no embedded XML document or acceptance time'
-    except Exception as e:
-        error = str(e)
-    logger.warning(f'Could not fetch or parse {full_url}: {error}')
+    logger.warning(f'Could not parse {full_url}: {error}')
     return None

@@ -1,8 +1,9 @@
-"""Ports: the contracts services depend on, and the records and order vocabulary they exchange.
+"""Ports: the contracts services depend on, and the records, order vocabulary and errors they exchange.
 
 Services annotate their dependencies with these Protocols, never with a concrete
 client, so swapping a backend (a local catalog for AWS Glue, local disk for a bucket) is a new
-adapter and no service change. The clients satisfy them structurally.
+adapter and no service change. The clients satisfy them structurally. Adapters retry transient
+failures, then raise ``RetryableError`` or ``PermanentError`` (docs/error-handling.md).
 """
 
 from collections.abc import Iterable, Mapping
@@ -22,12 +23,30 @@ OrderType = Literal['market', 'limit', 'stop', 'stop_limit', 'trailing_stop']
 TimeInForce = Literal['day', 'gtc', 'opg', 'cls', 'ioc', 'fok']
 
 
+class RetryableError(Exception):
+    """The operation failed for now, after the adapter's own retries, and is safe to repeat later."""
+
+
+class PermanentError(Exception):
+    """The operation fails however often it is repeated."""
+
+
 class Filing(NamedTuple):
     """One SEC filing: its accession number, archive path of the full submission, and when it was filed."""
 
     accession: str
     file_path: str
     filed_at: datetime
+
+
+class Message(NamedTuple):
+    """One received message: its decoded JSON body, and the receipt that acknowledges it.
+
+    The receipt is opaque to services; only the client that issued it reads it.
+    """
+
+    body: Mapping[str, Any]
+    receipt: object
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,12 +116,38 @@ class ModelStore(Protocol):
 
 
 class Broker(Protocol):
-    """Order placement."""
+    """Order placement, idempotent by client order id."""
 
     def place_order(
-        self, symbol: str, qty: float, side: Side, order_type: OrderType, time_in_force: TimeInForce
+        self,
+        symbol: str,
+        qty: float,
+        side: Side,
+        order_type: OrderType,
+        time_in_force: TimeInForce,
+        client_order_id: str,
     ) -> object | None:
-        """Submit an order; return it, or None if submission failed."""
+        """Submit an order; return it, or None if an order with ``client_order_id`` was placed before."""
+        ...
+
+
+class MessageQueue(Protocol):
+    """Named queues of JSON messages, delivered at least once.
+
+    A consumer calls ``ack`` once after each ``receive``, with the messages it finished. The
+    messages it leaves out are delivered again.
+    """
+
+    def send(self, queue: str, messages: Iterable[tuple[str, Mapping[str, Any]]]) -> None:
+        """Send ``(key, body)`` pairs to the queue."""
+        ...
+
+    def receive(self, queue: str, max_messages: int, wait_seconds: float) -> tuple[Message, ...]:
+        """Return up to ``max_messages`` messages; an empty tuple means the queue had none within ``wait_seconds``."""
+        ...
+
+    def ack(self, queue: str, messages: Iterable[Message]) -> None:
+        """Mark the messages as processed, so they are not delivered again."""
         ...
 
 
@@ -137,11 +182,11 @@ class Filings(Protocol):
     """SEC filings source."""
 
     def get(self, url: str) -> HttpResponse:
-        """GET a filing URL."""
+        """GET a filing URL; any answer but 200 raises ``RetryableError`` or ``PermanentError``."""
         ...
 
-    def fetch_master_index(self, year: int, quarter: int, form_type: str) -> tuple[Filing, ...] | None:
-        """Return a quarter's filings of ``form_type``, one per accession, or None if unavailable."""
+    def fetch_master_index(self, year: int, quarter: int, form_type: str) -> tuple[Filing, ...]:
+        """Return a quarter's filings of ``form_type``, one per accession."""
         ...
 
     def fetch_current_filings(self, form_type: str, num_pages: int = 1) -> tuple[Filing, ...]:

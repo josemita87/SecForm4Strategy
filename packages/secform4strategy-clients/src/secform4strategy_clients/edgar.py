@@ -1,9 +1,9 @@
 """SEC EDGAR HTTP client.
 
 Encapsulates how to talk to SEC EDGAR: the required ``User-Agent`` header, a
-default timeout, a request-rate cap, and EDGAR's listing formats (the quarterly
-master index, the current-filings Atom feed). Service logic (keys, timestamps,
-publishing) stays with the caller.
+default timeout, a request-rate cap, retries of transient failures, and EDGAR's listing
+formats (the quarterly master index, the current-filings Atom feed). Service logic (keys,
+timestamps, publishing) stays with the caller.
 """
 
 import time
@@ -13,9 +13,12 @@ from http import HTTPStatus
 
 import httpx
 
-from secform4strategy_clients.ports import Filing
+from secform4strategy_clients.ports import Filing, PermanentError, RetryableError
+from secform4strategy_clients.retry import with_backoff
 
 ATOM = {'atom': 'http://www.w3.org/2005/Atom'}
+# SEC answers 403 with this page when a client exceeds 10 requests per second
+RATE_LIMITED = 'Request Rate Threshold Exceeded'
 
 
 class EdgarClient:
@@ -45,20 +48,47 @@ class EdgarClient:
         self._next_start = 0.0
 
     def get(self, url: str) -> httpx.Response:
-        """GET a URL with the configured headers and timeout, waiting first if the rate cap requires it.
+        """GET a URL with the configured headers and timeout, retrying transient failures with backoff.
 
         Args:
             url: The full URL to request.
 
         Returns:
-            The raw response; the caller checks its status.
+            The 200 response.
+        """
+        return with_backoff(lambda: self._get_once(url))
+
+    def _get_once(self, url: str) -> httpx.Response:
+        """GET a URL once, waiting first if the rate cap requires it, and classify any answer but 200.
+
+        Args:
+            url: The full URL to request.
+
+        Returns:
+            The 200 response.
+
+        Raises:
+            RetryableError: The connection failed, or SEC answered 429, 5xx or its rate-limit 403.
+            PermanentError: SEC answered any other status, e.g. 404.
         """
         if (wait := self._next_start - time.monotonic()) > 0:
             time.sleep(wait)
         self._next_start = time.monotonic() + self._interval
-        return self.http.get(url)
+        try:
+            response = self.http.get(url)
+        except httpx.TransportError as error:
+            raise RetryableError(f'GET {url}: {error!r}') from error
+        if (status := response.status_code) == HTTPStatus.OK:
+            return response
+        if (
+            status == HTTPStatus.TOO_MANY_REQUESTS
+            or status >= HTTPStatus.INTERNAL_SERVER_ERROR
+            or (status == HTTPStatus.FORBIDDEN and RATE_LIMITED in response.text)
+        ):
+            raise RetryableError(f'GET {url}: HTTP {status}')
+        raise PermanentError(f'GET {url}: HTTP {status}')
 
-    def fetch_master_index(self, year: int, quarter: int, form_type: str) -> tuple[Filing, ...] | None:
+    def fetch_master_index(self, year: int, quarter: int, form_type: str) -> tuple[Filing, ...]:
         """Fetch a quarterly master index and return its filings of ``form_type``.
 
         The index is a preamble, a ``...|...`` header, then one pipe-delimited line per
@@ -71,13 +101,9 @@ class EdgarClient:
             form_type: Form type to keep, e.g. ``'4'``.
 
         Returns:
-            One filing per accession, or ``None`` if the request was not 200.
+            One filing per accession.
         """
-        if (
-            response := self.get(f'https://www.sec.gov/Archives/edgar/full-index/{year}/QTR{quarter}/master.idx')
-        ).status_code != HTTPStatus.OK:
-            return None
-
+        response = self.get(f'https://www.sec.gov/Archives/edgar/full-index/{year}/QTR{quarter}/master.idx')
         # Data starts two lines after the header row; a company name may contain '|', so split from the right
         lines = response.text.splitlines()
         start = next((i + 2 for i, line in enumerate(lines) if '|' in line), 0)
@@ -111,7 +137,6 @@ class EdgarClient:
                 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent'
                 f'&type={form_type}&owner=only&start={page * 100}&count=100&output=atom'
             )
-            response.raise_for_status()
             for entry in ET.fromstring(response.content).iterfind('atom:entry', ATOM):
                 accession = entry.findtext('atom:id', '', ATOM).rpartition('=')[2]
                 category, link = entry.find('atom:category', ATOM), entry.find('atom:link', ATOM)

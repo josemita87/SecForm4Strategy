@@ -1,8 +1,9 @@
 """Environment-driven configuration for the scraper microservice."""
 
+from datetime import timedelta
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings
 
 
@@ -28,7 +29,13 @@ class Config(BaseSettings):
     mode: Literal['historical', 'live', 'last_quarter', 'quarter']
 
     # Inference Settings
-    days_back: int = 1
+    days_back: int = Field(1, gt=0)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def max_age(self) -> timedelta | None:
+        """Return the oldest filing age parsed: ``days_back`` days in live mode, unbounded otherwise."""
+        return timedelta(days=self.days_back) if self.mode == 'live' else None
 
 
 config = Config()

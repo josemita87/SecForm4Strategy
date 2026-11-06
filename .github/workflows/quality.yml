@@ -16,7 +16,7 @@ jobs:
 
   type-check:
     runs-on: ubuntu-latest
-    # Non-blocking until the Kafka client (messaging.py, the last mypy errors) is removed
+    # Non-blocking until type-check joins the pre-commit hook (TODO)
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4

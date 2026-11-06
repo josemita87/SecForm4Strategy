@@ -1,8 +1,10 @@
 """Market-data client backed by yfinance.
 
-Hides the yfinance download call and its column layout behind tidy daily bars. The
-batch :meth:`MarketDataClient.price_histories` skips a symbol that fails to download
-(delisted, renamed), the only way to keep a multi-symbol pull alive.
+Hides the yfinance download call and its column layout behind tidy daily bars. yfinance
+reports a failed download, network errors included, as an empty frame, so the client cannot tell
+a delisted symbol from an outage: both raise ``PermanentError``. The batch
+:meth:`MarketDataClient.price_histories` skips such a symbol; nothing is stored for it, so the
+next refresh asks for it again.
 """
 
 import logging
@@ -11,6 +13,8 @@ from datetime import date
 
 import pandas as pd
 import yfinance as yf
+
+from secform4strategy_clients.ports import PermanentError
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +38,15 @@ class MarketDataClient:
 
         Returns:
             A DataFrame with ``date``, ``open``, ``close``, ``close_as_traded``, ``split`` and ``dividend`` columns.
+
+        Raises:
+            PermanentError: yfinance returned no bars for the symbol.
         """
         # Without a start yfinance returns only its default one-month period, so ask for all of it
         window = {'start': start} if start else {'period': 'max'}
         bars: pd.DataFrame = yf.download(symbol, **window, auto_adjust=False, actions=True, multi_level_index=False)
+        if bars.empty:
+            raise PermanentError(f'No price data for {symbol}')
         # A split's ratio sits on its first post-split day; each day is scaled by the splits strictly after it
         later_splits = bars['Stock Splits'].replace(0, 1)[::-1].cumprod()[::-1].shift(-1, fill_value=1)
         return pd.DataFrame(
@@ -54,7 +63,7 @@ class MarketDataClient:
     def price_histories(self, symbols: Iterable[str], starts: Mapping[str, date] | None = None) -> pd.DataFrame:
         """Return concatenated daily history (``daily_bars``) for many symbols, tagged by ticker.
 
-        Best-effort: a symbol whose download fails (delisted, renamed) is logged
+        Best-effort: a symbol that returns no bars (``PermanentError``) is logged
         and skipped rather than aborting the whole batch. The result uses
         storage-friendly dtypes (``float32`` prices, categorical ticker), sorted by
         ticker then date.
@@ -73,8 +82,8 @@ class MarketDataClient:
         for symbol in symbols:
             try:
                 frames.append(self.daily_bars(symbol, start=starts.get(symbol)).assign(ticker=symbol))
-            except Exception as exc:
-                logger.warning('Skipping %s: %s', symbol, exc)
+            except PermanentError as error:
+                logger.warning(f'Skipping {symbol}: {error}')
 
         if not frames:
             logger.warning('No price history downloaded for any symbol')
