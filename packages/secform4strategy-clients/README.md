@@ -21,10 +21,11 @@ consuming and producing — not separate consumer/producer classes):
 | `IcebergFeatureStore` | `secform4strategy_clients.feature_store` (catalog: `feature_groups`) | `feature-store` | `pyiceberg` |
 | `AlpacaClient` | `secform4strategy_clients.broker` | `broker` | `alpaca-py` |
 | `KafkaClient` | `secform4strategy_clients.messaging` | `messaging` | `quixstreams` |
-| `SqsQueue` | `secform4strategy_clients.sqs` | `sqs` | `boto3` |
+| `SqsQueue` | `secform4strategy_clients.sqs` | `aws` | `boto3` |
 | `EdgarClient` | `secform4strategy_clients.edgar` | `edgar` | `httpx` |
 | `MarketDataClient` | `secform4strategy_clients.market_data` | `market-data` | `yfinance` |
 | `LocalModelStore` | `secform4strategy_clients.model_store` | `model-store` | `joblib` |
+| `S3ModelStore` | `secform4strategy_clients.s3_model_store` | `model-store`, `aws` | `joblib`, `boto3` |
 
 ## Ports
 
@@ -42,7 +43,8 @@ is a new adapter that satisfies the port, with no service change.
 iterable value means "any of". Each adapter translates it to its own query.
 
 Adapters retry transient failures with `retry.with_backoff`, then raise `RetryableError` or
-`PermanentError` from the SDK's exception; `docs/error-handling.md` gives the contract and how
+`PermanentError` from the SDK's exception. AWS adapters leave retries to botocore and share
+`aws.classified` for the mapping; `docs/error-handling.md` gives the contract and how
 services act on each.
 
 `secform4strategy_clients.fakes` holds typed in-memory implementations of the

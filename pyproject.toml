@@ -27,7 +27,7 @@ dev = [
     "xxhash>=3.5,<4",
     "types-PyYAML>=6",
     "types-requests>=2.32",
-    "boto3-stubs[sqs]>=1.35,<2",
+    "boto3-stubs[s3,sqs]>=1.35,<2",
 ]
 
 [tool.mypy]

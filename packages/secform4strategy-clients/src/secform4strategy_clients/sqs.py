@@ -5,21 +5,18 @@ message's receipt handle. SQS hides a received message for the queue's visibilit
 delivers it again unless ``ack`` deletes it; after the queue's maximum receives, its redrive
 policy moves it to the dead-letter queue. A message that is not JSON is logged and deleted at
 once. botocore retries throttling and server errors itself, so the client only classifies the
-failures left over (docs/error-handling.md).
+failures left over with ``aws.classified`` (docs/error-handling.md).
 """
 
 import json
 import logging
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from http import HTTPStatus
+from collections.abc import Iterable, Mapping, Sequence
 from itertools import batched
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError, HTTPClientError
-from botocore.exceptions import ConnectionError as BotocoreConnectionError
 
+from secform4strategy_clients.aws import RETRIES, classified
 from secform4strategy_clients.ports import Message, PermanentError, RetryableError
 
 if TYPE_CHECKING:
@@ -36,34 +33,6 @@ class SqsReceipt(NamedTuple):
     """The handle that deletes a received message."""
 
     handle: str
-
-
-def classified[**P, T](what: str, call: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
-    """Return ``call(*args, **kwargs)``, raising the port's errors for the failures botocore did not retry away.
-
-    Args:
-        what: What the call does, for the error message.
-        call: One SQS API method.
-        *args: Its positional arguments.
-        **kwargs: Its keyword arguments.
-
-    Returns:
-        What ``call`` returns.
-
-    Raises:
-        RetryableError: The connection failed, or SQS throttled or answered 5xx after botocore's retries.
-        PermanentError: SQS rejected the call, e.g. an unknown queue or missing permission.
-    """
-    try:
-        return call(*args, **kwargs)
-    except (BotocoreConnectionError, HTTPClientError) as error:
-        raise RetryableError(f'{what}: {error}') from error
-    except ClientError as error:
-        code = error.response.get('Error', {}).get('Code', '')
-        status = error.response.get('ResponseMetadata', {}).get('HTTPStatusCode', 0)
-        if status >= HTTPStatus.INTERNAL_SERVER_ERROR or 'Throttl' in code:
-            raise RetryableError(f'{what}: {code} (HTTP {status})') from error
-        raise PermanentError(f'{what}: {code} (HTTP {status}) {error}') from error
 
 
 def raise_failed(failed: Sequence[BatchResultErrorEntryTypeDef], what: str) -> None:
@@ -99,12 +68,7 @@ class SqsQueue:
             region: AWS region of the queues.
             endpoint_url: Alternative endpoint, e.g. a local SQS emulator; None uses AWS.
         """
-        self.sqs: SQSClient = boto3.client(
-            'sqs',
-            region_name=region,
-            endpoint_url=endpoint_url,
-            config=Config(retries={'mode': 'standard', 'max_attempts': 5}),
-        )
+        self.sqs: SQSClient = boto3.client('sqs', region_name=region, endpoint_url=endpoint_url, config=RETRIES)
         self._urls: dict[str, str] = {}
 
     def _url(self, queue: str) -> str:
