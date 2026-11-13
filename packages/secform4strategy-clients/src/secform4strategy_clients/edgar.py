@@ -17,8 +17,6 @@ from secform4strategy_clients.ports import Filing, PermanentError, RetryableErro
 from secform4strategy_clients.retry import with_backoff
 
 ATOM = {'atom': 'http://www.w3.org/2005/Atom'}
-# SEC answers 403 with this page when a client exceeds 10 requests per second
-RATE_LIMITED = 'Request Rate Threshold Exceeded'
 
 
 class EdgarClient:
@@ -55,20 +53,26 @@ class EdgarClient:
 
         Returns:
             The 200 response.
+
+        Raises:
+            RetryableError: SEC's rate limit locked the client out; it lifts after about 10 minutes.
         """
-        return with_backoff(lambda: self._get_once(url))
+        if (response := with_backoff(lambda: self._get_once(url))).status_code == HTTPStatus.FORBIDDEN:
+            # Retrying within seconds would only extend the lockout, so the caller waits instead
+            raise RetryableError(f'GET {url}: SEC rate limit')
+        return response
 
     def _get_once(self, url: str) -> httpx.Response:
-        """GET a URL once, waiting first if the rate cap requires it, and classify any answer but 200.
+        """GET a URL once, waiting first if the rate cap requires it, and classify the other answers.
 
         Args:
             url: The full URL to request.
 
         Returns:
-            The 200 response.
+            The 200 response, or SEC's rate-limit 403, which ``get`` handles without retrying.
 
         Raises:
-            RetryableError: The connection failed, or SEC answered 429, 5xx or its rate-limit 403.
+            RetryableError: The connection failed, or SEC answered 429 or 5xx.
             PermanentError: SEC answered any other status, e.g. 404.
         """
         if (wait := self._next_start - time.monotonic()) > 0:
@@ -78,13 +82,12 @@ class EdgarClient:
             response = self.http.get(url)
         except httpx.TransportError as error:
             raise RetryableError(f'GET {url}: {error!r}') from error
-        if (status := response.status_code) == HTTPStatus.OK:
-            return response
-        if (
-            status == HTTPStatus.TOO_MANY_REQUESTS
-            or status >= HTTPStatus.INTERNAL_SERVER_ERROR
-            or (status == HTTPStatus.FORBIDDEN and RATE_LIMITED in response.text)
+        # SEC answers 403 with this page when a client exceeds 10 requests per second
+        if (status := response.status_code) == HTTPStatus.OK or (
+            status == HTTPStatus.FORBIDDEN and 'Request Rate Threshold Exceeded' in response.text
         ):
+            return response
+        if status == HTTPStatus.TOO_MANY_REQUESTS or status >= HTTPStatus.INTERNAL_SERVER_ERROR:
             raise RetryableError(f'GET {url}: HTTP {status}')
         raise PermanentError(f'GET {url}: HTTP {status}')
 

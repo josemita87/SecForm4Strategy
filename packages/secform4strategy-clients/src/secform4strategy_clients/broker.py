@@ -2,7 +2,8 @@
 
 Pure infrastructure on ``alpaca-py``: credentials are passed in by the caller;
 this module holds no configuration and no trading-strategy logic. Orders carry a client order
-id, so Alpaca rejects a repeat and a retried submission never places a second order.
+id, so Alpaca rejects a repeat and a rerun never places a second order. alpaca-py retries 429 and
+504 itself, so the client only classifies what is left.
 """
 
 import logging
@@ -18,7 +19,6 @@ from alpaca.trading.enums import TimeInForce as AlpacaTimeInForce
 from alpaca.trading.requests import OrderRequest
 
 from secform4strategy_clients.ports import PermanentError, RetryableError
-from secform4strategy_clients.retry import with_backoff
 
 if TYPE_CHECKING:
     from pydantic import SecretStr
@@ -60,7 +60,7 @@ class AlpacaClient:
         time_in_force: TimeInForce,
         client_order_id: str,
     ) -> object | None:
-        """Submit an order to Alpaca, retrying transient failures with backoff.
+        """Submit an order to Alpaca once, classifying a failure.
 
         Args:
             symbol: Ticker symbol to trade.
@@ -72,43 +72,34 @@ class AlpacaClient:
 
         Returns:
             The submitted order, or None if an order with ``client_order_id`` was placed before.
-        """
-        request = OrderRequest(
-            symbol=symbol,
-            qty=qty,
-            side=OrderSide(side),
-            type=AlpacaOrderType(order_type),
-            time_in_force=AlpacaTimeInForce(time_in_force),
-            client_order_id=client_order_id,
-        )
-        return with_backoff(lambda: self._submit_once(request))
-
-    def _submit_once(self, request: OrderRequest) -> object | None:
-        """Submit an order once and classify a failure.
-
-        Args:
-            request: The order, carrying its client order id.
-
-        Returns:
-            The submitted order, or None if its client order id was placed before.
 
         Raises:
-            RetryableError: The connection failed, or Alpaca answered 429 or 5xx.
+            RetryableError: The connection failed, Alpaca gave no status, or it answered 429 or 5xx after its retries.
             PermanentError: Alpaca rejected the order, e.g. an unknown or unshortable symbol.
         """
         try:
-            order: object = self.api.submit_order(request)
+            order: object = self.api.submit_order(
+                OrderRequest(
+                    symbol=symbol,
+                    qty=qty,
+                    side=OrderSide(side),
+                    type=AlpacaOrderType(order_type),
+                    time_in_force=AlpacaTimeInForce(time_in_force),
+                    client_order_id=client_order_id,
+                )
+            )
         except requests.RequestException as error:
-            raise RetryableError(f'Order {request.client_order_id}: {error!r}') from error
+            raise RetryableError(f'Order {client_order_id}: {error!r}') from error
         except APIError as error:
-            if error.status_code == HTTPStatus.UNPROCESSABLE_ENTITY and 'client_order_id must be unique' in str(error):
-                logger.info(f'Order {request.client_order_id} was placed before')
-                return None
             if (
-                error.status_code == HTTPStatus.TOO_MANY_REQUESTS
-                or error.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR
+                (status := error.status_code) is None
+                or status == HTTPStatus.TOO_MANY_REQUESTS
+                or status >= HTTPStatus.INTERNAL_SERVER_ERROR
             ):
-                raise RetryableError(f'Order {request.client_order_id}: HTTP {error.status_code} {error}') from error
-            raise PermanentError(f'Order {request.client_order_id}: HTTP {error.status_code} {error}') from error
+                raise RetryableError(f'Order {client_order_id}: HTTP {status} {error}') from error
+            if status == HTTPStatus.UNPROCESSABLE_ENTITY and 'client_order_id must be unique' in str(error):
+                logger.info(f'Order {client_order_id} was placed before')
+                return None
+            raise PermanentError(f'Order {client_order_id}: HTTP {status} {error}') from error
         logger.info(f'Order submitted: {order}')
         return order

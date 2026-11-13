@@ -98,5 +98,7 @@ if __name__ == '__main__':
                 sys.exit(f'Store unavailable, {len(messages)} messages left for a retry: {error}')
             queue.ack(config.kafka_input_topic, messages)
             logger.info(f'Upserted {len(rows)} of {len(records)} transactions into {target.name}')
+        # The last, empty receive may still have dropped non-JSON messages; acking commits past them
+        queue.ack(config.kafka_input_topic, ())
 
     logger.info('No more messages to consume. Exiting kafka-to-store...')

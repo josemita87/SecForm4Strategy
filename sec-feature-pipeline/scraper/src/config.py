@@ -26,6 +26,8 @@ class Config(BaseSettings):
     buffer_size: int
     poll_timeout: int
     delay: int
+    # Seconds to wait after a batch stopped on a transient failure, so a struggling SEC is not hammered
+    retry_pause: float = Field(60, ge=0)
     mode: Literal['historical', 'live', 'last_quarter', 'quarter']
 
     # Inference Settings

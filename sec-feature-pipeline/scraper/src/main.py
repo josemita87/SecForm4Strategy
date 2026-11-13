@@ -94,8 +94,11 @@ if __name__ == '__main__':
     logger.info(f'Scraper started: {config.kafka_input_topic} -> {config.kafka_output_topic}')
 
     while True:
-        if not (messages := queue.receive(config.kafka_input_topic, config.buffer_size, config.poll_timeout)):
-            continue
+        messages = queue.receive(config.kafka_input_topic, config.buffer_size, config.poll_timeout)
         done, sent = scrape(messages, edgar, queue, config.kafka_output_topic, config.max_age)
+        # Acked after every receive, an empty one included, as the port requires
         queue.ack(config.kafka_input_topic, done)
-        logger.info(f'{len(done)} of {len(messages)} filings -> {sent} transactions')
+        if messages:
+            logger.info(f'{len(done)} of {len(messages)} filings -> {sent} transactions')
+        if len(done) < len(messages):
+            time.sleep(config.retry_pause)

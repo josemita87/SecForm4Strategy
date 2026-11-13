@@ -4,7 +4,9 @@ Every service handles failures by one contract. Adapters retry briefly and then 
 
 ## Adapters: retry, then classify
 
-An adapter retries transient failures itself, with exponential backoff and jitter, for a bounded number of attempts. It is the only layer that knows its SDK's errors and rate limits. AWS SDK calls are not wrapped: botocore already retries them.
+An adapter retries transient failures itself, with exponential backoff and jitter, for a bounded number of attempts. It is the only layer that knows its SDK's errors and rate limits. Calls whose SDK already retries are not wrapped again: botocore retries AWS calls, and alpaca-py retries 429 and 504.
+
+SEC's rate-limit 403 is not retried in the adapter. SEC locks the client out for about 10 minutes, and requests during the lockout extend it, so the adapter raises `RetryableError` at once.
 
 When the retries run out, or the failure is not transient, the adapter raises one of two exceptions from `secform4strategy_clients.ports`:
 
@@ -48,6 +50,8 @@ Services never write `except Exception`.
 | Dead-letter queue | Indefinite | SQS moves a message that keeps failing to the queue's DLQ; a CloudWatch alarm reports it |
 
 A crash leaves its messages unacked, so a deterministic defect ends in the DLQ, and a crashed task fails its execution.
+
+Kafka has no visibility timeout and no DLQ. Locally, the scraper waits `RETRY_PAUSE` seconds (default 60) after a batch stops on a `RetryableError`, and a message that fails on every delivery holds its partition until someone fixes the cause.
 
 ## Requirement: incremental tasks
 

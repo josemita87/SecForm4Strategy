@@ -6,7 +6,7 @@ Under test:
 
 import httpx
 import pytest
-from secform4strategy_clients.edgar import RATE_LIMITED, EdgarClient
+from secform4strategy_clients.edgar import EdgarClient
 from secform4strategy_clients.ports import PermanentError, RetryableError
 
 URL = 'https://www.sec.gov/Archives/edgar/data/1/a.txt'
@@ -40,7 +40,6 @@ class TestGet:
         [
             httpx.Response(503),
             httpx.Response(429),
-            httpx.Response(403, text=f'<h1>{RATE_LIMITED}</h1>'),
             httpx.ConnectTimeout('timed out'),
         ],
     )
@@ -48,6 +47,14 @@ class TestGet:
         client, requests = edgar(monkeypatch, answer, httpx.Response(200, text='filing'))
         assert client.get(URL).text == 'filing'
         assert len(requests) == 2
+
+    def test_the_rate_limit_lockout_raises_retryable_error_without_retrying(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        client, requests = edgar(monkeypatch, httpx.Response(403, text='<h1>Request Rate Threshold Exceeded</h1>'))
+        with pytest.raises(RetryableError, match='rate limit'):
+            client.get(URL)
+        assert len(requests) == 1
 
     def test_a_transient_answer_that_persists_raises_retryable_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         client, requests = edgar(monkeypatch, *(httpx.Response(503),) * 4)

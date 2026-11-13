@@ -14,7 +14,7 @@ from datetime import date
 import pandas as pd
 import pytest
 from pydantic import SecretStr
-from secform4strategy_clients.ports import PermanentError
+from secform4strategy_clients.ports import PermanentError, RetryableError
 
 
 def _fresh(monkeypatch, module):
@@ -56,7 +56,6 @@ def _install_fake_alpaca(monkeypatch, outcomes):
     _module('alpaca.trading.client', TradingClient=_FakeTradingClient)
     _module('alpaca.trading.enums', OrderSide=str, OrderType=str, TimeInForce=str)
     _module('alpaca.trading.requests', OrderRequest=types.SimpleNamespace)
-    monkeypatch.setattr('secform4strategy_clients.retry.time.sleep', lambda _: None)
     return calls
 
 
@@ -92,10 +91,17 @@ def test_alpaca_repeated_client_id_means_already_placed(monkeypatch):
     assert client.place_order('AAPL', 1, 'sell', 'market', 'gtc', 'k') is None
 
 
-def test_alpaca_retries_a_server_error_with_the_same_client_id(monkeypatch):
-    client, calls = _alpaca(monkeypatch, [_FakeAPIError(503, 'unavailable'), 'order'])
-    assert client.place_order('AAPL', 1, 'sell', 'market', 'gtc', 'k') == 'order'
-    assert [order.client_order_id for order in calls['orders']] == ['k', 'k']
+def test_alpaca_server_error_is_retryable_and_not_resubmitted(monkeypatch):
+    client, calls = _alpaca(monkeypatch, [_FakeAPIError(503, 'unavailable')])
+    with pytest.raises(RetryableError, match='503'):
+        client.place_order('AAPL', 1, 'sell', 'market', 'gtc', 'k')
+    assert len(calls['orders']) == 1
+
+
+def test_alpaca_error_without_status_is_retryable(monkeypatch):
+    client, _ = _alpaca(monkeypatch, [_FakeAPIError(None, 'no response')])
+    with pytest.raises(RetryableError):
+        client.place_order('AAPL', 1, 'sell', 'market', 'gtc', 'k')
 
 
 def test_alpaca_other_client_id_rejection_is_permanent(monkeypatch):

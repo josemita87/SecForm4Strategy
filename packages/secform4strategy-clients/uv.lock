@@ -1531,6 +1531,7 @@ source = { editable = "." }
 broker = [
     { name = "alpaca-py" },
     { name = "pydantic" },
+    { name = "requests" },
 ]
 edgar = [
     { name = "httpx" },
@@ -1574,6 +1575,7 @@ requires-dist = [
     { name = "pyiceberg", extras = ["sql-sqlite", "pyarrow"], marker = "extra == 'feature-store'", specifier = ">=0.12,<0.13" },
     { name = "pyyaml", marker = "extra == 'feature-store'", specifier = ">=6,<7" },
     { name = "quixstreams", marker = "extra == 'messaging'", specifier = ">=3.1,<4" },
+    { name = "requests", marker = "extra == 'broker'", specifier = ">=2.31,<3" },
     { name = "yfinance", marker = "extra == 'market-data'", specifier = ">=0.2.48,<0.3" },
 ]
 provides-extras = ["feature-store", "model-store", "broker", "messaging", "edgar", "market-data"]
