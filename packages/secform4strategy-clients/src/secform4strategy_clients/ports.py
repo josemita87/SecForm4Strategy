@@ -143,7 +143,7 @@ class MessageQueue(Protocol):
         ...
 
     def receive(self, queue: str, max_messages: int, wait_seconds: float) -> tuple[Message, ...]:
-        """Return up to ``max_messages`` messages; an empty tuple means the queue had none within ``wait_seconds``."""
+        """Return up to ``max_messages`` messages, waiting up to ``wait_seconds`` for the first; empty if none came."""
         ...
 
     def ack(self, queue: str, messages: Iterable[Message]) -> None:

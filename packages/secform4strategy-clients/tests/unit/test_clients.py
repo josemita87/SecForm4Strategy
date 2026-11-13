@@ -145,11 +145,13 @@ class _FakeConsumer:
         self.asynchronous = None
         self.sought = []
         self.closed = False
+        self.timeouts = []
 
     def subscribe(self, topics):
         self.subscribed = topics
 
     def poll(self, timeout):
+        self.timeouts.append(timeout)
         return self._messages.pop(0) if self._messages else None
 
     def commit(self, offsets, asynchronous):
@@ -239,6 +241,8 @@ def test_kafka_receive_returns_raw_bodies_until_a_poll_is_empty(monkeypatch):
     assert [m.body for m in messages] == [{'a': 1, 'date': '2026-01-01'}, {'a': 2}]
     assert [m.receipt for m in messages] == [(0, 5), (0, 6)]
     assert holder['app'].consumer.subscribed == ['td']
+    # Only the first poll waits; once messages are in hand, polls do not
+    assert holder['app'].consumer.timeouts == [1, 0, 0]
     assert client.receive('td', max_messages=10, wait_seconds=1) == ()
 
 

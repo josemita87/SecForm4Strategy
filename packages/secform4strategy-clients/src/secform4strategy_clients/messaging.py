@@ -76,12 +76,12 @@ class KafkaClient:
         self._undecodable: dict[str, set[KafkaReceipt]] = {}
 
     def receive(self, queue: str, max_messages: int, wait_seconds: float) -> tuple[Message, ...]:
-        """Return up to ``max_messages`` messages, stopping early when a poll waits ``wait_seconds`` in vain.
+        """Return up to ``max_messages`` messages, waiting only for the first; then return what is already there.
 
         Args:
             queue: Topic to read; one manual-commit consumer is kept per topic.
             max_messages: Most messages to return.
-            wait_seconds: How long each poll waits for a message.
+            wait_seconds: How long to wait for the first message.
 
         Returns:
             The messages read, possibly none.
@@ -93,7 +93,8 @@ class KafkaClient:
             consumer = self._consumers[queue] = self.app.get_consumer(auto_commit_enable=False)
             consumer.subscribe(topics=[queue])
         messages: list[Message] = []
-        while len(messages) < max_messages and (record := consumer.poll(wait_seconds)) is not None:
+        # Once a batch has started, waiting for more would only delay the messages already read
+        while len(messages) < max_messages and (record := consumer.poll(0 if messages else wait_seconds)) is not None:
             if error := record.error():
                 raise KafkaException(error)
             receipt = KafkaReceipt(record.partition(), record.offset())
