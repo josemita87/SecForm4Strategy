@@ -5,11 +5,12 @@ import time
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from config import config
+from config import Kafka, Sqs, config
 from parser import parse_filing
 from secform4strategy_clients.edgar import EdgarClient
 from secform4strategy_clients.messaging import KafkaClient
 from secform4strategy_clients.ports import Filing, PermanentError, RetryableError
+from secform4strategy_clients.sqs import SqsQueue
 
 if TYPE_CHECKING:
     from secform4strategy_clients.ports import Filings, Message, MessageQueue
@@ -83,21 +84,22 @@ def scrape(
 
 
 if __name__ == '__main__':
-    queue: MessageQueue = KafkaClient(
-        broker_address=config.kafka_broker_address,
-        consumer_group=config.consumer_group,
-        auto_offset_reset=config.auto_offset_reset,
-    )
+    queue: MessageQueue
+    match config.queue:
+        case Kafka() as kafka:
+            queue = KafkaClient(kafka.broker_address, kafka.consumer_group, kafka.auto_offset_reset)
+        case Sqs() as sqs:
+            queue = SqsQueue(sqs.region)
     edgar: Filings = EdgarClient(config.sec_user_agent, config.sec_max_rate)
 
     time.sleep(config.delay)
-    logger.info(f'Scraper started: {config.kafka_input_topic} -> {config.kafka_output_topic}')
+    logger.info(f'Scraper started: {config.input_queue} -> {config.output_queue}')
 
     while True:
-        messages = queue.receive(config.kafka_input_topic, config.buffer_size, config.poll_timeout)
-        done, sent = scrape(messages, edgar, queue, config.kafka_output_topic, config.max_age)
+        messages = queue.receive(config.input_queue, config.buffer_size, config.poll_timeout)
+        done, sent = scrape(messages, edgar, queue, config.output_queue, config.max_age)
         # Acked after every receive, an empty one included, as the port requires
-        queue.ack(config.kafka_input_topic, done)
+        queue.ack(config.input_queue, done)
         if messages:
             logger.info(f'{len(done)} of {len(messages)} filings -> {sent} transactions')
         if len(done) < len(messages):

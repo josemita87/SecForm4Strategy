@@ -5,6 +5,18 @@ Each service reads two kinds of configuration:
 - **Environment** (`config.py`, pydantic-settings): credentials, hosts, run modes and tunables. Required fields have no default, so a missing variable fails at boot.
 - **YAML spec** (one `spec.yaml` next to each service's code): static data that changes behaviour without a code change.
 
+## Backends: local or AWS
+
+The same code runs locally and on AWS. Environment variables choose each backend, and `main.py` builds the matching adapter.
+
+| Setting | Services | Local | AWS |
+| --- | --- | --- | --- |
+| `QUEUE__BACKEND` | master-index, scraper, kafka-to-store | `kafka`: `QUEUE__BROKER_ADDRESS`; consumers also need `QUEUE__CONSUMER_GROUP` and `QUEUE__AUTO_OFFSET_RESET` | `sqs`: `QUEUE__REGION` |
+| `MODEL_STORE__BACKEND` | training, inference | `local` (default): `MODEL_STORE__PATH`, default `MODEL_PATH` in the service's `paths.py` | `s3`: `MODEL_STORE__REGION`, `MODEL_STORE__BUCKET`, `MODEL_STORE__PREFIX` (default `models`) |
+| `PYICEBERG_CATALOG__DEFAULT__*` | every feature-store service | `TYPE=sql`, a SQLite catalog | `TYPE=glue` |
+
+`INPUT_QUEUE` and `OUTPUT_QUEUE` name the queues: Kafka topics locally, SQS queues on AWS. A field that the chosen backend requires and that is not set fails validation at startup.
+
 ## `feature_groups`: feature-group catalogs
 
 Each service lists the feature groups it touches, keyed by the reference the code uses (a `FeatureGroup` enum value).

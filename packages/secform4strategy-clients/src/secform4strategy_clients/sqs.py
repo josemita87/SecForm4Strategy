@@ -79,6 +79,10 @@ class SqsQueue:
             ]
         return url
 
+    def close(self) -> None:
+        """Close the client's connections."""
+        self.sqs.close()
+
     def send(self, queue: str, messages: Iterable[tuple[str, Mapping[str, Any]]]) -> None:
         """Send bodies as JSON, 10 per call; standard queues have no partitions, so keys are not used.
 

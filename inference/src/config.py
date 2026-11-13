@@ -1,15 +1,32 @@
 """Application configuration loaded from environment variables and .env files."""
 
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from paths import CSV_PATH, LOG_PATH, MODEL_PATH
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel, Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from secform4strategy_clients.ports import OrderType, Side, TimeInForce
 
 load_dotenv('.env')
 load_dotenv('.credentials.env')
+
+
+class LocalModels(BaseModel):
+    """A model file on local disk, its metadata beside it."""
+
+    backend: Literal['local']
+    path: Path = MODEL_PATH
+
+
+class S3Models(BaseModel):
+    """Versioned models in an S3 bucket, on AWS."""
+
+    backend: Literal['s3']
+    region: str
+    bucket: str
+    prefix: str = 'models'
 
 
 class Config(BaseSettings):
@@ -37,8 +54,11 @@ class Config(BaseSettings):
     # Logging
     log_path: Path = LOG_PATH
 
-    # Models
-    model_path: Path = MODEL_PATH
+    # Model store: MODEL_STORE__BACKEND picks it, MODEL_STORE__<FIELD> sets its fields
+    model_store: LocalModels | S3Models = Field(LocalModels(backend='local'), discriminator='backend')
+
+    # `model_store` is a setting, not a pydantic internal
+    model_config = SettingsConfigDict(env_nested_delimiter='__', protected_namespaces=('settings_',))
 
 
 config = Config()

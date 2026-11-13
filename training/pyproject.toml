@@ -7,7 +7,7 @@ authors = [{ name = "Josep Cubedo Macian", email = "136491450+josemita87@users.n
 requires-python = ">=3.14,<3.15"
 dependencies = [
     # Feature store and model store come from the shared clients package.
-    "secform4strategy-clients[feature-store,model-store]",
+    "secform4strategy-clients[aws,feature-store,model-store]",
     "pandas>=2.3.3,<2.4",
     "numpy>=2.3,<2.5",
     # scikit-learn must match between training and inference, which unpickles the saved model.

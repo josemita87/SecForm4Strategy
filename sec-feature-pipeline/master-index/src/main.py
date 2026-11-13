@@ -1,4 +1,4 @@
-"""Entry point: fetches SEC Form 4 filing links and produces them to Kafka."""
+"""Entry point: fetches SEC Form 4 filing links and sends them to the output queue."""
 
 import logging
 import random
@@ -10,10 +10,11 @@ from itertools import batched
 from typing import TYPE_CHECKING
 
 import xxhash
-from config import config
+from config import Kafka, Sqs, config
 from secform4strategy_clients.edgar import EdgarClient
 from secform4strategy_clients.messaging import KafkaClient
 from secform4strategy_clients.ports import PermanentError, RetryableError
+from secform4strategy_clients.sqs import SqsQueue
 
 if TYPE_CHECKING:
     from secform4strategy_clients.ports import Filing, Filings, MessageQueue
@@ -53,15 +54,20 @@ def build_messages(filings: Iterable[Filing]) -> tuple[tuple[str, dict[str, str]
 
 if __name__ == '__main__':
     edgar: Filings = EdgarClient(config.sec_user_agent, config.sec_max_rate)
-    queue: MessageQueue = KafkaClient(config.kafka_broker_address, loglevel='CRITICAL')
+    queue: MessageQueue
+    match config.queue:
+        case Kafka() as kafka:
+            queue = KafkaClient(kafka.broker_address, loglevel='CRITICAL')
+        case Sqs() as sqs:
+            queue = SqsQueue(sqs.region)
 
     def publish(data: Iterable[Filing]) -> None:
         """Send filings to the output queue one batch at a time (each send flushes)."""
         for batch in batched(messages := build_messages(data), config.buffer_size, strict=False):
-            queue.send(config.kafka_output_topic, batch)
+            queue.send(config.output_queue, batch)
         logger.info(f'Published {len(messages)} filings')
 
-    logger.info(f'Master index started in {config.mode} mode -> {config.kafka_output_topic}')
+    logger.info(f'Master index started in {config.mode} mode -> {config.output_queue}')
 
     if config.mode == 'live':
         # Each poll returns the newest filings again, so already-produced accessions are skipped

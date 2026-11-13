@@ -10,7 +10,7 @@ import model
 import pandas as pd
 import simulation
 import sklearn
-from config import config
+from config import LocalModels, S3Models, config
 from constants import Col, FeatureGroup
 from paths import SPEC_PATH
 from pyiceberg.catalog import load_catalog
@@ -18,9 +18,10 @@ from secform4strategy_clients.feature_groups import load_feature_group_catalog
 from secform4strategy_clients.feature_store import IcebergFeatureStore
 from secform4strategy_clients.model_store import LocalModelStore
 from secform4strategy_clients.ports import ModelMetadata
+from secform4strategy_clients.s3_model_store import S3ModelStore
 
 if TYPE_CHECKING:
-    from secform4strategy_clients.ports import FeatureStore
+    from secform4strategy_clients.ports import FeatureStore, ModelStore
 
 # Configure structured logging (the handler needs the log directory to exist)
 config.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -89,7 +90,13 @@ if __name__ == '__main__':
         )
     except OSError, subprocess.CalledProcessError:
         git_sha = 'unknown'
-    LocalModelStore(config.model_path).save(
+    model_store: ModelStore
+    match config.model_store:
+        case LocalModels() as local:
+            model_store = LocalModelStore(local.path)
+        case S3Models() as s3:
+            model_store = S3ModelStore(s3.region, s3.bucket, s3.prefix)
+    model_store.save(
         pipeline,
         ModelMetadata(
             trained_at=datetime.now(UTC),
@@ -105,4 +112,4 @@ if __name__ == '__main__':
             metrics=metrics,
         ),
     )
-    logger.info(f'Model saved at: {config.model_path}')
+    logger.info(f'Model saved to: {config.model_store}')
