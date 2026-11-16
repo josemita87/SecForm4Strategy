@@ -5,8 +5,9 @@ variable "monthly_budget_usd" {
 }
 
 variable "alert_email" {
-  description = "Recipient of the budget alerts; set in the git-ignored terraform.tfvars."
+  description = "Recipient of the budget alerts; terraform.tfvars locally, the ALERT_EMAIL secret in CI."
   type        = string
+  sensitive   = true
 }
 
 variable "switched_on" {

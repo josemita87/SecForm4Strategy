@@ -10,7 +10,6 @@ terraform {
     bucket       = "secform4strategy-tfstate-100118195151"
     key          = "envs/demo/terraform.tfstate"
     region       = "us-east-1"
-    profile      = "secform4"
     encrypt      = true
     use_lockfile = true
   }
@@ -18,7 +17,6 @@ terraform {
 
 provider "aws" {
   region              = "us-east-1"
-  profile             = "secform4"
   allowed_account_ids = ["100118195151"]
   default_tags {
     tags = { Project = "secform4strategy", Environment = "demo", ManagedBy = "terraform" }
@@ -79,4 +77,15 @@ module "iam" {
 
 output "iam" {
   value = module.iam
+}
+
+module "ci" {
+  source            = "../../modules/ci"
+  name              = "secform4strategy"
+  github_repository = "josemita87/SecForm4Strategy"
+  state_bucket      = "secform4strategy-tfstate-100118195151"
+}
+
+output "ci" {
+  value = module.ci
 }

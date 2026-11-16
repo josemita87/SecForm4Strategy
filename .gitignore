@@ -53,4 +53,6 @@ site-packages/
 *.tfstate
 *.tfvars
 !*.tfvars.example
+# The on/off switch is committed, so every apply, local or CI, uses the same value
+!switch.auto.tfvars
 tfplan

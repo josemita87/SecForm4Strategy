@@ -1,0 +1,74 @@
+name: images
+
+# Once quality passes on master, pushes one arm64 image per service to ECR; Terraform deploys them
+on:
+  workflow_run:
+    workflows: [quality]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Lets the job ask GitHub for the OIDC token that AWS exchanges for the images role
+  id-token: write
+
+jobs:
+  image:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    # Native arm64, as Fargate runs the tasks on Graviton
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { service: master-index, path: sec-feature-pipeline/master-index }
+          - { service: scraper, path: sec-feature-pipeline/scraper }
+          - { service: kafka-to-store, path: sec-feature-pipeline/kafka-to-store }
+          - { service: yahoo-connect, path: prices-feature-pipeline/yahoo_connect }
+          - { service: target, path: prices-feature-pipeline/target }
+          - { service: training, path: training }
+          - { service: inference, path: inference }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
+      # The tag is the last commit that changed the service or the shared clients, so unchanged services keep theirs
+      - name: Tag
+        id: tag
+        run: echo "tag=$(git log -1 --format=%h --abbrev=12 -- '${{ matrix.path }}' packages/secform4strategy-clients)" >> "$GITHUB_OUTPUT"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::100118195151:role/secform4strategy-github-images
+          aws-region: us-east-1
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Tags are immutable, so an image that already exists is never rebuilt
+      - name: Check for the image
+        id: exists
+        run: |
+          found=$(aws ecr batch-get-image --repository-name 'secform4strategy/${{ matrix.service }}' \
+            --image-ids 'imageTag=${{ steps.tag.outputs.tag }}' --query 'length(images)' --output text)
+          echo "found=$found" >> "$GITHUB_OUTPUT"
+
+      - if: steps.exists.outputs.found == '0'
+        uses: docker/setup-buildx-action@v3
+
+      - if: steps.exists.outputs.found == '0'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.path }}/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/secform4strategy/${{ matrix.service }}:${{ steps.tag.outputs.tag }}
+          # A plain single-platform image, without the attestation manifest buildx adds by default
+          provenance: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
