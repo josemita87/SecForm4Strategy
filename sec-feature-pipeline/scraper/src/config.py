@@ -42,6 +42,8 @@ class Config(BaseSettings):
     delay: int
     # Seconds to wait after a batch stopped on a transient failure, so a struggling SEC is not hammered
     retry_pause: float = Field(60, ge=0)
+    # Stop at the first receive that waits POLL_TIMEOUT for nothing, as a batch task must; otherwise consume forever
+    exit_when_empty: bool = False
     mode: Literal['historical', 'live', 'last_quarter', 'quarter']
 
     # Inference Settings

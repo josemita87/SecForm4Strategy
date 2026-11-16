@@ -1,6 +1,7 @@
 """Entry point: consumes filing URLs, parses their Form 4s, and produces the transactions."""
 
 import logging
+import sys
 import time
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -95,6 +96,7 @@ if __name__ == '__main__':
     time.sleep(config.delay)
     logger.info(f'Scraper started: {config.input_queue} -> {config.output_queue}')
 
+    left_for_retry = False
     while True:
         messages = queue.receive(config.input_queue, config.buffer_size, config.poll_timeout)
         done, sent = scrape(messages, edgar, queue, config.output_queue, config.max_age)
@@ -103,4 +105,11 @@ if __name__ == '__main__':
         if messages:
             logger.info(f'{len(done)} of {len(messages)} filings -> {sent} transactions')
         if len(done) < len(messages):
+            left_for_retry = True
             time.sleep(config.retry_pause)
+        if not messages and config.exit_when_empty:
+            break
+
+    # SQS hides unfinished filings for its visibility timeout, so an empty queue does not mean they are done
+    if left_for_retry:
+        sys.exit('Filings were left for a retry; a rerun after the visibility timeout finishes them')

@@ -51,6 +51,8 @@ Services never write `except Exception`.
 
 A crash leaves its messages unacked, so a deterministic defect ends in the DLQ, and a crashed task fails its execution.
 
+A consumer that runs as a batch task (`EXIT_WHEN_EMPTY=true`) stops at the first receive that waits its full poll timeout without a message. SQS hides an unfinished message for the visibility timeout, so an empty receive does not mean that every message is done. If any batch in the run stopped on a `RetryableError`, the task therefore exits non-zero, and Step Functions reruns it after the visibility timeout.
+
 Kafka has no visibility timeout and no DLQ. Locally, the scraper waits `RETRY_PAUSE` seconds (default 60) after a batch stops on a `RetryableError`, and a message that fails on every delivery holds its partition until someone fixes the cause.
 
 ## Requirement: incremental tasks
