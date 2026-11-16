@@ -8,3 +8,9 @@ variable "alert_email" {
   description = "Recipient of the budget alerts; set in the git-ignored terraform.tfvars."
   type        = string
 }
+
+variable "switched_on" {
+  description = "Switch the stack on: creates the NAT gateway and, later, enables the schedules."
+  type        = bool
+  default     = false
+}

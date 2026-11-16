@@ -39,3 +39,44 @@ module "storage" {
 output "storage" {
   value = module.storage
 }
+
+module "network" {
+  source      = "../../modules/network"
+  name        = "secform4strategy"
+  nat_enabled = var.switched_on
+}
+
+output "network" {
+  value = module.network
+}
+
+module "queues" {
+  source = "../../modules/queues"
+  name   = "secform4strategy"
+  queues = ["filings", "transactions"]
+}
+
+output "queues" {
+  value = module.queues
+}
+
+module "iam" {
+  source        = "../../modules/iam"
+  name          = "secform4strategy"
+  data_bucket   = module.storage.data_bucket
+  glue_database = module.storage.glue_database
+  queue_arns    = { for key, queue in module.queues.queues : key => queue.arn }
+  task_access = {
+    master-index   = { sends = ["filings"] }
+    scraper        = { receives = ["filings"], sends = ["transactions"] }
+    kafka-to-store = { receives = ["transactions"], capabilities = ["lakehouse-write"] }
+    yahoo-connect  = { capabilities = ["lakehouse-write"] }
+    target         = { capabilities = ["lakehouse-write"] }
+    training       = { capabilities = ["lakehouse-read", "models-write"] }
+    inference      = { capabilities = ["lakehouse-read", "models-read"] }
+  }
+}
+
+output "iam" {
+  value = module.iam
+}
