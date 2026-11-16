@@ -55,6 +55,12 @@ Keys are deterministic, so every redelivery (feed re-polls, Kafka retries, backf
 
 Services depend on Protocols (`FeatureStore`, `Filings`, `MarketData`, `Broker`, `ModelStore`), never on concrete clients; each `main.py` is the only place that builds the adapters from config. Moving the feature store from a local catalog to S3 and Glue is a configuration change, and tests substitute typed in-memory fakes.
 
+### On AWS
+
+![AWS architecture](docs/diagrams/aws-architecture.drawio.svg)
+
+The AWS deployment, what is built and what is planned, is described in [docs/aws.md](docs/aws.md).
+
 ---
 
 ## Services
