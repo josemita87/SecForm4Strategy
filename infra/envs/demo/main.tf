@@ -89,3 +89,81 @@ module "ci" {
 output "ci" {
   value = module.ci
 }
+
+locals {
+  region = "us-east-1"
+  roles  = module.iam.task_role_arns
+  queues = { for key, queue in module.queues.queues : key => queue.name }
+  sqs    = { QUEUE__BACKEND = "sqs", QUEUE__REGION = local.region }
+  lakehouse = {
+    PYICEBERG_CATALOG__DEFAULT__TYPE         = "glue"
+    PYICEBERG_CATALOG__DEFAULT__GLUE__REGION = local.region
+    PYICEBERG_CATALOG__DEFAULT__S3__REGION   = local.region
+    FEATURE_GROUP_VERSION                    = "1"
+  }
+  models = {
+    MODEL_STORE__BACKEND = "s3"
+    MODEL_STORE__REGION  = local.region
+    MODEL_STORE__BUCKET  = module.storage.data_bucket
+  }
+  training_run = { SYSTEM_TRAINING = "true", FILTER_KEY = "acquired_disposed", ACQUIRED_DISPOSED = "D" }
+}
+
+module "tasks" {
+  source             = "../../modules/tasks"
+  name               = "secform4strategy"
+  execution_role_arn = module.iam.execution_role_arn
+  tasks = {
+    master-index = {
+      task_role_arn = local.roles["master-index"]
+      environment   = merge(local.sqs, { OUTPUT_QUEUE = local.queues.filings, BUFFER_SIZE = "10000", MODE = "last_quarter" })
+      secrets       = { SEC_USER_AGENT = "sec-user-agent" }
+    }
+    scraper = {
+      task_role_arn = local.roles.scraper
+      environment = merge(local.sqs, {
+        INPUT_QUEUE = local.queues.filings, OUTPUT_QUEUE = local.queues.transactions
+        BUFFER_SIZE = "10", POLL_TIMEOUT = "20", DELAY = "0", MODE = "last_quarter", EXIT_WHEN_EMPTY = "true"
+      })
+      secrets = { SEC_USER_AGENT = "sec-user-agent" }
+    }
+    kafka-to-store = {
+      task_role_arn = local.roles["kafka-to-store"]
+      memory        = 2048
+      environment = merge(local.sqs, local.lakehouse, {
+        INPUT_QUEUE = local.queues.transactions, BUFFER_SIZE = "100", POLL_TIMEOUT = "20", SYSTEM_TRAINING = "true"
+      })
+    }
+    yahoo-connect = {
+      task_role_arn = local.roles["yahoo-connect"]
+      memory        = 2048
+      environment   = merge(local.lakehouse, local.training_run, { BUFFER_SIZE = "50" })
+    }
+    target = {
+      task_role_arn = local.roles.target
+      cpu           = 1024
+      memory        = 4096
+      environment   = merge(local.lakehouse, local.training_run, { DELTA_PERIOD = "30" })
+    }
+    training = {
+      task_role_arn = local.roles.training
+      cpu           = 1024
+      memory        = 4096
+      environment = merge(local.lakehouse, local.models, {
+        TRAIN_TEST_RATIO = "0.2", RANDOM_STATE = "42", TARGET_FEATURE = "pct_change"
+      })
+    }
+    inference = {
+      task_role_arn = local.roles.inference
+      memory        = 2048
+      environment = merge(local.lakehouse, local.models, {
+        ALPACA_BASE_URL = "https://paper-api.alpaca.markets", QTY = "1", PREDICTION_THRESHOLD = "-0.05"
+      })
+      secrets = { ALPACA_API_KEY = "alpaca-api-key", ALPACA_API_SECRET = "alpaca-api-secret" }
+    }
+  }
+}
+
+output "tasks" {
+  value = module.tasks
+}
