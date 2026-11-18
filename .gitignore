@@ -56,3 +56,6 @@ site-packages/
 # The on/off switch is committed, so every apply, local or CI, uses the same value
 !switch.auto.tfvars
 tfplan
+
+# Internal presentation pack and its PDF
+docs/presentation/
