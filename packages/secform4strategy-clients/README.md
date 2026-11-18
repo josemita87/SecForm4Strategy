@@ -21,16 +21,19 @@ consuming and producing — not separate consumer/producer classes):
 | `IcebergFeatureStore` | `secform4strategy_clients.feature_store` (catalog: `feature_groups`) | `feature-store` | `pyiceberg` |
 | `AlpacaClient` | `secform4strategy_clients.broker` | `broker` | `alpaca-py` |
 | `KafkaClient` | `secform4strategy_clients.messaging` | `messaging` | `quixstreams` |
+| `SqsQueue` | `secform4strategy_clients.sqs` | `aws` | `boto3` |
 | `EdgarClient` | `secform4strategy_clients.edgar` | `edgar` | `httpx` |
 | `MarketDataClient` | `secform4strategy_clients.market_data` | `market-data` | `yfinance` |
 | `LocalModelStore` | `secform4strategy_clients.model_store` | `model-store` | `joblib` |
+| `S3ModelStore` | `secform4strategy_clients.s3_model_store` | `model-store`, `aws` | `joblib`, `boto3` |
 
 ## Ports
 
 `secform4strategy_clients.ports` defines the Protocols services depend on:
-`FeatureStore`, `ModelStore`, `Broker`, `MarketData` and `Filings`, plus the
-records and vocabulary they exchange: the `Filing` named tuple and the order
-literals `Side`, `OrderType` and `TimeInForce`. Services
+`FeatureStore`, `ModelStore`, `Broker`, `MarketData`, `MessageQueue` and `Filings`, plus the
+records and vocabulary they exchange: the `Filing` and `Message` named tuples, the order
+literals `Side`, `OrderType` and `TimeInForce`, and the errors `RetryableError` and
+`PermanentError`. Services
 annotate their dependencies with a port, never a concrete client, and each
 service's `main.py` is the one place that builds the clients from config and
 passes them in. Swapping a backend (a local catalog for AWS Glue, local disk for a bucket)
@@ -39,8 +42,13 @@ is a new adapter that satisfies the port, with no service change.
 `FeatureStore.read` filters with a plain mapping, `{column: value}`, where an
 iterable value means "any of". Each adapter translates it to its own query.
 
+Adapters retry transient failures with `retry.with_backoff`, then raise `RetryableError` or
+`PermanentError` from the SDK's exception. AWS adapters leave retries to botocore and share
+`aws.classified` for the mapping; `docs/error-handling.md` gives the contract and how
+services act on each.
+
 `secform4strategy_clients.fakes` holds typed in-memory implementations of the
-ports for tests, one module per port (`fakes.filings`, `fakes.market_data`), each
+ports for tests, one module per port (`fakes.filings`, `fakes.market_data`, `fakes.messaging`), each
 bound to its Protocol so `make type-check` fails when one drifts.
 
 ```toml

@@ -2,16 +2,30 @@
 
 from typing import Literal
 
-from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel, Field, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Kafka(BaseModel):
+    """Redpanda or Kafka, for local runs."""
+
+    backend: Literal['kafka']
+    broker_address: str
+
+
+class Sqs(BaseModel):
+    """Amazon SQS, on AWS."""
+
+    backend: Literal['sqs']
+    region: str
 
 
 class Config(BaseSettings):
     """Settings for the master-index service loaded from environment variables."""
 
-    # Kafka Settings
-    kafka_broker_address: str
-    kafka_output_topic: str
+    # Message queue: QUEUE__BACKEND picks it, QUEUE__<FIELD> sets its fields
+    queue: Kafka | Sqs = Field(discriminator='backend')
+    output_queue: str
 
     # SEC fair access requires a real name and contact email, e.g. 'Jane Doe jane@example.com'
     sec_user_agent: str = Field(pattern=r'^\S.*\s\S+@\S+\.\S+$')
@@ -40,6 +54,8 @@ class Config(BaseSettings):
         if self.mode == 'quarter' and not (self.year and self.quarter):
             raise ValueError('MODE=quarter needs YEAR and QUARTER')
         return self
+
+    model_config = SettingsConfigDict(env_nested_delimiter='__')
 
 
 config = Config()

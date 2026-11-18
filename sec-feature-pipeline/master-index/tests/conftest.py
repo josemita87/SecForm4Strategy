@@ -4,8 +4,9 @@ import os
 
 import pytest
 
-os.environ.setdefault('KAFKA_BROKER_ADDRESS', 'test:9092')
-os.environ.setdefault('KAFKA_OUTPUT_TOPIC', 'filings')
+os.environ.setdefault('QUEUE__BACKEND', 'kafka')
+os.environ.setdefault('QUEUE__BROKER_ADDRESS', 'test:9092')
+os.environ.setdefault('OUTPUT_QUEUE', 'filings')
 os.environ.setdefault('SEC_USER_AGENT', 'Test Suite test@example.com')
 os.environ.setdefault('BUFFER_SIZE', '10')
 os.environ.setdefault('MODE', 'live')

@@ -3,6 +3,7 @@
 import logging
 from collections.abc import Iterator, Mapping, Sequence
 from datetime import date
+from itertools import batched
 from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
@@ -92,8 +93,7 @@ def new_prices(
         One batch's daily bars (``date``, ``open``, ``close``, ``close_as_traded``, ``split``, ``dividend``,
         ``ticker``).
     """
-    for start in range(0, len(tickers), batch_size):
-        batch = tickers[start : start + batch_size]
+    for batch in batched(tickers, batch_size, strict=False):
         resumed = {ticker: point for ticker in batch if (point := resume.get(ticker))}
         bars = market_data.price_histories(batch, starts={ticker: point.start for ticker, point in resumed.items()})
         if stale := rebased(bars[bars[Col.TICKER].astype(str).isin(resumed)], resumed):

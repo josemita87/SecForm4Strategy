@@ -44,3 +44,18 @@ site-packages/
 
 # Model artifacts shared by the training and inference containers
 .artifacts/
+
+# Claude Code MCP servers (local tooling)
+.mcp.json
+
+# Terraform vars
+.terraform/
+*.tfstate
+*.tfvars
+!*.tfvars.example
+# The on/off switch is committed, so every apply, local or CI, uses the same value
+!switch.auto.tfvars
+tfplan
+
+# Internal presentation pack and its PDF
+docs/presentation/

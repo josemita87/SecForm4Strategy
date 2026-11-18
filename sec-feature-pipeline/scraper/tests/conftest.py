@@ -4,11 +4,12 @@ import os
 
 import pytest
 
-os.environ.setdefault('KAFKA_BROKER_ADDRESS', 'test:9092')
-os.environ.setdefault('KAFKA_INPUT_TOPIC', 'filings')
-os.environ.setdefault('KAFKA_OUTPUT_TOPIC', 'transactions')
-os.environ.setdefault('AUTO_OFFSET_RESET', 'earliest')
-os.environ.setdefault('CONSUMER_GROUP', 'test')
+os.environ.setdefault('QUEUE__BACKEND', 'kafka')
+os.environ.setdefault('QUEUE__BROKER_ADDRESS', 'test:9092')
+os.environ.setdefault('QUEUE__CONSUMER_GROUP', 'test')
+os.environ.setdefault('QUEUE__AUTO_OFFSET_RESET', 'earliest')
+os.environ.setdefault('INPUT_QUEUE', 'filings')
+os.environ.setdefault('OUTPUT_QUEUE', 'transactions')
 os.environ.setdefault('SEC_USER_AGENT', 'Test Suite test@example.com')
 os.environ.setdefault('BUFFER_SIZE', '10')
 os.environ.setdefault('POLL_TIMEOUT', '1')

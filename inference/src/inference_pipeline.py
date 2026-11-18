@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import sklearn
 from constants import Col
-from secform4strategy_clients.ports import OrderType, Side, TimeInForce
+from secform4strategy_clients.ports import OrderType, PermanentError, RetryableError, Side, TimeInForce
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -61,13 +61,29 @@ class InferencePipeline:
         logger.info(f'Loaded model trained at {metadata.trained_at} (git {metadata.git_sha})')
         return model, metadata.features
 
-    def execute_trades(self, predictions_df: pd.DataFrame, threshold: float, order: OrderSpec) -> None:
-        """Place a short order for every prediction below ``threshold``.
+    def execute_trades(self, predictions_df: pd.DataFrame, threshold: float, order: OrderSpec) -> list[str]:
+        """Place a short order for every prediction below ``threshold``, once per row key.
+
+        Each order's client order id is its row's key, so a rerun skips orders already placed.
+        An order rejected for good is logged and dropped.
 
         Args:
-            predictions_df: DataFrame of predictions with ticker symbols.
+            predictions_df: DataFrame of predictions with ``key`` and ``ticker``.
             threshold: Prediction value below which a short is placed.
             order: How each order is placed.
+
+        Returns:
+            Keys of the orders that failed transiently and are left for a rerun.
         """
-        for ticker in predictions_df.loc[predictions_df[Col.PREDICTIONS] < threshold, Col.TICKER]:
-            self.broker.place_order(ticker, order.qty, order.side, order.order_type, order.time_in_force)
+        retry_later = []
+        for key, ticker in predictions_df.loc[
+            predictions_df[Col.PREDICTIONS] < threshold, [Col.KEY, Col.TICKER]
+        ].itertuples(index=False):
+            try:
+                self.broker.place_order(ticker, order.qty, order.side, order.order_type, order.time_in_force, key)
+            except PermanentError as error:
+                logger.error(f'Order {key} dropped: {error}')
+            except RetryableError as error:
+                logger.error(f'Order {key} left for a rerun: {error}')
+                retry_later.append(key)
+        return retry_later

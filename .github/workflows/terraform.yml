@@ -1,0 +1,81 @@
+name: terraform
+
+# Plans infra changes on pull requests; applies master after approval in the aws environment.
+# Run it by hand on master to deploy images pushed since the last apply.
+on:
+  pull_request:
+    paths: [infra/envs/**, infra/modules/**, .github/workflows/terraform.yml]
+  push:
+    branches: [master]
+    paths: [infra/envs/**, infra/modules/**, .github/workflows/terraform.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Lets the jobs ask GitHub for the OIDC token that AWS exchanges for the plan or apply role
+  id-token: write
+
+env:
+  TF_IN_AUTOMATION: 'true'
+  TF_INPUT: 'false'
+  # Marked sensitive in Terraform, so plans print (sensitive value) instead of the address
+  TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+
+defaults:
+  run:
+    working-directory: infra/envs/demo
+
+jobs:
+  plan:
+    # Pull requests from forks get no secrets and no OIDC token, so only same-repo branches are planned
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::100118195151:role/secform4strategy-github-plan
+          aws-region: us-east-1
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.1
+          terraform_wrapper: false
+
+      - run: terraform init
+
+      - run: terraform plan -no-color -lock-timeout=5m | tee plan.txt
+
+      - name: Show the plan on the run's summary page
+        run: |
+          {
+            echo '```'
+            cat plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # The environment admits only master and waits for a required reviewer's approval
+    environment: aws
+    concurrency:
+      group: terraform-apply
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::100118195151:role/secform4strategy-github-apply
+          aws-region: us-east-1
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.1
+          terraform_wrapper: false
+
+      - run: terraform init
+
+      - run: terraform apply -auto-approve -no-color -lock-timeout=5m

@@ -33,7 +33,10 @@ The edge is speed from disclosure, so disclosure time is the one timestamp every
 - [x] api-enricher retired: market cap (latest monthly snapshot before acceptance), exchange, SIC and SIC group added in target (`add_company_context`) from `mcaps.parquet` and `companies.json`
 - [ ] SIC straight from the filing header (`STANDARD INDUSTRIAL CLASSIFICATION`) for companies missing from `companies.json`
 - [x] CI: GitHub Actions running `make quality-static` (blocking) and `type-check` (non-blocking); unverified until pushed
-- [ ] mypy: last 6 errors are the Kafka client (`messaging.py`); goes with the SQS migration, then `type-check` joins the pre-commit hook
+- [x] mypy clean in every project: the Kafka client now implements the `MessageQueue` port
+- [ ] `type-check` joins the pre-commit hook (`quality-static`)
+- [ ] Scraper records: `parse_filing` returns `Trade` models, dumped to JSON at the send (no `dict[str, object]`, no `str(record['key'])`)
+- [ ] Market data: yfinance reports outages as empty downloads, so a transient failure is classed permanent; a source that raises would allow `RetryableError`
 - [x] Unit tests per project (81): Form 4 parsing on real fixtures (10b5-1, joint filings, holdings, keys, tickers), filing messages both ways, price refresh and rebasing, next print, disclosure aggregation and clusters, valuation, labels and their safeguards, known-label mean; shared typed fakes with mypy conformance; `make test-unit` in the gate
 - [ ] Tests still to write: kafka-to-store cleaning, training (split, evaluate, model save/load), inference (scoring, order placement); integration tier against a temporary Iceberg catalog
 - [ ] Inference coverage: inference drops BIR4 rows with any missing value (local sample: 205 of 431 scored; `price_to_close` is missing when no price was reported, `avg_target_expanding` before a ticker's first known label), although the model handles missing values natively; decide which columns a scored row must have

@@ -1,6 +1,6 @@
 .PHONY: lint format type-check security docstrings validate-config test-unit test-unit-fast quality quality-static \
 	start-redpanda stop-redpanda inference-sec inference-prices inference-model training-sec training-prices \
-	training-model lakehouse-summary
+	training-model lakehouse-summary switch-on switch-off
 
 CLIENTS_SRC := packages/secform4strategy-clients/src
 # Services importing flat from src/ (`from config import config`)
@@ -88,3 +88,15 @@ inference-model:
 # Row counts, time spans and the latest model rows of every feature-store table
 lakehouse-summary:
 	docker-compose -f docker-compose/tools.yml run --rm --build lakehouse-summary
+
+
+# The AWS stack's on/off switch: commits the switch file and pushes master; CI applies it once you approve (docs/aws.md)
+SWITCH_FILE := infra/envs/demo/switch.auto.tfvars
+switch-on switch-off:
+	@test "$$(git branch --show-current)" = master || { echo 'Switch from master: CI applies only master'; exit 1; }
+	@git diff --quiet && git diff --cached --quiet || { echo 'Commit or stash your changes first'; exit 1; }
+	@git pull --ff-only --quiet
+	@echo 'switched_on = $(if $(filter switch-on,$@),true,false)' > $(SWITCH_FILE)
+	@if git diff --quiet -- $(SWITCH_FILE); then echo 'The stack is already $(subst switch-,,$@)'; else \
+		git commit --quiet -m 'chore: switch the stack $(subst switch-,,$@)' -- $(SWITCH_FILE) && git push --quiet && \
+		echo 'Pushed; approve the apply in GitHub: Actions > terraform'; fi

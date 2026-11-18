@@ -11,11 +11,12 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
-from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.expressions import AlwaysTrue, And, EqualTo, In
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 
-from secform4strategy_clients.ports import is_many
+from secform4strategy_clients.ports import RetryableError, is_many
+from secform4strategy_clients.retry import with_backoff
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -86,9 +87,6 @@ class IcebergFeatureStore:
 
         Returns:
             The upsert result (rows inserted / updated), or ``None`` if ``data`` is empty.
-
-        Raises:
-            ValueError: If ``data`` has columns the table does not (bump the feature-group version).
         """
         if data.empty:
             return None
@@ -108,7 +106,23 @@ class IcebergFeatureStore:
                 for field in incoming.schema
             )
         )
-        identifier = self._identifier(reference)
+        return with_backoff(lambda: self._upsert_once(self._identifier(reference), incoming, keys))
+
+    def _upsert_once(self, identifier: str, incoming: pa.Table, keys: list[str]) -> object:
+        """Load (or create) the table at its latest snapshot and upsert into it once.
+
+        Args:
+            identifier: The table's ``<namespace>.<name>_v<version>``.
+            incoming: The rows, deduplicated by key, with Iceberg's column types.
+            keys: The primary-key columns.
+
+        Returns:
+            The upsert result (rows inserted / updated).
+
+        Raises:
+            ValueError: If ``incoming`` has columns the table does not (bump the feature-group version).
+            RetryableError: Another writer committed first; the next attempt reloads the table.
+        """
         try:
             table = self.catalog.load_table(identifier)
         except NoSuchTableError:
@@ -120,4 +134,7 @@ class IcebergFeatureStore:
         for field in target:
             if field.name not in incoming.column_names:
                 incoming = incoming.append_column(field.name, pa.nulls(len(incoming), field.type))
-        return table.upsert(incoming.select(target.names).cast(target), join_cols=keys)
+        try:
+            return table.upsert(incoming.select(target.names).cast(target), join_cols=keys)
+        except CommitFailedException as error:
+            raise RetryableError(f'Upsert into {identifier}: {error}') from error

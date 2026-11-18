@@ -14,7 +14,7 @@ from form4 import Submission
 from parser import parse_filing
 from pydantic import ValidationError
 from secform4strategy_clients.fakes.filings import FakeFilings
-from secform4strategy_clients.ports import Filing
+from secform4strategy_clients.ports import Filing, PermanentError
 from tests.paths import BOTH_HOLDINGS, FOOTNOTE_10B5_1, JOINT_FILING, OWNERSHIP_LINES, STOCK_AND_DERIVATIVE
 from transaction import Trade
 
@@ -36,9 +36,14 @@ class TestSubmission:
         with pytest.raises(ValidationError, match='accepted_at'):
             Submission.model_validate({'accepted_at': '20231399000000', 'document': b'<ownershipDocument/>'})
 
-    def test_a_filing_that_is_not_served_yields_no_records(self) -> None:
+    def test_a_filing_that_is_not_served_raises_permanent_error(self) -> None:
         filing = Filing('0000000000-23-000000', 'edgar/data/1/missing.txt', datetime(2023, 1, 1, tzinfo=UTC))
-        assert parse_filing(filing, FakeFilings({})) == []
+        with pytest.raises(PermanentError, match='404'):
+            parse_filing(filing, FakeFilings({}))
+
+    def test_a_filing_with_malformed_ownership_xml_yields_no_records(self) -> None:
+        text = FOOTNOTE_10B5_1.read_text().replace('</ownershipDocument>', '')
+        assert parse(FOOTNOTE_10B5_1, text) == []
 
     def test_a_filing_without_acceptance_header_yields_no_records(self) -> None:
         text = FOOTNOTE_10B5_1.read_text().replace('<ACCEPTANCE-DATETIME>', '<NO-ACCEPTANCE>')

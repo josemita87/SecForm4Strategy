@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [{ name = "Josep Cubedo Macian", email = "136491450+josemita87@users.noreply.github.com" }]
 requires-python = ">=3.14,<3.15"
 dependencies = [
-    "secform4strategy-clients[feature-store,messaging]",
+    "secform4strategy-clients[aws,feature-store,messaging]",
     "pandas>=2.3.3,<2.4",
     "pydantic-settings>=2.10,<3",
 ]

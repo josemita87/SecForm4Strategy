@@ -1,19 +1,23 @@
-"""Entry point: fetches SEC Form 4 filing links and produces them to Kafka."""
+"""Entry point: fetches SEC Form 4 filing links and sends them to the output queue."""
 
 import logging
 import random
+import sys
 import time
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from itertools import batched
 from typing import TYPE_CHECKING
 
 import xxhash
-from config import config
+from config import Kafka, Sqs, config
 from secform4strategy_clients.edgar import EdgarClient
 from secform4strategy_clients.messaging import KafkaClient
+from secform4strategy_clients.ports import PermanentError, RetryableError
+from secform4strategy_clients.sqs import SqsQueue
 
 if TYPE_CHECKING:
-    from secform4strategy_clients.ports import Filing, Filings
+    from secform4strategy_clients.ports import Filing, Filings, MessageQueue
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -50,23 +54,33 @@ def build_messages(filings: Iterable[Filing]) -> tuple[tuple[str, dict[str, str]
 
 if __name__ == '__main__':
     edgar: Filings = EdgarClient(config.sec_user_agent, config.sec_max_rate)
-    kafka: KafkaClient = KafkaClient(config.kafka_broker_address, loglevel='CRITICAL')
+    queue: MessageQueue
+    match config.queue:
+        case Kafka() as kafka:
+            queue = KafkaClient(kafka.broker_address, loglevel='CRITICAL')
+        case Sqs() as sqs:
+            queue = SqsQueue(sqs.region)
 
-    def produce(data: Iterable[Filing]) -> None:
-        """Publish filings to the output topic one batch at a time (each produce call flushes)."""
-        for start in range(0, len(messages := build_messages(data)), config.buffer_size):
-            kafka.produce(config.kafka_output_topic, messages[start : start + config.buffer_size])
+    def publish(data: Iterable[Filing]) -> None:
+        """Send filings to the output queue one batch at a time (each send flushes)."""
+        for batch in batched(messages := build_messages(data), config.buffer_size, strict=False):
+            queue.send(config.output_queue, batch)
         logger.info(f'Published {len(messages)} filings')
 
-    logger.info(f'Master index started in {config.mode} mode -> {config.kafka_output_topic}')
+    logger.info(f'Master index started in {config.mode} mode -> {config.output_queue}')
 
     if config.mode == 'live':
         # Each poll returns the newest filings again, so already-produced accessions are skipped
         seen: set[str] = set()
         for _ in range(config.live_iterations):
-            new = [f for f in edgar.fetch_current_filings(FORM_TYPE, config.num_pages) if f.accession not in seen]
-            seen |= {filing.accession for filing in new}
-            produce(new)
+            try:
+                current = edgar.fetch_current_filings(FORM_TYPE, config.num_pages)
+            except RetryableError as error:
+                logger.warning(f'Poll failed, trying again next iteration: {error}')
+            else:
+                new = [filing for filing in current if filing.accession not in seen]
+                seen |= {filing.accession for filing in new}
+                publish(new)
             time.sleep(config.secs_between_iterations)
     else:
         now = datetime.now(UTC)
@@ -79,8 +93,18 @@ if __name__ == '__main__':
                 quarters = ((config.year, config.quarter),)
             case _:
                 quarters = ((now.year, (now.month - 1) // 3 + 1),)
+        retry_later = []
         for year, quarter in quarters:
-            if (index := edgar.fetch_master_index(year, quarter, FORM_TYPE)) is None:
-                logger.warning(f'No master index for {year} QTR{quarter}')
+            try:
+                index = edgar.fetch_master_index(year, quarter, FORM_TYPE)
+            except PermanentError as error:
+                logger.warning(f'No master index for {year} QTR{quarter}: {error}')
                 continue
-            produce(random.Random(0).sample(index, len(index)) if config.shuffle else index)
+            except RetryableError as error:
+                logger.error(f'Master index for {year} QTR{quarter} left for a retry: {error}')
+                retry_later.append((year, quarter))
+                continue
+            publish(random.Random(0).sample(index, len(index)) if config.shuffle else index)
+        # A non-zero exit has the scheduler run the task again; published quarters are upserted twice, harmlessly
+        if retry_later:
+            sys.exit(f'Quarters left for a retry: {retry_later}')
