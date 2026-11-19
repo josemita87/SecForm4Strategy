@@ -1,1 +1,1 @@
-switched_on = false
+switched_on = true
