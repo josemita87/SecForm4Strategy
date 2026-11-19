@@ -123,7 +123,7 @@ module "tasks" {
       task_role_arn = local.roles.scraper
       environment = merge(local.sqs, {
         INPUT_QUEUE = local.queues.filings, OUTPUT_QUEUE = local.queues.transactions
-        BUFFER_SIZE = "10", POLL_TIMEOUT = "20", DELAY = "0", MODE = "last_quarter", EXIT_WHEN_EMPTY = "true"
+        BUFFER_SIZE = "50", POLL_TIMEOUT = "20", DELAY = "0", MODE = "last_quarter", EXIT_WHEN_EMPTY = "true"
       })
       secrets = { SEC_USER_AGENT = "sec-user-agent" }
     }
