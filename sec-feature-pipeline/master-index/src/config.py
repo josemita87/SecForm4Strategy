@@ -34,12 +34,14 @@ class Config(BaseSettings):
 
     # System Settings
     buffer_size: int
-    mode: Literal['historical', 'live', 'last_quarter', 'quarter']
+    mode: Literal['historical', 'live', 'last_quarter', 'quarter', 'recent']
 
     # Training Settings: the last `years` years (historical), or one quarter (quarter)
     years: int = 5
     year: int | None = None
     quarter: int | None = Field(None, ge=1, le=4)
+    # Scheduled runs (recent): the filings of the last `days_back` days
+    days_back: int = Field(7, gt=0)
     # Publish each index in random (seeded) order, so a scrape stopped early is a random sample
     shuffle: bool = False
 

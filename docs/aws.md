@@ -52,10 +52,10 @@ The services choose their adapters from environment variables, as [configuration
 
 - GitHub Actions workflows that build images and run Terraform.
 - An ECS cluster that runs each service as a Fargate ARM64 task in the private subnets, with CloudWatch log groups.
-- Step Functions state machines for the backfill and the daily runs.
+- A Step Functions state machine for the weekly retrain, which also does the first full load.
 - The live path: EventBridge Scheduler, three Lambda functions, SQS and DynamoDB.
 - A CloudWatch alarm on the depth of each dead-letter queue.
-- Schedules that `switched_on` enables.
+- Schedules that `switched_on` enables: the weekly retrain and the live-path poller.
 
 ## Batch path and live path
 
@@ -63,19 +63,29 @@ The system has two paths. Both use serverless compute, so nothing runs and nothi
 
 | | Batch path (planned) | Live path (planned) |
 | --- | --- | --- |
-| Work | Long, heavy jobs: the backfill of years of filings, price refresh, labels, training | One filing at a time, as SEC publishes it |
+| Work | Long, heavy jobs: the first full load of years of filings, then a weekly retrain on the new filings | One filing at a time, as SEC publishes it |
 | Compute | ECS tasks on Fargate ARM64 | Lambda functions |
 | Trigger | Step Functions, started by EventBridge Scheduler | EventBridge Scheduler, then SQS |
 | Why | Fargate has no run-time limit; Lambda stops a run after 15 minutes | Lambda runs as soon as an event arrives and bills per invocation; speed from disclosure is the edge |
 
 ### Batch path
 
-Step Functions runs two state machines:
+One Step Functions state machine, `retrain`, runs six ECS tasks in order:
 
-- **backfill:** master-index publishes filings to `secform4strategy-filings`. The scraper reads them and publishes transactions to `secform4strategy-transactions`. kafka-to-store reads the transactions and upserts them into the Iceberg tables.
-- **daily:** yahoo-connect refreshes prices, target builds the labelled rows, and training saves a new model to `models/` in S3.
+1. master-index publishes filings to `secform4strategy-filings`.
+2. The scraper reads them and publishes transactions to `secform4strategy-transactions`.
+3. kafka-to-store reads the transactions and upserts them into the Iceberg tables.
+4. yahoo-connect refreshes the prices of the tickers in the tables.
+5. target builds the labelled rows.
+6. training saves a new model to `models/` in S3.
 
-The scraper runs with `EXIT_WHEN_EMPTY=true` in the backfill. It stops at the first receive that waits its full poll timeout without a message. If it left a filing unacknowledged for retry, it exits non-zero, and Step Functions reruns it after the visibility timeout.
+EventBridge Scheduler starts `retrain` once a week. master-index then runs with `MODE=recent` and `DAYS_BACK=7`: it reads the master indexes of the quarters that the last 7 days touch, and publishes only the filings of those 7 days. The schedule is enabled only while the stack is switched on. When the stack is switched off, no weekly run happens.
+
+Each run's model replaces the previous one: training writes `latest.json` to point at the new model, without a comparison to the previous model.
+
+The first full load is the same state machine, started once by hand with `MODE=historical` for master-index. It loads the last `YEARS` years of filings. The weekly runs then add one week at a time.
+
+The scraper runs with `EXIT_WHEN_EMPTY=true`. It stops at the first receive that waits its full poll timeout without a message. If it left a filing unacknowledged for retry, it exits non-zero, and Step Functions reruns it after the visibility timeout.
 
 The ECS task definitions read the secrets (the Alpaca keys and `SEC_USER_AGENT`) from SSM Parameter Store and pass them to the container as environment variables.
 
@@ -257,7 +267,7 @@ The provider block also names the profile `secform4`, and `allowed_account_ids` 
 1. To switch on, run `AWS_PROFILE=secform4 terraform apply -var switched_on=true`. Terraform creates the Elastic IP, the NAT gateway and the private default route.
 2. To switch off, run `AWS_PROFILE=secform4 terraform apply`. Terraform deletes the three resources, and billing for them stops.
 
-The NAT gateway takes a few minutes to create and to delete. In the planned design, the same variable also enables the schedules.
+The NAT gateway takes a few minutes to create and to delete. In the planned design, the same variable also enables the weekly retrain schedule and the live-path poller schedule.
 
 ### Secrets
 

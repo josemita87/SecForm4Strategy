@@ -116,7 +116,7 @@ module "tasks" {
   tasks = {
     master-index = {
       task_role_arn = local.roles["master-index"]
-      environment   = merge(local.sqs, { OUTPUT_QUEUE = local.queues.filings, BUFFER_SIZE = "10000", MODE = "last_quarter" })
+      environment   = merge(local.sqs, { OUTPUT_QUEUE = local.queues.filings, BUFFER_SIZE = "10000", MODE = "recent", DAYS_BACK = "7" })
       secrets       = { SEC_USER_AGENT = "sec-user-agent" }
     }
     scraper = {
@@ -166,4 +166,19 @@ module "tasks" {
 
 output "tasks" {
   value = module.tasks
+}
+
+module "retrain" {
+  source               = "../../modules/retrain"
+  name                 = "secform4strategy"
+  cluster_arn          = module.tasks.cluster_arn
+  task_definition_arns = module.tasks.task_definition_arns
+  pass_role_arns       = concat([module.iam.execution_role_arn], values(module.iam.task_role_arns))
+  subnet_ids           = module.network.private_subnet_ids
+  security_group_id    = module.network.security_group_id
+  schedule_enabled     = var.switched_on
+}
+
+output "retrain" {
+  value = module.retrain
 }

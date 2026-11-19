@@ -5,7 +5,7 @@ import random
 import sys
 import time
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from itertools import batched
 from typing import TYPE_CHECKING
 
@@ -52,6 +52,33 @@ def build_messages(filings: Iterable[Filing]) -> tuple[tuple[str, dict[str, str]
     )
 
 
+def quarters_between(start: date, end: date) -> tuple[tuple[int, int], ...]:
+    """Return every ``(year, quarter)`` from ``start``'s quarter to ``end``'s, oldest first.
+
+    Args:
+        start: A day in the first quarter.
+        end: A day in the last quarter.
+
+    Returns:
+        The quarters in order; empty if ``start`` is after ``end``.
+    """
+    first, last = (day.year * 4 + (day.month - 1) // 3 for day in (start, end))
+    return tuple((index // 4, index % 4 + 1) for index in range(first, last + 1))
+
+
+def filed_since(filings: Iterable[Filing], since: date | None) -> list[Filing]:
+    """Keep the filings filed on or after ``since``; ``None`` keeps them all.
+
+    Args:
+        filings: The filings of one master index.
+        since: The first filing day kept.
+
+    Returns:
+        The kept filings, in their original order.
+    """
+    return [filing for filing in filings if since is None or filing.filed_at.date() >= since]
+
+
 if __name__ == '__main__':
     edgar: Filings = EdgarClient(config.sec_user_agent, config.sec_max_rate)
     queue: MessageQueue
@@ -83,16 +110,17 @@ if __name__ == '__main__':
                 publish(new)
             time.sleep(config.secs_between_iterations)
     else:
-        now = datetime.now(UTC)
+        today = datetime.now(UTC).date()
+        since: date | None = None
         match config.mode:
             case 'historical':
-                quarters = tuple(
-                    (year, q) for year in range(now.year - config.years, now.year + 1) for q in range(1, 5)
-                )
+                quarters = quarters_between(date(today.year - config.years, 1, 1), today)
             case 'quarter' if config.year and config.quarter:
                 quarters = ((config.year, config.quarter),)
+            case 'recent':
+                quarters = quarters_between(since := today - timedelta(days=config.days_back), today)
             case _:
-                quarters = ((now.year, (now.month - 1) // 3 + 1),)
+                quarters = quarters_between(today, today)
         retry_later = []
         for year, quarter in quarters:
             try:
@@ -104,7 +132,8 @@ if __name__ == '__main__':
                 logger.error(f'Master index for {year} QTR{quarter} left for a retry: {error}')
                 retry_later.append((year, quarter))
                 continue
-            publish(random.Random(0).sample(index, len(index)) if config.shuffle else index)
+            kept = filed_since(index, since)
+            publish(random.Random(0).sample(kept, len(kept)) if config.shuffle else kept)
         # A non-zero exit has the scheduler run the task again; published quarters are upserted twice, harmlessly
         if retry_later:
             sys.exit(f'Quarters left for a retry: {retry_later}')
