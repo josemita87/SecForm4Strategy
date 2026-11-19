@@ -151,6 +151,18 @@ class MessageQueue(Protocol):
         ...
 
 
+class SeenKeys(Protocol):
+    """Keys already handled, remembered for a while, so a source that repeats itself is handled once."""
+
+    def unseen(self, keys: Iterable[str]) -> list[str]:
+        """Return the keys not recorded yet, in their given order."""
+        ...
+
+    def record(self, keys: Iterable[str]) -> None:
+        """Record the keys as handled."""
+        ...
+
+
 class MarketData(Protocol):
     """Daily price history by ticker symbol."""
 

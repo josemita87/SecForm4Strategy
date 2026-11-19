@@ -40,6 +40,9 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+dynamodb = [
+    { name = "mypy-boto3-dynamodb" },
+]
 s3 = [
     { name = "mypy-boto3-s3" },
 ]
@@ -206,6 +209,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/5a/2c/78a8851264dec38cd736ca5b8bc9380674df0dd0be7792f538916157716c/mypy-1.20.2-cp314-cp314t-win_amd64.whl", hash = "sha256:9bcb8aa397ff0093c824182fd76a935a9ba7ad097fcbef80ae89bf6c1731d8ec", size = 12568661, upload-time = "2026-04-21T17:11:54.473Z" },
     { url = "https://files.pythonhosted.org/packages/83/01/cd7318aa03493322ce275a0e14f4f52b8896335e4e79d4fb8153a7ad2b77/mypy-1.20.2-cp314-cp314t-win_arm64.whl", hash = "sha256:e061b58443f1736f8a37c48978d7ab581636d6ab03e3d4f99e3fa90463bb9382", size = 10389240, upload-time = "2026-04-21T17:09:42.719Z" },
     { url = "https://files.pythonhosted.org/packages/28/9a/f23c163e25b11074188251b0b5a0342625fc1cdb6af604757174fa9acc9b/mypy-1.20.2-py3-none-any.whl", hash = "sha256:a94c5a76ab46c5e6257c7972b6c8cff0574201ca7dc05647e33e795d78680563", size = 2637314, upload-time = "2026-04-21T17:05:54.5Z" },
+]
+
+[[package]]
+name = "mypy-boto3-dynamodb"
+version = "1.44.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f4/51/6bc879b0859f46d3beffd98e0e98946a305e00b59980a9f844aec592f88e/mypy_boto3_dynamodb-1.44.0.tar.gz", hash = "sha256:3fd6198fa9eb698919c1cb666b3a9f314d2b6f2258c3921a84a2bef3d47f2dd9", size = 52899, upload-time = "2026-11-10T21:52:03.894Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c3/f9/a139e76e4d5acbceaf9294c40a2f1d39fefc1a8f1a83e0ac5d11a97b7b95/mypy_boto3_dynamodb-1.44.0-py3-none-any.whl", hash = "sha256:a9b2052552e9c9c0c0a1db7306628552d6f289e8772bb4d324e522d19255c4c9", size = 63500, upload-time = "2026-11-10T21:52:00.192Z" },
 ]
 
 [[package]]
@@ -529,7 +541,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "bandit" },
-    { name = "boto3-stubs", extra = ["s3", "sqs"] },
+    { name = "boto3-stubs", extra = ["dynamodb", "s3", "sqs"] },
     { name = "docstring-parser-fork" },
     { name = "mypy" },
     { name = "numpy" },
@@ -551,7 +563,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "bandit", specifier = ">=1.8.6,<2" },
-    { name = "boto3-stubs", extras = ["s3", "sqs"], specifier = ">=1.35,<2" },
+    { name = "boto3-stubs", extras = ["dynamodb", "s3", "sqs"], specifier = ">=1.35,<2" },
     { name = "docstring-parser-fork", specifier = ">=0.0.14" },
     { name = "mypy", specifier = ">=1.17.0,<2" },
     { name = "numpy", specifier = ">=2.3,<2.5" },

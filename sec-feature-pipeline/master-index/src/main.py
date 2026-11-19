@@ -17,7 +17,7 @@ from secform4strategy_clients.ports import PermanentError, RetryableError
 from secform4strategy_clients.sqs import SqsQueue
 
 if TYPE_CHECKING:
-    from secform4strategy_clients.ports import Filing, Filings, MessageQueue
+    from secform4strategy_clients.ports import Filing, Filings, MessageQueue, SeenKeys
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -77,6 +77,28 @@ def filed_since(filings: Iterable[Filing], since: date | None) -> list[Filing]:
         The kept filings, in their original order.
     """
     return [filing for filing in filings if since is None or filing.filed_at.date() >= since]
+
+
+def publish_new(filings: Iterable[Filing], seen: SeenKeys, queue: MessageQueue, output: str) -> int:
+    """Send the filings ``seen`` does not hold to ``output``, then record them.
+
+    Recording after sending means a failed send leaves the filings unrecorded, so the next poll
+    sends them again; a failed record sends them twice, which the upserts and order IDs downstream absorb.
+
+    Args:
+        filings: The filings of one poll of the current-filings feed.
+        seen: The accessions already sent.
+        queue: Where the filings are sent.
+        output: Queue the filings are sent to.
+
+    Returns:
+        How many filings were new.
+    """
+    by_accession = {filing.accession: filing for filing in filings}
+    if new := seen.unseen(by_accession):
+        queue.send(output, build_messages(by_accession[accession] for accession in new))
+        seen.record(new)
+    return len(new)
 
 
 if __name__ == '__main__':

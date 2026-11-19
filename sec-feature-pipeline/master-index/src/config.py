@@ -49,6 +49,9 @@ class Config(BaseSettings):
     num_pages: int = 1
     live_iterations: int = 1
     secs_between_iterations: int = 10
+    # Live path (src/handler.py): the DynamoDB table of accessions already sent, and how long it remembers them
+    seen_table: str | None = None
+    seen_days: int = Field(7, gt=0)
 
     @model_validator(mode='after')
     def _quarter_is_named(self) -> Config:
