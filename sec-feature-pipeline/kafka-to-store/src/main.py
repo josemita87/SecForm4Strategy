@@ -2,6 +2,7 @@
 
 import logging
 import sys
+from collections.abc import Sequence
 from contextlib import closing
 from typing import TYPE_CHECKING
 
@@ -17,7 +18,7 @@ from secform4strategy_clients.ports import RetryableError
 from secform4strategy_clients.sqs import SqsQueue
 
 if TYPE_CHECKING:
-    from secform4strategy_clients.ports import FeatureStore, MessageQueue
+    from secform4strategy_clients.ports import FeatureStore, Message, MessageQueue
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -79,6 +80,25 @@ def validate_and_reduce_mem_storage(data: pd.DataFrame) -> pd.DataFrame:
     return data.dropna(subset=[*numeric, Col.DATE, Col.ACCEPTED_AT, Col.TICKER, Col.ACQUIRED_DISPOSED]).astype(numeric)
 
 
+def store(messages: Sequence[Message], feature_store: FeatureStore, target: FeatureGroup) -> pd.DataFrame:
+    """Clean the messages' transactions and upsert them into ``target``; the store's ``RetryableError`` propagates.
+
+    Args:
+        messages: Received transactions, at least one.
+        feature_store: Where the rows are upserted.
+        target: ``BT4`` for training runs, ``BI4`` for inference.
+
+    Returns:
+        The rows upserted.
+    """
+    records = pd.DataFrame([message.body for message in messages]).drop_duplicates()
+    if dropped := len(records) - len(rows := validate_and_reduce_mem_storage(records)):
+        logger.warning(f'{dropped} of {len(records)} dropped: missing ticker, direction or date, or unparseable')
+    feature_store.push(target, rows)
+    logger.info(f'Upserted {len(rows)} of {len(records)} transactions into {target.name}')
+    return rows
+
+
 if __name__ == '__main__':
     feature_store: FeatureStore = IcebergFeatureStore(
         load_catalog('default'),
@@ -100,18 +120,12 @@ if __name__ == '__main__':
     queue: MessageQueue
     with closing(client) as queue:
         while messages := queue.receive(config.input_queue, config.buffer_size, config.poll_timeout):
-            records = pd.DataFrame([message.body for message in messages]).drop_duplicates()
-            if dropped := len(records) - len(rows := validate_and_reduce_mem_storage(records)):
-                logger.warning(
-                    f'{dropped} of {len(records)} dropped: missing ticker, direction or date, or unparseable'
-                )
             try:
-                feature_store.push(target, rows)
+                store(messages, feature_store, target)
             except RetryableError as error:
                 # Unacked, the batch is delivered again to the next run
                 sys.exit(f'Store unavailable, {len(messages)} messages left for a retry: {error}')
             queue.ack(config.input_queue, messages)
-            logger.info(f'Upserted {len(rows)} of {len(records)} transactions into {target.name}')
         # The last, empty receive may still have dropped non-JSON messages; acking commits past them
         queue.ack(config.input_queue, ())
 
