@@ -6,6 +6,7 @@ formats (the quarterly master index, the current-filings Atom feed). Service log
 timestamps, publishing) stays with the caller.
 """
 
+import threading
 import time
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
@@ -22,7 +23,8 @@ ATOM = {'atom': 'http://www.w3.org/2005/Atom'}
 class EdgarClient:
     """Perform HTTP GETs against SEC EDGAR over one pooled connection, at most ``max_rate`` per second.
 
-    Request starts are spaced at least ``1 / max_rate`` apart; a request that comes after
+    Request starts are spaced at least ``1 / max_rate`` apart across all threads sharing the client,
+    so several requests can be in flight while the rate stays capped; a request that comes after
     a longer gap goes out at once. SEC fair access allows 10 requests per second per IP; the default leaves room.
 
     Attributes:
@@ -44,6 +46,7 @@ class EdgarClient:
         )
         self._interval = 1 / max_rate
         self._next_start = 0.0
+        self._slots = threading.Lock()
 
     def get(self, url: str) -> httpx.Response:
         """GET a URL with the configured headers and timeout, retrying transient failures with backoff.
@@ -75,9 +78,12 @@ class EdgarClient:
             RetryableError: The connection failed, or SEC answered 429 or 5xx.
             PermanentError: SEC answered any other status, e.g. 404.
         """
-        if (wait := self._next_start - time.monotonic()) > 0:
+        # Each request books the next free start slot, then sleeps outside the lock until it
+        with self._slots:
+            start = max(time.monotonic(), self._next_start)
+            self._next_start = start + self._interval
+        if (wait := start - time.monotonic()) > 0:
             time.sleep(wait)
-        self._next_start = time.monotonic() + self._interval
         try:
             response = self.http.get(url)
         except httpx.TransportError as error:

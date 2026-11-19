@@ -3,7 +3,9 @@
 import logging
 import sys
 import time
+from concurrent.futures import Executor, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import TYPE_CHECKING
 
 from config import Kafka, Sqs, config
@@ -48,36 +50,60 @@ def read_filing(message: Message, max_age: timedelta | None) -> Filing | None:
     return filing
 
 
-def scrape(
-    messages: tuple[Message, ...], filings: Filings, queue: MessageQueue, output: str, max_age: timedelta | None
-) -> tuple[list[Message], int]:
-    """Parse the messages' filings in order, then send all their transactions to ``output`` at once.
+def transactions(message: Message, filings: Filings, max_age: timedelta | None) -> list[dict[str, object]]:
+    """Return one message's transactions; a skipped message or a ``PermanentError`` gives none.
 
-    Parsing stops at the first filing that fails with ``RetryableError``: the failure most likely
-    affects the filings after it too, so it and every later message are left unfinished and
-    delivered again. A filing that fails with ``PermanentError`` is logged and finished, as are
-    skipped messages.
+    Args:
+        message: A message from the master-index queue.
+        filings: SEC filings source.
+        max_age: Filings older than this are skipped; None keeps every filing.
+
+    Returns:
+        The filing's transactions, empty if the message is skipped or the filing is dropped.
+    """
+    try:
+        return parse_filing(filing, filings) if (filing := read_filing(message, max_age)) else []
+    except PermanentError as error:
+        logger.error(f'Filing dropped: {error}')
+        return []
+
+
+def scrape(
+    messages: tuple[Message, ...],
+    filings: Filings,
+    queue: MessageQueue,
+    output: str,
+    max_age: timedelta | None,
+    pool: Executor,
+) -> tuple[list[Message], int]:
+    """Parse the messages' filings on ``pool``'s threads, then send all their transactions to ``output`` at once.
+
+    The filings download in parallel, but they are finished in message order. Finishing stops at
+    the first filing that fails with ``RetryableError``: the failure most likely affects the filings
+    after it too, so it and every later message are left unfinished and delivered again, and the
+    downloads not yet started are cancelled. A filing that fails with ``PermanentError`` is logged
+    and finished, as are skipped messages.
 
     Args:
         messages: Messages received from the master-index queue.
-        filings: SEC filings source.
+        filings: SEC filings source, safe to share between threads.
         queue: Where the transactions are sent.
         output: Queue the transactions are sent to.
         max_age: Filings older than this are skipped; None keeps every filing.
+        pool: The threads the filings download on.
 
     Returns:
         The finished messages, a prefix of ``messages``, and the number of transactions sent.
     """
     done: list[Message] = []
     txs: list[dict[str, object]] = []
+    results = pool.map(partial(transactions, filings=filings, max_age=max_age), messages)
     for message in messages:
         try:
-            txs.extend(parse_filing(filing, filings) if (filing := read_filing(message, max_age)) else ())
+            txs.extend(next(results))
         except RetryableError as error:
             logger.warning(f'{len(messages) - len(done)} filings left for redelivery: {error}')
             break
-        except PermanentError as error:
-            logger.error(f'Filing dropped: {error}')
         done.append(message)
     if txs:
         queue.send(output, ((str(r['key']), r) for r in txs))
@@ -97,18 +123,19 @@ if __name__ == '__main__':
     logger.info(f'Scraper started: {config.input_queue} -> {config.output_queue}')
 
     left_for_retry = False
-    while True:
-        messages = queue.receive(config.input_queue, config.buffer_size, config.poll_timeout)
-        done, sent = scrape(messages, edgar, queue, config.output_queue, config.max_age)
-        # Acked after every receive, an empty one included, as the port requires
-        queue.ack(config.input_queue, done)
-        if messages:
-            logger.info(f'{len(done)} of {len(messages)} filings -> {sent} transactions')
-        if len(done) < len(messages):
-            left_for_retry = True
-            time.sleep(config.retry_pause)
-        if not messages and config.exit_when_empty:
-            break
+    with ThreadPoolExecutor(config.fetch_workers) as pool:
+        while True:
+            messages = queue.receive(config.input_queue, config.buffer_size, config.poll_timeout)
+            done, sent = scrape(messages, edgar, queue, config.output_queue, config.max_age, pool)
+            # Acked after every receive, an empty one included, as the port requires
+            queue.ack(config.input_queue, done)
+            if messages:
+                logger.info(f'{len(done)} of {len(messages)} filings -> {sent} transactions')
+            if len(done) < len(messages):
+                left_for_retry = True
+                time.sleep(config.retry_pause)
+            if not messages and config.exit_when_empty:
+                break
 
     # SQS hides unfinished filings for its visibility timeout, so an empty queue does not mean they are done
     if left_for_retry:

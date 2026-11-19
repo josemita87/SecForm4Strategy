@@ -4,6 +4,9 @@ Under test:
     packages/secform4strategy-clients/src/secform4strategy_clients/edgar.py
 """
 
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 import httpx
 import pytest
 from secform4strategy_clients.edgar import EdgarClient
@@ -70,3 +73,22 @@ class TestGet:
         with pytest.raises(PermanentError, match=str(answer.status_code)):
             client.get(URL)
         assert len(requests) == 1
+
+
+class TestRateCap:
+    """Request starts stay at least ``1 / max_rate`` apart, however many threads share the client."""
+
+    def test_threads_sharing_the_client_start_requests_one_interval_apart(self) -> None:
+        starts: list[float] = []
+
+        def handle(request: httpx.Request) -> httpx.Response:
+            starts.append(time.monotonic())
+            return httpx.Response(200, text='filing')
+
+        client = EdgarClient('Jane Doe jane@example.com', max_rate=50)
+        client.http = httpx.Client(transport=httpx.MockTransport(handle))
+        with ThreadPoolExecutor(6) as pool:
+            list(pool.map(lambda _: client.get(URL), range(12)))
+        assert len(starts) == 12
+        # 12 starts span at least 11 intervals; the tolerance covers thread scheduling before the transport call
+        assert max(starts) - min(starts) >= 11 / 50 * 0.9

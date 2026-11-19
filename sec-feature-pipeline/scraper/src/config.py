@@ -35,6 +35,8 @@ class Config(BaseSettings):
     sec_user_agent: str = Field(pattern=r'^\S.*\s\S+@\S+\.\S+$')
     # Requests per second; SEC allows 10 per IP, shared by master-index and the scraper
     sec_max_rate: float = Field(8, gt=0, le=10)
+    # Filings downloaded at once; SEC answers in about 0.5 s, so several in flight reach SEC_MAX_RATE
+    fetch_workers: int = Field(6, ge=1, le=16)
 
     # System Settings
     buffer_size: int
