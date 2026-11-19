@@ -27,7 +27,10 @@ logging.basicConfig(
 
 
 def validate_and_reduce_mem_storage(data: pd.DataFrame) -> pd.DataFrame:
-    """Cast columns to memory-efficient dtypes, dropping rows whose numbers or dates fail to parse.
+    """Cast columns to memory-efficient dtypes, dropping rows that cannot be priced or labelled.
+
+    A row is dropped when a number or date fails to parse, or when it has no ticker, direction
+    (acquired or disposed) or transaction date. Other empty fields, such as the coding, are kept.
 
     Columns present are cast to category, bool or a numeric dtype. ``ownership`` holds 'D'/'I'
     (direct/indirect) and is categorical, since a bool cast would make both True.
@@ -72,8 +75,8 @@ def validate_and_reduce_mem_storage(data: pd.DataFrame) -> pd.DataFrame:
     data[Col.DATE] = pd.to_datetime(data[Col.DATE], errors='coerce')
     data[Col.ACCEPTED_AT] = pd.to_datetime(data[Col.ACCEPTED_AT], utc=True, errors='coerce')
 
-    # Drop unparseable rows before the integer casts, which cannot hold NaN
-    return data.dropna(subset=[*numeric, Col.DATE, Col.ACCEPTED_AT]).astype(numeric)
+    # Drop unusable rows before the integer casts, which cannot hold NaN
+    return data.dropna(subset=[*numeric, Col.DATE, Col.ACCEPTED_AT, Col.TICKER, Col.ACQUIRED_DISPOSED]).astype(numeric)
 
 
 if __name__ == '__main__':
@@ -97,8 +100,11 @@ if __name__ == '__main__':
     queue: MessageQueue
     with closing(client) as queue:
         while messages := queue.receive(config.input_queue, config.buffer_size, config.poll_timeout):
-            records = [message.body for message in messages]
-            rows = validate_and_reduce_mem_storage(pd.DataFrame(records).drop_duplicates().dropna())
+            records = pd.DataFrame([message.body for message in messages]).drop_duplicates()
+            if dropped := len(records) - len(rows := validate_and_reduce_mem_storage(records)):
+                logger.warning(
+                    f'{dropped} of {len(records)} dropped: missing ticker, direction or date, or unparseable'
+                )
             try:
                 feature_store.push(target, rows)
             except RetryableError as error:
