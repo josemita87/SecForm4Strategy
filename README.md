@@ -150,7 +150,7 @@ make inference-model     # scores BIR4 with the saved model, places paper orders
 make lakehouse-summary   # row counts, time spans and the latest RT4/BIR4 rows, between any two stages
 ```
 
-The feature store lives in `.lakehouse/` and the model in `.artifacts/` at the repo root (both git-ignored), shared by the containers through volumes; `rm -rf .lakehouse .artifacts` starts from scratch. Run settings sit in the env files next to each Compose file: master-index picks what the training scrape covers (`MODE` in `training-master.env`: the current quarter, the last `YEARS` years, or one `YEAR` / `QUARTER`; `SHUFFLE=True` publishes in random order, so a scrape stopped early is a random sample), and inference trades `QTY` shares below `PREDICTION_THRESHOLD` (`inference-model.env`). Only the SEC stacks need `SEC_USER_AGENT`, and only `inference-model` needs `.credentials.env`.
+The feature store lives in `.lakehouse/` and the model in `.artifacts/` at the repo root (both git-ignored), shared by the containers through volumes; `rm -rf .lakehouse .artifacts` starts from scratch. Run settings sit in the env files next to each Compose file: master-index picks what the training scrape covers (`MODE` in `training-master.env`: the current quarter, the last `YEARS` years, one `YEAR` / `QUARTER`, or the last `DAYS_BACK` days with `recent`; `SHUFFLE=True` publishes in random order, so a scrape stopped early is a random sample), and inference trades `QTY` shares below `PREDICTION_THRESHOLD` (`inference-model.env`). Only the SEC stacks need `SEC_USER_AGENT`, and only `inference-model` needs `.credentials.env`.
 
 ### Code quality and tests
 
