@@ -125,7 +125,7 @@ module "tasks" {
       environment = merge(local.sqs, {
         INPUT_QUEUE   = local.queues.filings, OUTPUT_QUEUE = local.queues.transactions
         BUFFER_SIZE   = "200", POLL_TIMEOUT = "20", DELAY = "0", MODE = "last_quarter", EXIT_WHEN_EMPTY = "true"
-        FETCH_WORKERS = "12", RETRY_PAUSE = "5"
+        FETCH_WORKERS = "12", RETRY_PAUSE = "5", SEC_MAX_RATE = "5"
       })
       secrets = { SEC_USER_AGENT = "sec-user-agent" }
     }
