@@ -58,7 +58,9 @@ def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
     Raises:
         RetryableError: Orders failed transiently; the state machine retries, and placed orders are not repeated.
     """
-    tickers = list(event['tickers'])
+    if not (tickers := list(event['tickers'])):
+        logger.info('No tickers with rows to score')
+        return {'tickers': tickers, 'scored': 0, 'shorts': []}
     rows = store.read(FeatureGroup.BIR4, where={Col.TICKER: tickers})
     upcoming = rows[pd.to_datetime(rows[Col.NEXT_PRINT], utc=True) > datetime.now(UTC)]
     if upcoming.empty:

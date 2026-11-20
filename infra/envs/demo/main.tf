@@ -149,10 +149,11 @@ module "tasks" {
       memory        = 2048
       environment   = merge(local.lakehouse, local.training_run, { BUFFER_SIZE = "50" })
     }
+    # Reads every ticker's price history at once: 4 GB ran out of memory on one year of filings
     target = {
       task_role_arn = local.roles.target
-      cpu           = 1024
-      memory        = 4096
+      cpu           = 2048
+      memory        = 16384
       environment   = merge(local.lakehouse, local.training_run, { DELTA_PERIOD = "30" })
     }
     training = {

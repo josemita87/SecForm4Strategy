@@ -42,8 +42,9 @@ def handle(event: Mapping[str, Any], _context: object) -> dict[str, list[str]]:
         _context: The Lambda context, unused; Lambda passes it to every handler.
 
     Returns:
-        The tickers, for the next step.
+        The tickers that got rows, for the next step; none when no transaction of the tickers passes the filter.
     """
-    tickers = list(event['tickers'])
-    publish_inference_rows(store, {config.filter_key: config.acquired_disposed, Col.TICKER: tickers}, reference, window)
-    return {'tickers': tickers}
+    where = {config.filter_key: config.acquired_disposed, Col.TICKER: list(event['tickers'])}
+    # An empty frame may lack the ticker column, so it is checked before the column is read
+    rows = publish_inference_rows(store, where, reference, window)
+    return {'tickers': [] if rows.empty else sorted(rows[Col.TICKER].unique())}
