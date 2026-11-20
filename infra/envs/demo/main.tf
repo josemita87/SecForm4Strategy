@@ -276,3 +276,23 @@ module "live" {
 output "live" {
   value = module.live
 }
+
+module "dashboard" {
+  source     = "../../modules/dashboard"
+  name       = "secform4strategy"
+  queues     = ["filings", "transactions", "live-filings", "live-transactions", "live-tickers"]
+  eta_queues = ["filings", "transactions"]
+  state_machine_arns = {
+    retrain      = module.retrain.state_machine_arn
+    "live-score" = module.live.score_state_machine_arn
+  }
+  function_names = [for service in keys(module.live.function_arns) : "secform4strategy-live-${service}"]
+  log_groups = concat(
+    values(module.tasks.log_groups),
+    [for service in keys(module.live.function_arns) : "/aws/lambda/secform4strategy-live-${service}"],
+  )
+}
+
+output "dashboard" {
+  value = module.dashboard
+}
