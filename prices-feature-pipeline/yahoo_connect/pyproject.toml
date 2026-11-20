@@ -12,6 +12,8 @@ dependencies = [
     "numpy>=2.3,<2.5",
     "pydantic-settings>=2.10,<3",
     "tqdm>=4.67.1,<5",
+    # Lambda runtime interface client: the live path runs src/handler.py in this image
+    "awslambdaric>=4.2,<5",
 ]
 
 [tool.uv]

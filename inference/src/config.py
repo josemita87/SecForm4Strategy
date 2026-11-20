@@ -6,8 +6,9 @@ from typing import Literal
 from dotenv import load_dotenv
 from paths import CSV_PATH, LOG_PATH, MODEL_PATH
 from pydantic import BaseModel, Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 from secform4strategy_clients.ports import OrderType, Side, TimeInForce
+from secform4strategy_clients.ssm_settings import SsmSettings
 
 load_dotenv('.env')
 load_dotenv('.credentials.env')
@@ -29,7 +30,7 @@ class S3Models(BaseModel):
     prefix: str = 'models'
 
 
-class Config(BaseSettings):
+class Config(SsmSettings):
     """Settings for Alpaca, the feature store, trading and logging."""
 
     # Alpaca API credentials

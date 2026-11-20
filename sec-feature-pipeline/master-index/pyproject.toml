@@ -10,6 +10,8 @@ dependencies = [
     "secform4strategy-clients[aws,edgar,messaging]",
     "pydantic-settings>=2.10,<3",
     "xxhash>=3.5,<4",
+    # Lambda runtime interface client: the live path runs src/handler.py in this image
+    "awslambdaric>=4.2,<5",
 ]
 
 [tool.uv]

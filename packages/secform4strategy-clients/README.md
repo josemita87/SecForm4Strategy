@@ -22,6 +22,8 @@ consuming and producing — not separate consumer/producer classes):
 | `AlpacaClient` | `secform4strategy_clients.broker` | `broker` | `alpaca-py` |
 | `KafkaClient` | `secform4strategy_clients.messaging` | `messaging` | `quixstreams` |
 | `SqsQueue` | `secform4strategy_clients.sqs` | `aws` | `boto3` |
+| `DynamoSeenKeys` | `secform4strategy_clients.dynamodb` | `aws` | `boto3` |
+| `SsmSettings` (settings base reading SSM parameters on Lambda) | `secform4strategy_clients.ssm_settings` | `aws` | `boto3`, `pydantic-settings` |
 | `EdgarClient` | `secform4strategy_clients.edgar` | `edgar` | `httpx` |
 | `MarketDataClient` | `secform4strategy_clients.market_data` | `market-data` | `yfinance` |
 | `LocalModelStore` | `secform4strategy_clients.model_store` | `model-store` | `joblib` |

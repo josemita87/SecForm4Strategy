@@ -51,7 +51,7 @@ output "network" {
 module "queues" {
   source      = "../../modules/queues"
   name        = "secform4strategy"
-  queues      = ["filings", "transactions"]
+  queues      = ["filings", "transactions", "live-filings", "live-transactions", "live-tickers"]
   alert_email = var.alert_email
 }
 
@@ -73,6 +73,14 @@ module "iam" {
     target         = { capabilities = ["lakehouse-write"] }
     training       = { capabilities = ["lakehouse-read", "models-write"] }
     inference      = { capabilities = ["lakehouse-read", "models-read"] }
+  }
+  lambda_access = {
+    master-index   = { sends = ["live-filings"], capabilities = ["seen-keys", "read-secrets"] }
+    scraper        = { receives = ["live-filings"], sends = ["live-transactions"], capabilities = ["read-secrets"] }
+    kafka-to-store = { receives = ["live-transactions"], sends = ["live-tickers"], capabilities = ["lakehouse-write"] }
+    yahoo-connect  = { capabilities = ["lakehouse-write"] }
+    target         = { capabilities = ["lakehouse-write"] }
+    inference      = { capabilities = ["lakehouse-read", "models-read", "read-secrets"] }
   }
 }
 
@@ -183,4 +191,88 @@ module "retrain" {
 
 output "retrain" {
   value = module.retrain
+}
+
+locals {
+  inference_run = { SYSTEM_INFERENCE = "true", FILTER_KEY = "acquired_disposed", ACQUIRED_DISPOSED = "D" }
+  # Lambda cannot inject SSM parameters; SsmSettings reads the ones SSM_PARAMETERS names at cold start
+  sec_secrets = { SSM_PARAMETERS = jsonencode({ sec_user_agent = "/secform4strategy/sec-user-agent" }) }
+}
+
+module "live" {
+  source            = "../../modules/live"
+  name              = "secform4strategy"
+  poller            = "master-index"
+  subnet_ids        = module.network.private_subnet_ids
+  security_group_id = module.network.security_group_id
+  schedule_enabled  = var.switched_on && var.live_enabled
+  score_steps       = ["yahoo-connect", "target", "inference"]
+  tickers_queue_arn = module.queues.queues["live-tickers"].arn
+  functions = {
+    master-index = {
+      role_arn  = module.iam.lambda_role_arns["master-index"]
+      directory = "/repo/sec-feature-pipeline/master-index"
+      handler   = "handler.handle"
+      memory    = 512
+      timeout   = 60
+      environment = merge(local.sqs, local.sec_secrets, {
+        OUTPUT_QUEUE = local.queues["live-filings"], BUFFER_SIZE = "100", MODE = "live"
+        SEEN_TABLE   = "secform4strategy-seen", SEEN_DAYS = "7", SEC_MAX_RATE = "1"
+      })
+    }
+    # Two at a time at 2.25 requests per second: 4.5 of SEC's 10, beside the batch scraper's 5
+    scraper = {
+      role_arn  = module.iam.lambda_role_arns.scraper
+      directory = "/repo/sec-feature-pipeline/scraper"
+      handler   = "handler.handle"
+      environment = merge(local.sqs, local.sec_secrets, {
+        INPUT_QUEUE = local.queues["live-filings"], OUTPUT_QUEUE = local.queues["live-transactions"]
+        BUFFER_SIZE = "10", POLL_TIMEOUT = "0", DELAY = "0", MODE = "live", FETCH_WORKERS = "4", SEC_MAX_RATE = "2.25"
+      })
+      trigger = { queue_arn = module.queues.queues["live-filings"].arn, batch_size = 10, max_concurrency = 2 }
+    }
+    kafka-to-store = {
+      role_arn  = module.iam.lambda_role_arns["kafka-to-store"]
+      directory = "/repo/sec-feature-pipeline/kafka-to-store"
+      handler   = "handler.handle"
+      memory    = 2048
+      timeout   = 240
+      environment = merge(local.sqs, local.lakehouse, {
+        INPUT_QUEUE = local.queues["live-transactions"], OUTPUT_QUEUE = local.queues["live-tickers"], SYSTEM_INFERENCE = "true"
+      })
+      # One Iceberg commit per batch: wait up to 5 s to gather a filing burst
+      trigger = { queue_arn = module.queues.queues["live-transactions"].arn, batch_size = 100, batching_window = 5, max_concurrency = 2 }
+    }
+    yahoo-connect = {
+      role_arn    = module.iam.lambda_role_arns["yahoo-connect"]
+      directory   = "/repo/prices-feature-pipeline/yahoo_connect"
+      handler     = "src.handler.handle"
+      memory      = 2048
+      timeout     = 180
+      environment = merge(local.lakehouse, local.inference_run, { BUFFER_SIZE = "50" })
+    }
+    target = {
+      role_arn    = module.iam.lambda_role_arns.target
+      directory   = "/repo/prices-feature-pipeline/target"
+      handler     = "src.handler.handle"
+      memory      = 2048
+      timeout     = 180
+      environment = merge(local.lakehouse, local.inference_run, { DELTA_PERIOD = "30" })
+    }
+    inference = {
+      role_arn  = module.iam.lambda_role_arns.inference
+      directory = "/repo/inference"
+      handler   = "handler.handle"
+      memory    = 2048
+      timeout   = 180
+      environment = merge(local.lakehouse, local.models, {
+        ALPACA_BASE_URL = "https://paper-api.alpaca.markets", QTY = "1", PREDICTION_THRESHOLD = "-0.05"
+        SSM_PARAMETERS  = jsonencode({ alpaca_api_key = "/secform4strategy/alpaca-api-key", alpaca_api_secret = "/secform4strategy/alpaca-api-secret" })
+      })
+    }
+  }
+}
+
+output "live" {
+  value = module.live
 }

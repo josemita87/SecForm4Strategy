@@ -40,11 +40,17 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+dynamodb = [
+    { name = "mypy-boto3-dynamodb" },
+]
 s3 = [
     { name = "mypy-boto3-s3" },
 ]
 sqs = [
     { name = "mypy-boto3-sqs" },
+]
+ssm = [
+    { name = "mypy-boto3-ssm" },
 ]
 
 [[package]]
@@ -209,6 +215,15 @@ wheels = [
 ]
 
 [[package]]
+name = "mypy-boto3-dynamodb"
+version = "1.44.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f4/51/6bc879b0859f46d3beffd98e0e98946a305e00b59980a9f844aec592f88e/mypy_boto3_dynamodb-1.44.0.tar.gz", hash = "sha256:3fd6198fa9eb698919c1cb666b3a9f314d2b6f2258c3921a84a2bef3d47f2dd9", size = 52899, upload-time = "2026-11-10T21:52:03.894Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c3/f9/a139e76e4d5acbceaf9294c40a2f1d39fefc1a8f1a83e0ac5d11a97b7b95/mypy_boto3_dynamodb-1.44.0-py3-none-any.whl", hash = "sha256:a9b2052552e9c9c0c0a1db7306628552d6f289e8772bb4d324e522d19255c4c9", size = 63500, upload-time = "2026-11-10T21:52:00.192Z" },
+]
+
+[[package]]
 name = "mypy-boto3-s3"
 version = "1.44.0"
 source = { registry = "https://pypi.org/simple" }
@@ -224,6 +239,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c1/ab/b4980ce6108fdc8f3a1ba5c870eddbcb250ba325aa06a42cc32a6aefeebf/mypy_boto3_sqs-1.44.0.tar.gz", hash = "sha256:8225fff746c9e69e5067d3aa9f1918b6ade07e5da9eac5f77f3f8f38fb5bb969", size = 23605, upload-time = "2026-11-10T21:58:34.485Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/82/79/6d97bfb301a231739068fe6fcf09f0d58205f43bda5792b45479a7e56a0f/mypy_boto3_sqs-1.44.0-py3-none-any.whl", hash = "sha256:a25966f8db3018b367fdb4f27a39b2abe674276f3272795959e50a15056e12f7", size = 33764, upload-time = "2026-11-10T21:58:32.247Z" },
+]
+
+[[package]]
+name = "mypy-boto3-ssm"
+version = "1.44.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/be/6e/06f434a99efa3537ad7e302146033546aea6da2ccb044b61fafaf926d489/mypy_boto3_ssm-1.44.3.tar.gz", hash = "sha256:d1c26fa323064cae474dec943a68de6db9d626c39af849cf7fbb26d276109039", size = 99198, upload-time = "2026-11-13T21:36:01.426Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c3/d4/a42e19ef230ed34ceea5beddc27fa0bc774dea6ef4917ea58ee2a446c397/mypy_boto3_ssm-1.44.3-py3-none-any.whl", hash = "sha256:b0e1ca222cfb4f1a3d6a88cc822831e83037796e44f509d602ee43d8297cdd17", size = 100877, upload-time = "2026-11-13T21:35:57.632Z" },
 ]
 
 [[package]]
@@ -529,7 +553,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "bandit" },
-    { name = "boto3-stubs", extra = ["s3", "sqs"] },
+    { name = "boto3-stubs", extra = ["dynamodb", "s3", "sqs", "ssm"] },
     { name = "docstring-parser-fork" },
     { name = "mypy" },
     { name = "numpy" },
@@ -551,7 +575,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "bandit", specifier = ">=1.8.6,<2" },
-    { name = "boto3-stubs", extras = ["s3", "sqs"], specifier = ">=1.35,<2" },
+    { name = "boto3-stubs", extras = ["dynamodb", "s3", "sqs", "ssm"], specifier = ">=1.35,<2" },
     { name = "docstring-parser-fork", specifier = ">=0.0.14" },
     { name = "mypy", specifier = ">=1.17.0,<2" },
     { name = "numpy", specifier = ">=2.3,<2.5" },

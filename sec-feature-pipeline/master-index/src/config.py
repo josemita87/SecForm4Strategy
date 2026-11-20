@@ -3,7 +3,8 @@
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+from secform4strategy_clients.ssm_settings import SsmSettings
 
 
 class Kafka(BaseModel):
@@ -20,7 +21,7 @@ class Sqs(BaseModel):
     region: str
 
 
-class Config(BaseSettings):
+class Config(SsmSettings):
     """Settings for the master-index service loaded from environment variables."""
 
     # Message queue: QUEUE__BACKEND picks it, QUEUE__<FIELD> sets its fields
@@ -49,6 +50,9 @@ class Config(BaseSettings):
     num_pages: int = 1
     live_iterations: int = 1
     secs_between_iterations: int = 10
+    # Live path (src/handler.py): the DynamoDB table of accessions already sent, and how long it remembers them
+    seen_table: str | None = None
+    seen_days: int = Field(7, gt=0)
 
     @model_validator(mode='after')
     def _quarter_is_named(self) -> Config:

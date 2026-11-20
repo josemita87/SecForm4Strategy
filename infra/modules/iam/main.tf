@@ -12,6 +12,16 @@ data "aws_iam_policy_document" "ecs_tasks_assume" {
   }
 }
 
+data "aws_iam_policy_document" "lambda_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
 resource "aws_iam_role" "execution" {
   name               = "${var.name}-execution"
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
@@ -62,16 +72,25 @@ locals {
     models-write = [
       { actions = ["s3:PutObject"], resources = ["${local.bucket_arn}/models/*"] },
     ]
+    seen-keys = [
+      { actions = ["dynamodb:BatchGetItem", "dynamodb:BatchWriteItem"], resources = ["arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.name}-seen"] },
+    ]
+    read-secrets = [
+      { actions = ["ssm:GetParameters"], resources = ["arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.name}/*"] },
+    ]
   }
+
+  # Lambda keys get a live- prefix, so a service can have both a task role and a Lambda role
+  access = merge(var.task_access, { for key, value in var.lambda_access : "live-${key}" => value })
 }
 
-data "aws_iam_policy_document" "task" {
-  for_each = var.task_access
+data "aws_iam_policy_document" "access" {
+  for_each = local.access
 
   dynamic "statement" {
     for_each = concat(
       [for queue in each.value.sends : { actions = ["sqs:GetQueueUrl", "sqs:SendMessage"], resources = [var.queue_arns[queue]] }],
-      [for queue in each.value.receives : { actions = ["sqs:GetQueueUrl", "sqs:ReceiveMessage", "sqs:DeleteMessage"], resources = [var.queue_arns[queue]] }],
+      [for queue in each.value.receives : { actions = ["sqs:GetQueueUrl", "sqs:GetQueueAttributes", "sqs:ReceiveMessage", "sqs:DeleteMessage"], resources = [var.queue_arns[queue]] }],
       flatten([for capability in each.value.capabilities : local.capabilities[capability]]),
     )
     content {
@@ -91,5 +110,25 @@ resource "aws_iam_role_policy" "task" {
   for_each = var.task_access
   name     = "access"
   role     = aws_iam_role.task[each.key].id
-  policy   = data.aws_iam_policy_document.task[each.key].json
+  policy   = data.aws_iam_policy_document.access[each.key].json
+}
+
+resource "aws_iam_role" "lambda" {
+  for_each           = var.lambda_access
+  name               = "${var.name}-live-${each.key}"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role_policy" "lambda" {
+  for_each = var.lambda_access
+  name     = "access"
+  role     = aws_iam_role.lambda[each.key].id
+  policy   = data.aws_iam_policy_document.access["live-${each.key}"].json
+}
+
+# Logs, plus the network interfaces a Lambda needs to run inside the VPC
+resource "aws_iam_role_policy_attachment" "lambda_vpc" {
+  for_each   = var.lambda_access
+  role       = aws_iam_role.lambda[each.key].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
