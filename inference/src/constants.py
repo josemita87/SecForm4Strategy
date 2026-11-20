@@ -18,4 +18,5 @@ class Col(StrEnum):
 
     KEY = 'key'
     TICKER = 'ticker'
+    NEXT_PRINT = 'next_print'
     PREDICTIONS = 'predictions'

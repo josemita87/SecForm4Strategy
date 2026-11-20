@@ -30,6 +30,8 @@ class Config(BaseSettings):
     input_queue: str
     buffer_size: int = 1000
     poll_timeout: int = 10
+    # Live path (src/handler.py): where the tickers of each stored batch are sent, to start their scoring
+    output_queue: str | None = None
 
     # Iceberg feature store; the catalog itself is configured by PYICEBERG_CATALOG__DEFAULT__* (docs/configuration.md)
     feature_store_namespace: str = 'secform4strategy'

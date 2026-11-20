@@ -19,12 +19,36 @@ from src.constants import Col, FeatureGroup
 from src.paths import SPEC_PATH
 
 if TYPE_CHECKING:
-    from secform4strategy_clients.ports import FeatureStore
+    from secform4strategy_clients.ports import FeatureStore, MarketData
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
 )
+
+
+def refresh_prices(store: FeatureStore, market: MarketData, tickers: list[str], buffer_size: int) -> None:
+    """Fetch the tickers' bars after their last stored day and upsert them into the prices group.
+
+    Args:
+        store: The feature store holding the prices group.
+        market: Where the bars come from.
+        tickers: The tickers to price.
+        buffer_size: Tickers fetched per batch.
+    """
+    try:
+        stored = store.read(FeatureGroup.PRICES, where={Col.TICKER: tickers})
+    except NoSuchTableError:
+        # The first run creates the price table, so every ticker fetches its full history
+        stored = pd.DataFrame({Col.TICKER: [], Col.DATE: pd.to_datetime([]), Col.CLOSE: [], Col.CLOSE_AS_TRADED: []})
+
+    batches = prices.new_prices(market, tickers, prices.resume_points(stored), buffer_size)
+    for batch in tqdm(batches, total=-(-len(tickers) // buffer_size), desc='Pricing tickers', unit='batch'):
+        # One key column: pyiceberg's upsert crashes on composite keys
+        store.push(
+            FeatureGroup.PRICES,
+            batch.assign(**{Col.KEY: batch[Col.TICKER].astype(str) + '@' + batch[Col.DATE].dt.strftime('%Y-%m-%d')}),
+        )
 
 
 if __name__ == '__main__':
@@ -42,17 +66,6 @@ if __name__ == '__main__':
         config.feature_store_namespace,
         load_feature_group_catalog(SPEC_PATH, config.feature_group_version),
     )
-    tickers = np.unique(store.read(source, where=where)[Col.TICKER]).tolist()
-    try:
-        stored = store.read(FeatureGroup.PRICES, where={Col.TICKER: tickers})
-    except NoSuchTableError:
-        # The first run creates the price table, so every ticker fetches its full history
-        stored = pd.DataFrame({Col.TICKER: [], Col.DATE: pd.to_datetime([]), Col.CLOSE: [], Col.CLOSE_AS_TRADED: []})
-
-    batches = prices.new_prices(MarketDataClient(), tickers, prices.resume_points(stored), config.buffer_size)
-    for batch in tqdm(batches, total=-(-len(tickers) // config.buffer_size), desc='Pricing tickers', unit='batch'):
-        # One key column: pyiceberg's upsert crashes on composite keys
-        store.push(
-            FeatureGroup.PRICES,
-            batch.assign(**{Col.KEY: batch[Col.TICKER].astype(str) + '@' + batch[Col.DATE].dt.strftime('%Y-%m-%d')}),
-        )
+    refresh_prices(
+        store, MarketDataClient(), np.unique(store.read(source, where=where)[Col.TICKER]).tolist(), config.buffer_size
+    )

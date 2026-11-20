@@ -9,6 +9,8 @@ from constants import Col
 from secform4strategy_clients.ports import OrderType, PermanentError, RetryableError, Side, TimeInForce
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import pandas as pd
     from secform4strategy_clients.ports import Broker, ModelStore
     from sklearn.pipeline import Pipeline
@@ -24,6 +26,23 @@ class OrderSpec:
     side: Side
     order_type: OrderType
     time_in_force: TimeInForce
+
+
+def score(model: Pipeline, features: Sequence[str], rows: pd.DataFrame) -> pd.DataFrame:
+    """Return the complete, distinct rows with the model's prediction for each.
+
+    The pipeline applies the preprocessing fitted at training time, on arrays in the trained feature order.
+
+    Args:
+        model: The trained pipeline.
+        features: Its input columns, in training order.
+        rows: Disclosure rows from BIR4.
+
+    Returns:
+        The rows with no missing value, each with a ``predictions`` column.
+    """
+    complete = rows.drop_duplicates().dropna()
+    return complete.assign(**{Col.PREDICTIONS: model.predict(complete[list(features)].to_numpy())})
 
 
 class InferencePipeline:
