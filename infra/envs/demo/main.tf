@@ -178,7 +178,7 @@ module "retrain" {
   pass_role_arns       = concat([module.iam.execution_role_arn], values(module.iam.task_role_arns))
   subnet_ids           = module.network.private_subnet_ids
   security_group_id    = module.network.security_group_id
-  schedule_enabled     = var.switched_on
+  schedule_enabled     = var.switched_on && var.weekly_retrain_enabled
 }
 
 output "retrain" {
