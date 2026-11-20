@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import pandas as pd
 import sklearn
 from constants import Col
 from secform4strategy_clients.ports import OrderType, PermanentError, RetryableError, Side, TimeInForce
@@ -11,7 +12,6 @@ from secform4strategy_clients.ports import OrderType, PermanentError, RetryableE
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    import pandas as pd
     from secform4strategy_clients.ports import Broker, ModelStore
     from sklearn.pipeline import Pipeline
 
@@ -39,9 +39,10 @@ def score(model: Pipeline, features: Sequence[str], rows: pd.DataFrame) -> pd.Da
         rows: Disclosure rows from BIR4.
 
     Returns:
-        The rows with no missing value, each with a ``predictions`` column.
+        The rows with no missing value, each with a ``predictions`` column; empty when no row is complete.
     """
-    complete = rows.drop_duplicates().dropna()
+    if (complete := rows.drop_duplicates().dropna()).empty:
+        return complete.assign(**{Col.PREDICTIONS: pd.Series(dtype=float)})
     return complete.assign(**{Col.PREDICTIONS: model.predict(complete[list(features)].to_numpy())})
 
 
