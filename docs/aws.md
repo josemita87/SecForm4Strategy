@@ -144,7 +144,7 @@ Each function runs `<service directory>/.venv/bin/python -m awslambdaric` with t
 
 The SQS triggers report partial batch failures. A handler returns the messages it did not finish in `batchItemFailures`, and SQS delivers only those again, after the 300-second visibility timeout.
 
-Each `live-score` step is retried twice on `States.TaskFailed`, after 5 and 10 seconds. inference raises `RetryableError` when an order is left unplaced, so the step runs again. Each order carries the row key as `client_order_id`, so Alpaca rejects a duplicate. inference loads the latest model at each invocation, so a new weekly model takes effect immediately. It skips rows whose next market print has already passed.
+Each `live-score` step is retried twice on `States.TaskFailed`, after 5 and 10 seconds. inference raises `RetryableError` when an order is left unplaced, so the step runs again. Each order carries the row key as `client_order_id`, so Alpaca rejects a duplicate. inference loads the latest model at each invocation, so a new weekly model takes effect immediately. It trades only fresh rows: rows whose latest filing was accepted within `MAX_SIGNAL_AGE_MINUTES` (default 60). The event carries tickers, so this keeps a ticker's older rows from trading late, for example after a retrain. In the session an order fills at once; outside it, Alpaca queues it for the open.
 
 The live Lambdas read their secrets from SSM themselves, because Lambda cannot put SSM parameters into environment variables. `SSM_PARAMETERS` names the parameters, for example `{"sec_user_agent": "/secform4strategy/sec-user-agent"}`, and `SsmSettings` reads them at cold start. The values never enter the Terraform state.
 
