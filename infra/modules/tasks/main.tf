@@ -37,6 +37,8 @@ resource "aws_ecs_task_definition" "service" {
   memory                   = each.value.memory
   execution_role_arn       = var.execution_role_arn
   task_role_arn            = each.value.task_role_arn
+  # A new revision leaves the old one active: running Step Functions executions name exact revisions
+  skip_destroy = true
   runtime_platform {
     operating_system_family = "LINUX"
     cpu_architecture        = "ARM64"
