@@ -69,7 +69,7 @@ def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
     model, features = pipeline.load_model()
     predictions = score(model, features, upcoming)
     shorts = predictions.loc[predictions[Col.PREDICTIONS] < config.prediction_threshold, Col.KEY].tolist()
-    logger.info(f'{len(predictions)} rows scored for {tickers}; shorting {shorts}')
+    logger.info(f'{len(predictions)} of {len(upcoming)} rows complete and scored for {tickers}; shorting {shorts}')
     if retry_later := pipeline.execute_trades(
         predictions,
         config.prediction_threshold,

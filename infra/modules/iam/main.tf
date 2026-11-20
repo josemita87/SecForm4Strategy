@@ -62,7 +62,8 @@ locals {
     ]
     lakehouse-write = [
       { actions = concat(local.glue_read, ["glue:CreateTable", "glue:UpdateTable"]), resources = local.glue_arns },
-      { actions = ["s3:GetObject", "s3:PutObject"], resources = ["${local.bucket_arn}/warehouse/*"] },
+      # DeleteObject: a commit that loses a race to a concurrent writer deletes the files it wrote
+      { actions = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], resources = ["${local.bucket_arn}/warehouse/*"] },
       { actions = ["s3:ListBucket"], resources = [local.bucket_arn] },
     ]
     models-read = [
