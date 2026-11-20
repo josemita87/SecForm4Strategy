@@ -51,6 +51,8 @@ class Config(SsmSettings):
     order_type: OrderType = 'market'
     time_in_force: TimeInForce = 'gtc'
     prediction_threshold: float
+    # Live path: rows whose latest filing was accepted longer ago are not traded
+    max_signal_age_minutes: int = Field(60, gt=0)
 
     # Logging
     log_path: Path = LOG_PATH

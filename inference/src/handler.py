@@ -7,7 +7,7 @@ takes effect at once.
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -43,10 +43,11 @@ store = IcebergFeatureStore(
 
 
 def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
-    """Score the tickers' rows whose next print is still ahead, and short the predicted losers.
+    """Score the tickers' fresh rows, and short the predicted losers at once.
 
-    Rows whose print has passed are left alone: their trade can no longer be placed at the price
-    the row was built for. Orders carry their row key as client order id, so a retry never doubles one.
+    A row is fresh when its latest filing was accepted within ``MAX_SIGNAL_AGE_MINUTES``: the event
+    carries tickers, and their older rows must not trade late. Orders carry their row key as client
+    order id, so a retry never doubles one.
 
     Args:
         event: ``{"tickers": [...]}``.
@@ -62,14 +63,15 @@ def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
         logger.info('No tickers with rows to score')
         return {'tickers': tickers, 'scored': 0, 'shorts': []}
     rows = store.read(FeatureGroup.BIR4, where={Col.TICKER: tickers})
-    upcoming = rows[pd.to_datetime(rows[Col.NEXT_PRINT], utc=True) > datetime.now(UTC)]
-    if upcoming.empty:
-        logger.info(f'No upcoming rows for {tickers}')
+    since = datetime.now(UTC) - timedelta(minutes=config.max_signal_age_minutes)
+    fresh = rows[pd.to_datetime(rows[Col.ACCEPTED_AT], utc=True) > since]
+    if fresh.empty:
+        logger.info(f'No rows of {tickers} accepted since {since:%Y-%m-%d %H:%M} UTC')
         return {'tickers': tickers, 'scored': 0, 'shorts': []}
     model, features = pipeline.load_model()
-    predictions = score(model, features, upcoming)
+    predictions = score(model, features, fresh)
     shorts = predictions.loc[predictions[Col.PREDICTIONS] < config.prediction_threshold, Col.KEY].tolist()
-    logger.info(f'{len(predictions)} of {len(upcoming)} rows complete and scored for {tickers}; shorting {shorts}')
+    logger.info(f'{len(predictions)} of {len(fresh)} rows complete and scored for {tickers}; shorting {shorts}')
     if retry_later := pipeline.execute_trades(
         predictions,
         config.prediction_threshold,
