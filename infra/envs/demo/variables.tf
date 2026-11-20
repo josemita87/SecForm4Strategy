@@ -15,3 +15,9 @@ variable "switched_on" {
   type        = bool
   default     = false
 }
+
+variable "weekly_retrain_enabled" {
+  description = "Run the Saturday retrain while switched on; off while a long backfill uses the same queues."
+  type        = bool
+  default     = true
+}

@@ -41,7 +41,7 @@ for entry in "${services[@]}"; do
   fi
 
   echo "Building ${service}:${tag}"
-  docker buildx build --platform linux/arm64 --provenance=false --push \
+  docker buildx build --platform linux/arm64 --provenance=false --push --build-arg "GIT_SHA=${tag}" \
     --file "${path}/Dockerfile" --tag "${registry}/${repository}:${tag}" .
 
   size=$(aws ecr describe-images --region "$region" --repository-name "$repository" \

@@ -49,9 +49,10 @@ output "network" {
 }
 
 module "queues" {
-  source = "../../modules/queues"
-  name   = "secform4strategy"
-  queues = ["filings", "transactions"]
+  source      = "../../modules/queues"
+  name        = "secform4strategy"
+  queues      = ["filings", "transactions"]
+  alert_email = var.alert_email
 }
 
 output "queues" {
@@ -122,8 +123,9 @@ module "tasks" {
     scraper = {
       task_role_arn = local.roles.scraper
       environment = merge(local.sqs, {
-        INPUT_QUEUE = local.queues.filings, OUTPUT_QUEUE = local.queues.transactions
-        BUFFER_SIZE = "50", POLL_TIMEOUT = "20", DELAY = "0", MODE = "last_quarter", EXIT_WHEN_EMPTY = "true"
+        INPUT_QUEUE   = local.queues.filings, OUTPUT_QUEUE = local.queues.transactions
+        BUFFER_SIZE   = "200", POLL_TIMEOUT = "20", DELAY = "0", MODE = "last_quarter", EXIT_WHEN_EMPTY = "true"
+        FETCH_WORKERS = "12", RETRY_PAUSE = "5", SEC_MAX_RATE = "5"
       })
       secrets = { SEC_USER_AGENT = "sec-user-agent" }
     }
@@ -176,7 +178,7 @@ module "retrain" {
   pass_role_arns       = concat([module.iam.execution_role_arn], values(module.iam.task_role_arns))
   subnet_ids           = module.network.private_subnet_ids
   security_group_id    = module.network.security_group_id
-  schedule_enabled     = var.switched_on
+  schedule_enabled     = var.switched_on && var.weekly_retrain_enabled
 }
 
 output "retrain" {

@@ -19,3 +19,9 @@ variable "max_receives" {
   type        = number
   default     = 5
 }
+
+variable "alert_email" {
+  description = "Address the dead-letter alarms email."
+  type        = string
+  sensitive   = true
+}

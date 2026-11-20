@@ -35,5 +35,9 @@ RUN uv sync --frozen --no-dev
 # Copy the rest of the source code into the container
 COPY training ${SVC_DIR}/
 
+# The commit the image was built from, recorded in each model's metadata; set last, so it never invalidates the cached layers
+ARG GIT_SHA
+ENV GIT_SHA=${GIT_SHA}
+
 # Define the command to run the application
 CMD ["uv", "run", "--no-sync", "python", "src/main.py"]

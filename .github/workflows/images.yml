@@ -68,6 +68,8 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ${{ steps.ecr.outputs.registry }}/secform4strategy/${{ matrix.service }}:${{ steps.tag.outputs.tag }}
+          # Training records it in each model's metadata; the other images ignore it
+          build-args: GIT_SHA=${{ steps.tag.outputs.tag }}
           # A plain single-platform image, without the attestation manifest buildx adds by default
           provenance: false
           cache-from: type=gha,scope=${{ matrix.service }}

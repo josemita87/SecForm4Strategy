@@ -85,6 +85,12 @@ Each run's model replaces the previous one: training writes `latest.json` to poi
 
 The first full load is the same state machine, started once by hand with `MODE=historical` for master-index. It loads the last `YEARS` years of filings. The weekly runs then add one week at a time.
 
+The batch scraper's task definition caps SEC requests at `SEC_MAX_RATE=5` per second. The live path uses at most 4.5 per second, so both together stay under SEC's 10 per IP, which the NAT gateway's address shares. A first full load overrides the batch cap to 8 per second for speed:
+
+```json
+{"overrides": {"master-index": {"MODE": "historical", "YEARS": "1"}, "scraper": {"SEC_MAX_RATE": "8"}}}
+```
+
 The scraper downloads up to `FETCH_WORKERS` filings at once (default 6). SEC answers each request in about 0.5 seconds, so several requests in flight keep the rate near the cap. `EdgarClient` spaces request starts at least `1 / SEC_MAX_RATE` seconds apart across all threads (default 8 per second; SEC allows 10).
 
 The scraper runs with `EXIT_WHEN_EMPTY=true`. It stops at the first receive that waits its full poll timeout without a message. If it left a filing unacknowledged for retry, it exits non-zero, and Step Functions reruns it after the visibility timeout.
