@@ -21,3 +21,9 @@ variable "weekly_retrain_enabled" {
   type        = bool
   default     = true
 }
+
+variable "live_enabled" {
+  description = "Poll for new filings every minute while switched on; off while a full-rate backfill uses SEC's limit."
+  type        = bool
+  default     = true
+}

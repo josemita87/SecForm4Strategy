@@ -19,10 +19,20 @@ variable "queue_arns" {
 }
 
 variable "task_access" {
-  description = "Per service: queues it sends to and receives from, and its capabilities (lakehouse-read, lakehouse-write, models-read, models-write)."
+  description = "Per service: queues it sends to and receives from, and its capabilities (lakehouse-read, lakehouse-write, models-read, models-write, seen-keys, read-secrets)."
   type = map(object({
     sends        = optional(list(string), [])
     receives     = optional(list(string), [])
     capabilities = optional(list(string), [])
   }))
+}
+
+variable "lambda_access" {
+  description = "Per live-path Lambda: queues and capabilities, as in task_access."
+  type = map(object({
+    sends        = optional(list(string), [])
+    receives     = optional(list(string), [])
+    capabilities = optional(list(string), [])
+  }))
+  default = {}
 }
