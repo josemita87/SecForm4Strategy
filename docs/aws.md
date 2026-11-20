@@ -6,7 +6,7 @@ The AWS deployment runs the same services as the local stack, on serverless AWS 
 
 ![AWS architecture](diagrams/aws-architecture.drawio.svg)
 
-The diagram predates the live path and the CI workflows; the sections below describe what is deployed.
+The batch path runs ECS tasks and the live path runs Lambda functions, both in the private subnets. Orange dashed outlines and lines exist only while the stack is switched on.
 
 Terraform state is in the bucket `secform4strategy-tfstate-<account>`, which `infra/bootstrap` creates. The backend locks the state with S3 native locking (`use_lockfile = true`). The root module `infra/envs/demo` calls eight modules:
 
@@ -373,6 +373,24 @@ aws ssm put-parameter --profile secform4 --type SecureString --overwrite --name 
 ```
 
 ECS tasks read a changed value at their next start. Lambda functions read it at their next cold start.
+
+### Monitoring
+
+`make status` prints the state of the stack in one screen, in about 15 seconds. It only reads:
+
+| Section | Shows |
+| --- | --- |
+| Header | The time in UTC, whether the NAT gateway exists, and whether each schedule is enabled |
+| `retrain` | Each running run, its current step, how long that step has run, and its attempt number |
+| `queues` | Per queue: messages waiting, messages deleted per second over the last 10 minutes, the ETA (waiting divided by that rate), and the dead-letter depth |
+| `tasks` | Each running ECS task, its revision, whether a run or a person started it, and for how long |
+| `errors` | The `ERROR` log lines of the last hour, per service, for the tasks and the Lambdas |
+| `live` | The `live-score` runs of the last 24 hours by outcome, and the latest failure's error |
+| `model` | The model folder `latest.json` names, and when it was written |
+
+yahoo-connect, target and training read tables, not a queue, so they have no ETA. `make status` shows how long they have run.
+
+The CloudWatch dashboard `secform4strategy` shows the same metrics as graphs: queue depths, messages processed per minute, the backlog ETA of `filings` and `transactions` at the rate of the last 15 minutes, dead-letter depths, `retrain` and `live-score` runs, the live Lambdas' invocations, errors and p90 duration, and `ERROR` log lines per 15 minutes. `terraform output dashboard` prints its URL. A dashboard with at most 50 metrics is free. The log widget runs a Logs Insights query, billed per GB scanned, each time the dashboard is opened.
 
 ### Start a run by hand
 

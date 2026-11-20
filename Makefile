@@ -1,6 +1,6 @@
 .PHONY: lint format type-check security docstrings validate-config test-unit test-unit-fast quality quality-static \
 	start-redpanda stop-redpanda inference-sec inference-prices inference-model training-sec training-prices \
-	training-model lakehouse-summary switch-on switch-off
+	training-model lakehouse-summary switch-on switch-off status
 
 CLIENTS_SRC := packages/secform4strategy-clients/src
 # Services importing flat from src/ (`from config import config`)
@@ -88,6 +88,10 @@ inference-model:
 # Row counts, time spans and the latest model rows of every feature-store table
 lakehouse-summary:
 	docker-compose -f docker-compose/tools.yml run --rm --build lakehouse-summary
+
+# One screen of the AWS stack: switches, runs, queues with rates and ETAs, tasks, errors, model (docs/aws.md)
+status:
+	@AWS_PROFILE=$${AWS_PROFILE:-secform4} uv run --quiet scripts/aws_status.py
 
 
 # The AWS stack's on/off switch: commits the switch file and pushes master; CI applies it once you approve (docs/aws.md)
