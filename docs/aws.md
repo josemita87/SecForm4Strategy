@@ -1,24 +1,25 @@
 # AWS
 
-The AWS deployment runs the same services as the local stack, on serverless AWS resources in account `100118195151`, region `us-east-1`. Terraform under `infra/` defines it. Part of it is built and applied; the rest is planned. Every section marks which is which.
+The AWS deployment runs the same services as the local stack, on serverless AWS resources in account `100118195151`, region `us-east-1`. Terraform under `infra/` defines all of it, and GitHub Actions builds the images and applies the Terraform.
 
 ## Overview
 
 ![AWS architecture](diagrams/aws-architecture.drawio.svg)
 
-Colour icons and solid lines are built. Grey icons and dashed grey lines are planned. Orange dashed outlines are built, but exist only while the stack is switched on.
+The diagram predates the live path and the CI workflows; the sections below describe what is deployed.
 
-### Built
-
-Terraform state lives in the bucket `secform4strategy-tfstate-<account>`, which `infra/bootstrap` creates. The backend locks the state with S3 native locking (`use_lockfile = true`). The root module `infra/envs/demo` calls five modules:
+Terraform state is in the bucket `secform4strategy-tfstate-<account>`, which `infra/bootstrap` creates. The backend locks the state with S3 native locking (`use_lockfile = true`). The root module `infra/envs/demo` calls eight modules:
 
 | Module | Resources |
 | --- | --- |
 | `storage` | Data bucket `secform4strategy-data-<account>`, Glue database `secform4strategy`, Athena workgroup `secform4strategy`, one ECR repository per service, the monthly budget |
 | `network` | VPC, two public and two private subnets, internet gateway, S3 gateway endpoint, security group `secform4strategy-tasks`, and the NAT gateway while switched on |
-| `queues` | SQS queues `secform4strategy-filings` and `secform4strategy-transactions`, each with a dead-letter queue |
-| `iam` | The ECS execution role and one task role per service |
+| `queues` | Five SQS queues, each with a dead-letter queue and a CloudWatch alarm, and the SNS topic `secform4strategy-queue-alerts` |
+| `iam` | The ECS execution role, one task role per service, and one Lambda role per live-path function |
 | `ci` | The GitHub OIDC provider and the roles `secform4strategy-github-images`, `-plan` and `-apply` |
+| `tasks` | The ECS cluster `secform4strategy`, one task definition per service, one log group per service |
+| `retrain` | The `retrain` state machine and its weekly schedule |
+| `live` | Six Lambda functions, the DynamoDB table `secform4strategy-seen`, the poller schedule, the `live-score` state machine and the EventBridge Pipe that starts it |
 
 The data bucket holds three prefixes:
 
@@ -34,7 +35,7 @@ Each service has an ECR repository `secform4strategy/<service>`: `master-index`,
 
 The budget `secform4strategy-monthly` is $5 per month. It sends an email when actual cost passes 50% of the budget, and when forecast cost passes 100%. The recipient is `alert_email` in the git-ignored `infra/envs/demo/terraform.tfvars`.
 
-### Built in the Python code
+### Adapters in the Python code
 
 The services choose their adapters from environment variables, as [configuration.md](configuration.md#backends-local-or-aws) describes:
 
@@ -48,24 +49,21 @@ The services choose their adapters from environment variables, as [configuration
 
 `S3ModelStore` saves each model in a folder named after its training time, as `model.joblib` plus `model.meta.json`. It then writes `latest.json`, which names that folder. `load` reads `latest.json` first, so a load never pairs a new model with old metadata. Earlier models stay in the bucket.
 
-### Planned
+The live path adds three modules to `secform4strategy_clients`:
 
-- GitHub Actions workflows that build images and run Terraform.
-- An ECS cluster that runs each service as a Fargate ARM64 task in the private subnets, with CloudWatch log groups.
-- A Step Functions state machine for the weekly retrain, which also does the first full load.
-- The live path: EventBridge Scheduler, three Lambda functions, SQS and DynamoDB.
-- A CloudWatch alarm on the depth of each dead-letter queue.
-- Schedules that `switched_on` enables: the weekly retrain and the live-path poller.
+- `lambda_sqs` turns an SQS event into `Message` tuples. `batch_failures` returns the messages a handler did not finish, as the `batchItemFailures` response.
+- `DynamoSeenKeys` records keys in a DynamoDB table and returns the ones it does not hold. Each item expires after `SEEN_DAYS` days.
+- `SsmSettings` is a settings base class. If `SSM_PARAMETERS` is set, it reads the SSM parameters that variable names, in one call, when the settings are built.
 
 ## Batch path and live path
 
 The system has two paths. Both use serverless compute, so nothing runs and nothing is billed between runs.
 
-| | Batch path (planned) | Live path (planned) |
+| | Batch path | Live path |
 | --- | --- | --- |
 | Work | Long, heavy jobs: the first full load of years of filings, then a weekly retrain on the new filings | One filing at a time, as SEC publishes it |
-| Compute | ECS tasks on Fargate ARM64 | Lambda functions |
-| Trigger | Step Functions, started by EventBridge Scheduler | EventBridge Scheduler, then SQS |
+| Compute | ECS tasks on Fargate ARM64 | Lambda functions, on the same images |
+| Trigger | Step Functions, started by EventBridge Scheduler | EventBridge Scheduler, then SQS, then an EventBridge Pipe |
 | Why | Fargate has no run-time limit; Lambda stops a run after 15 minutes | Lambda runs as soon as an event arrives and bills per invocation; speed from disclosure is the edge |
 
 ### Batch path
@@ -74,41 +72,97 @@ One Step Functions state machine, `retrain`, runs six ECS tasks in order:
 
 1. master-index publishes filings to `secform4strategy-filings`.
 2. The scraper reads them and publishes transactions to `secform4strategy-transactions`.
-3. kafka-to-store reads the transactions and upserts them into the Iceberg tables.
+3. kafka-to-store reads the transactions and upserts them into `BT4`.
 4. yahoo-connect refreshes the prices of the tickers in the tables.
 5. target builds the labelled rows.
 6. training saves a new model to `models/` in S3.
 
-EventBridge Scheduler starts `retrain` once a week. master-index then runs with `MODE=recent` and `DAYS_BACK=7`: it reads the master indexes of the quarters that the last 7 days touch, and publishes only the filings of those 7 days. The schedule is enabled only while the stack is switched on. When the stack is switched off, no weekly run happens.
+Each step runs one Fargate ARM64 task in the cluster `secform4strategy`, in the private subnets, and waits for it to stop. The tasks use the `FARGATE` launch type, because Fargate Spot does not run ARM64 tasks. A step whose task fails is retried after 600 seconds, at most 3 times. Each task writes its logs to the log group `/secform4strategy/<service>`, kept 14 days.
+
+EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC. master-index then runs with `MODE=recent` and `DAYS_BACK=7`: it reads the master indexes of the quarters that the last 7 days touch, and publishes only the filings of those 7 days. The schedule is enabled only while both `switched_on` and `weekly_retrain_enabled` are `true`.
 
 Each run's model replaces the previous one: training writes `latest.json` to point at the new model, without a comparison to the previous model.
 
-The first full load is the same state machine, started once by hand with `MODE=historical` for master-index. It loads the last `YEARS` years of filings. The weekly runs then add one week at a time.
+The batch scraper's task definition caps SEC requests at `SEC_MAX_RATE=5` per second. The live path uses at most 4.5 per second, so both together stay under SEC's 10 per IP address, which the NAT gateway's address shares.
 
-The batch scraper's task definition caps SEC requests at `SEC_MAX_RATE=5` per second. The live path uses at most 4.5 per second, so both together stay under SEC's 10 per IP, which the NAT gateway's address shares. A first full load overrides the batch cap to 8 per second for speed:
+#### Run input
+
+The input of a `retrain` run can override environment variables per step:
 
 ```json
-{"overrides": {"master-index": {"MODE": "historical", "YEARS": "1"}, "scraper": {"SEC_MAX_RATE": "8"}}}
+{"overrides": {"<service>": {"<VARIABLE>": "<value>"}}}
 ```
 
-The scraper downloads up to `FETCH_WORKERS` filings at once (default 6). SEC answers each request in about 0.5 seconds, so several requests in flight keep the rate near the cap. `EdgarClient` spaces request starts at least `1 / SEC_MAX_RATE` seconds apart across all threads (default 8 per second; SEC allows 10).
+The first full load is the same state machine, started once by hand with `MODE=historical`. It loads the last `YEARS` years of filings. It raises the scraper's cap to 8 per second, and kafka-to-store's commit size to 10,000 rows:
 
-The scraper runs with `EXIT_WHEN_EMPTY=true`. It stops at the first receive that waits its full poll timeout without a message. If it left a filing unacknowledged for retry, it exits non-zero, and Step Functions reruns it after the visibility timeout.
+```json
+{"overrides": {"master-index": {"MODE": "historical", "YEARS": "5"}, "scraper": {"SEC_MAX_RATE": "8"}, "kafka-to-store": {"BUFFER_SIZE": "10000"}}}
+```
+
+#### Throughput
+
+| Step | Measured rate | Setting that sets it |
+| --- | --- | --- |
+| scraper | 6 to 7.8 filings per second | `SEC_MAX_RATE`, `FETCH_WORKERS=12`, `BUFFER_SIZE=200`, `RETRY_PAUSE=5` |
+| kafka-to-store | About 185 transactions per second | `BUFFER_SIZE=10000` (one Iceberg commit per batch; a commit takes about 7 seconds) |
+
+The scraper downloads up to `FETCH_WORKERS` filings at once. SEC answers each request in about 0.5 seconds, so several requests in flight keep the rate near the cap. `EdgarClient` spaces request starts at least `1 / SEC_MAX_RATE` seconds apart across all threads.
+
+The scraper runs with `EXIT_WHEN_EMPTY=true`. It stops at the first receive that waits its full poll timeout without a message. If it left a filing unacknowledged for retry, it exits non-zero, and Step Functions reruns it after 600 seconds.
 
 The ECS task definitions read the secrets (the Alpaca keys and `SEC_USER_AGENT`) from SSM Parameter Store and pass them to the container as environment variables.
 
+#### Revisions of a running run
+
+A `retrain` run names exact task-definition revisions, for example `secform4strategy-kafka-to-store:3`, and keeps them until it ends. A new image or a changed environment makes Terraform register a new revision. The task definitions set `skip_destroy = true`, so Terraform leaves the old revision active, and a running run can still start tasks from it. ECS cannot start a task from an `INACTIVE` revision.
+
+The images have a second limit. Each ECR repository keeps only its 2 newest images. If a service gets two newer images while a run still has to start it, ECR deletes the image the run's revision names, and that step fails. During a multi-day run, do not change the code of a service whose step has not started.
+
 ### Live path
 
-1. EventBridge Scheduler starts the poller Lambda. The schedule is disabled unless the stack is switched on.
-2. The poller Lambda reads SEC's current-filings feed. It records each filing in a DynamoDB table and skips filings already recorded. It sends new filings to SQS.
-3. The scraper Lambda reads each filing from SQS and sends its transactions to a second SQS queue.
-4. The scorer Lambda loads the model from `models/` in S3, scores the transactions and places Alpaca paper orders. Each order carries a `client_order_id`, so Alpaca rejects a duplicate.
+The live path runs the batch services as Lambda functions, on the same images, scoped to the tickers of each new filing:
+
+1. EventBridge Scheduler invokes `secform4strategy-live-master-index` every minute.
+2. master-index reads the first page of SEC's current Form 4 feed. It sends the filings that `secform4strategy-seen` does not hold to `secform4strategy-live-filings`, then records them.
+3. The scraper Lambda parses each filing and sends its transactions to `secform4strategy-live-transactions`.
+4. kafka-to-store upserts the transactions into `BI4` and sends `{"tickers": [...]}` to `secform4strategy-live-tickers`.
+5. The EventBridge Pipe `secform4strategy-live-tickers` starts one run of the state machine `secform4strategy-live-score` per batch of up to 10 messages.
+6. `live-score` runs three Lambdas in order, each passing `{"tickers": [...]}` to the next: yahoo-connect refreshes the prices, target builds the `BIR4` rows, and inference scores them and places Alpaca paper orders.
+
+The schedule is enabled only while both `switched_on` and `live_enabled` are `true`.
+
+| Function | Trigger | Settings |
+| --- | --- | --- |
+| master-index | Schedule, every minute | 512 MB, 60 s; `SEC_MAX_RATE=1`; `SEEN_DAYS=7` |
+| scraper | `live-filings`, batches of 10 | 1024 MB, 120 s; at most 2 at a time, each at `SEC_MAX_RATE=2.25` with `FETCH_WORKERS=4` |
+| kafka-to-store | `live-transactions`, batches of up to 100, waiting at most 5 s | 2048 MB, 240 s; at most 2 at a time |
+| yahoo-connect | `live-score` | 2048 MB, 180 s |
+| target | `live-score` | 2048 MB, 180 s |
+| inference | `live-score` | 2048 MB, 180 s; `QTY=1`, `PREDICTION_THRESHOLD=-0.05` |
+
+Each function runs `<service directory>/.venv/bin/python -m awslambdaric` with the handler `handler.handle`, or `src.handler.handle` for yahoo-connect and target. `awslambdaric` is the Lambda runtime interface client: it receives events from the Lambda service and calls the handler. Each handler sits beside the service's `main.py` and calls the same functions as the batch loop. The functions run in the private subnets, with `HOME=/tmp`, because the image's file system is read-only. Each function writes its logs to `/aws/lambda/secform4strategy-live-<service>`, kept 14 days.
+
+The SQS triggers report partial batch failures. A handler returns the messages it did not finish in `batchItemFailures`, and SQS delivers only those again, after the 300-second visibility timeout.
+
+Each `live-score` step is retried twice on `States.TaskFailed`, after 5 and 10 seconds. inference raises `RetryableError` when an order is left unplaced, so the step runs again. Each order carries the row key as `client_order_id`, so Alpaca rejects a duplicate. inference loads the latest model at each invocation, so a new weekly model takes effect immediately. It skips rows whose next market print has already passed.
+
+The live Lambdas read their secrets from SSM themselves, because Lambda cannot put SSM parameters into environment variables. `SSM_PARAMETERS` names the parameters, for example `{"sec_user_agent": "/secform4strategy/sec-user-agent"}`, and `SsmSettings` reads them at cold start. The values never enter the Terraform state.
+
+#### Cold starts
+
+The first invocation of a function after about 5 to 15 minutes without one is a cold start: Lambda loads the image and runs the handler module's imports. The images are about 1 GB, and a first cold start exceeds Lambda's 10-second initialization limit. Lambda then runs the initialization again inside the invocation, and the invocation succeeds. Measured on the first invocations:
+
+| Function | Cold invocation |
+| --- | --- |
+| scraper | 10 seconds |
+| kafka-to-store | 45 seconds |
+| yahoo-connect | 39 seconds |
+
+Warm invocations take a few seconds. A filing that arrives after a quiet period therefore reaches inference about 1 to 2 minutes after the poll. Provisioned concurrency keeps an instance warm, at about $10 per month per function. It is off: the cold start is an accepted cost trade-off. Smaller images would shorten it.
 
 ## Network
 
 ![AWS network](diagrams/aws-network.drawio.svg)
-
-All of the network is built:
 
 | Resource | Value |
 | --- | --- |
@@ -120,30 +174,33 @@ All of the network is built:
 | Security group `secform4strategy-tasks` | No inbound rules; all outbound traffic allowed |
 | NAT gateway and Elastic IP | In `secform4strategy-public-0`, only while `switched_on = true` |
 
-The tasks run in the private subnets. They have no public IP address, and the security group accepts no inbound connections. Nothing on the internet can open a connection to a task.
+The private subnets are in the availability zones `use1-az1` and `use1-az2`. Fargate ARM64 is not available in `use1-az3`.
 
-The public subnets hold only the NAT gateway. The NAT gateway gives the private subnets outbound internet access, which the tasks need for SEC EDGAR, Yahoo Finance and Alpaca. It also carries their calls to the AWS APIs other than S3: ECR, SQS, Glue, SSM and CloudWatch Logs.
+The ECS tasks and the Lambda functions run in the private subnets. They have no public IP address, and the security group accepts no inbound connections. Nothing on the internet can open a connection to them.
 
-The S3 gateway endpoint sits on the private route table. It carries all traffic from the private subnets to S3: the Iceberg data and the models. A gateway endpoint costs nothing, and S3 traffic through it does not pass the NAT gateway, so it adds no NAT data charges.
+The public subnets hold only the NAT gateway. The NAT gateway gives the private subnets outbound internet access, which the services need for SEC EDGAR, Yahoo Finance and Alpaca. It also carries their calls to the AWS APIs other than S3: ECR, SQS, Glue, SSM, DynamoDB and CloudWatch Logs.
+
+The S3 gateway endpoint sits on the private route table. It carries all traffic from the private subnets to S3: the Iceberg data, the models and the image layers that ECR stores in S3. A gateway endpoint costs nothing, and S3 traffic through it does not pass the NAT gateway, so it adds no NAT data charges.
 
 The NAT gateway exists only while the stack is switched on, because it bills about $1.08 per day whether or not traffic flows. While the stack is dormant, the private subnets reach only S3. No task can run then: it cannot pull its image from ECR or read its secrets.
 
 ## Identity
 
-The `iam` module creates two kinds of role for ECS. Both trust only `ecs-tasks.amazonaws.com`.
+The `iam` module creates three kinds of role:
 
-| Role | Used by | Permissions |
-| --- | --- | --- |
-| `secform4strategy-execution` | The ECS agent, before the container starts | `AmazonECSTaskExecutionRolePolicy` (pull images from ECR, write CloudWatch logs), plus `ssm:GetParameters` on `/secform4strategy/*` |
-| `secform4strategy-<service>` | The service's code, while it runs | Only the queues and data that service uses, from `task_access` |
+| Role | Trusts | Used by | Permissions |
+| --- | --- | --- | --- |
+| `secform4strategy-execution` | `ecs-tasks.amazonaws.com` | The ECS agent, before the container starts | `AmazonECSTaskExecutionRolePolicy` (pull images from ECR, write CloudWatch logs), plus `ssm:GetParameters` on `/secform4strategy/*` |
+| `secform4strategy-<service>` | `ecs-tasks.amazonaws.com` | The service's code in an ECS task | Only the queues and data that service uses, from `task_access` |
+| `secform4strategy-live-<service>` | `lambda.amazonaws.com` | The service's code in a Lambda function | `AWSLambdaVPCAccessExecutionRolePolicy` (logs, and the network interfaces in the VPC), plus the entries in `lambda_access` |
 
-The execution role reads the secrets from SSM and injects them as environment variables. The service code never holds permission to read SSM.
+In ECS, the execution role reads the secrets from SSM and injects them as environment variables, so the task roles hold no SSM permission. In Lambda, the function's own role reads them, so the three Lambda roles that use secrets hold the `read-secrets` capability.
 
 ### Access per service
 
-`task_access` in `infra/envs/demo/main.tf` lists, per service, the queues it sends to and receives from, and its capabilities. The `iam` module turns each entry into one inline policy `access` on the role `secform4strategy-<service>`.
+`task_access` and `lambda_access` in `infra/envs/demo/main.tf` list, per service, the queues it sends to and receives from, and its capabilities. The `iam` module turns each entry into one inline policy `access` on the role.
 
-| Service | Sends to | Receives from | Capabilities |
+| ECS task | Sends to | Receives from | Capabilities |
 | --- | --- | --- | --- |
 | master-index | `filings` | | |
 | scraper | `transactions` | `filings` | |
@@ -153,12 +210,21 @@ The execution role reads the secrets from SSM and injects them as environment va
 | training | | | `lakehouse-read`, `models-write` |
 | inference | | | `lakehouse-read`, `models-read` |
 
+| Lambda function | Sends to | Receives from | Capabilities |
+| --- | --- | --- | --- |
+| master-index | `live-filings` | | `seen-keys`, `read-secrets` |
+| scraper | `live-transactions` | `live-filings` | `read-secrets` |
+| kafka-to-store | `live-tickers` | `live-transactions` | `lakehouse-write` |
+| yahoo-connect | | | `lakehouse-write` |
+| target | | | `lakehouse-write` |
+| inference | | | `lakehouse-read`, `models-read`, `read-secrets` |
+
 Each entry grants these actions:
 
 | Entry | Actions | Resources |
 | --- | --- | --- |
 | Sends to a queue | `sqs:GetQueueUrl`, `sqs:SendMessage` | That queue |
-| Receives from a queue | `sqs:GetQueueUrl`, `sqs:ReceiveMessage`, `sqs:DeleteMessage` | That queue |
+| Receives from a queue | `sqs:GetQueueUrl`, `sqs:GetQueueAttributes`, `sqs:ReceiveMessage`, `sqs:DeleteMessage` | That queue |
 | `lakehouse-read` | `glue:GetDatabase`, `glue:CreateDatabase`, `glue:GetTable`, `glue:GetTables` | The Glue catalog, the database `secform4strategy` and its tables |
 | | `s3:GetObject` | `warehouse/*` |
 | | `s3:ListBucket` | The data bucket |
@@ -168,21 +234,33 @@ Each entry grants these actions:
 | `models-read` | `s3:GetObject` | `models/*` |
 | | `s3:ListBucket` | The data bucket |
 | `models-write` | `s3:PutObject` | `models/*` |
+| `seen-keys` | `dynamodb:BatchGetItem`, `dynamodb:BatchWriteItem` | The table `secform4strategy-seen` |
+| `read-secrets` | `ssm:GetParameters` | `/secform4strategy/*` |
 
-`glue:CreateDatabase` is part of both lakehouse capabilities because the feature store creates its namespace when it is missing.
+`glue:CreateDatabase` is part of both lakehouse capabilities because the feature store creates its namespace when it is missing. The SQS trigger of a Lambda function needs `sqs:GetQueueAttributes`.
+
+The `live` and `retrain` modules create their own roles for the services that start work:
+
+| Role | Trusts | Permissions |
+| --- | --- | --- |
+| `secform4strategy-retrain` | Step Functions | Run, describe and stop the ECS tasks; pass the execution and task roles |
+| `secform4strategy-retrain-scheduler` | EventBridge Scheduler | `states:StartExecution` on `retrain` |
+| `secform4strategy-live-scheduler` | EventBridge Scheduler | `lambda:InvokeFunction` on the master-index function |
+| `secform4strategy-live-score` | Step Functions | `lambda:InvokeFunction` on yahoo-connect, target and inference |
+| `secform4strategy-live-tickers-pipe` | EventBridge Pipes | Receive and delete on `live-tickers`; `states:StartExecution` on `live-score` |
 
 ### Credentials in containers
 
-No container holds a static AWS key. ECS gives each task temporary credentials for its task role through the container credentials endpoint. boto3 finds them in its default credential chain, so the adapters create their clients with a region and no keys. AWS rotates the credentials before they expire.
+No container holds a static AWS key. ECS and Lambda give the code temporary credentials for its role. boto3 finds them in its default credential chain, so the adapters create their clients with a region and no keys. AWS rotates the credentials before they expire.
 
 ## Messaging
 
-Both queues are built. Each is an SQS standard queue with its own dead-letter queue:
+Five queues are built. Each is an SQS standard queue with its own dead-letter queue:
 
 | Setting | Value |
 | --- | --- |
-| Queues | `secform4strategy-filings`, `secform4strategy-transactions` |
-| Dead-letter queues | `secform4strategy-filings-dlq`, `secform4strategy-transactions-dlq` |
+| Queues | `secform4strategy-filings`, `-transactions`, `-live-filings`, `-live-transactions`, `-live-tickers` |
+| Dead-letter queues | The queue name plus `-dlq` |
 | Visibility timeout | 300 seconds |
 | `maxReceiveCount` | 5 |
 | Retention | 4 days on the queues, 14 days on the dead-letter queues |
@@ -192,15 +270,15 @@ A received message stays hidden for the visibility timeout. If the consumer does
 
 The queues are the platform layer of the error contract in [error-handling.md](error-handling.md):
 
-| Outcome of a message | Consumer action | SQS result |
-| --- | --- | --- |
-| Done | `ack` deletes it | Gone |
-| `RetryableError` | No ack | Delivered again after 300 seconds |
-| `PermanentError` | Logs it, then `ack` deletes it | Gone |
-| Crash (a defect) | No ack | Delivered again; after 5 receives, moved to the dead-letter queue |
-| Body is not JSON | `SqsQueue` logs it and deletes it | Gone |
+| Outcome of a message | ECS consumer | Lambda handler | SQS result |
+| --- | --- | --- | --- |
+| Done | `ack` deletes it | Not in `batchItemFailures` | Deleted |
+| `RetryableError` | No ack | In `batchItemFailures` | Delivered again after 300 seconds |
+| `PermanentError` | Logs it, then `ack` deletes it | Logs it, not in `batchItemFailures` | Deleted |
+| Crash (a defect) | No ack | The invocation fails, so the whole batch | Delivered again; after 5 receives, moved to the dead-letter queue |
+| Body is not JSON | `SqsQueue` logs it and deletes it | `sqs_messages` logs it and leaves it out | Deleted |
 
-A CloudWatch alarm on the depth of each dead-letter queue is planned.
+Each dead-letter queue has a CloudWatch alarm `secform4strategy-<queue>-dead-letters`. It goes into alarm when the dead-letter queue holds at least one message, checked every 5 minutes, and back to OK when it is empty. Both changes publish to the SNS topic `secform4strategy-queue-alerts`, which emails `alert_email`. The recipient confirms the subscription once, from the email AWS sends.
 
 ## CI/CD
 
@@ -211,9 +289,19 @@ CI and Terraform own different things:
 | Owner | Manages |
 | --- | --- |
 | Terraform | Every AWS resource, including the ECR repositories and the CI roles |
-| CI (planned) | The images in ECR, and the runs of `terraform plan` and `terraform apply` |
+| CI | The images in ECR, and the runs of `terraform plan` and `terraform apply` |
 
-The OIDC provider and the three roles are built and applied. The workflows that use them are planned. Today, `.github/workflows/quality.yml` runs only the quality gate.
+Three workflows run in `.github/workflows/`:
+
+| Workflow | Trigger | Does |
+| --- | --- | --- |
+| `quality.yml` | Pull requests and pushes to master | The quality gate: quality-static and type-check |
+| `images.yml` | A successful `quality` run on a push to master | Builds a `linux/arm64` image for each service whose code changed, tags it with that code's last commit, and pushes it to ECR |
+| `terraform.yml` | Pull requests and pushes to master that change `infra/` | `terraform plan` on pull requests; `terraform apply` on master, after approval |
+
+A merge to master therefore runs `quality`, then `images`, then a `terraform` apply that waits for approval. Approve the apply after `images` succeeds. Terraform reads the newest image of each repository, so an apply before the build deploys the previous image.
+
+The branch rules of master require a pull request whose `quality-static` check passes. They block force pushes and deletion of master.
 
 ### OIDC trust
 
@@ -229,28 +317,24 @@ Each role trusts the provider only for the audience `sts.amazonaws.com` and one 
 
 The plan role can read every resource and the state, and can write only the lock file. A pull request therefore cannot change any resource.
 
-### Planned workflows
-
-- **Images:** on each push to master, build a `linux/arm64` image for each changed service, tag it with the git SHA, and push it to ECR.
-- **Terraform:** on each pull request, run `terraform plan`. On master, run `terraform apply` after approval.
-- **Switch:** a manual workflow that switches the stack on or off.
-
 ### Approval gate
 
-Only a job that runs in the GitHub environment `aws` can assume `secform4strategy-github-apply`. The environment is planned: it will require a reviewer's approval and allow deployments only from master. GitHub then holds every apply job until a reviewer approves it.
+Only a job that runs in the GitHub environment `aws` can assume `secform4strategy-github-apply`. The environment admits only master and requires a reviewer's approval, so GitHub holds every apply job until a reviewer approves it.
 
 ## Cost
 
 | State | Cost | What is billed |
 | --- | --- | --- |
-| Dormant (`switched_on = false`) | About $0 per day | S3 storage and ECR storage. The VPC, subnets, internet gateway, S3 gateway endpoint, security group, IAM, Glue database and idle SQS queues cost nothing. |
-| Switched on (`switched_on = true`) | About $1.20 per day, plus usage | The NAT gateway (about $1.08 per day) and its Elastic IP (about $0.12 per day). Usage: Fargate, Lambda, Step Functions, SQS requests, NAT data processing, Athena scans. |
+| Dormant (`switched_on = false`) | About $0 per day | S3 storage and ECR storage. The VPC, subnets, internet gateway, S3 gateway endpoint, security group, IAM, Glue database, idle SQS queues, idle Lambda functions, the DynamoDB table on demand and the state machines cost nothing. |
+| Switched on (`switched_on = true`) | About $1.20 per day, plus usage | The NAT gateway (about $1.08 per day) and its Elastic IP (about $0.12 per day). Usage: Fargate, Lambda, Step Functions, SQS requests, DynamoDB requests, NAT data processing, Athena scans. |
 
 The $5 monthly budget alerts at 50% of actual cost and at 100% of forecast cost.
 
 ## Operating
 
 ### Run Terraform
+
+CI applies master. Run Terraform locally only to read a plan.
 
 Prerequisites:
 
@@ -262,36 +346,65 @@ Steps:
 
 1. `cd infra/envs/demo`
 2. `AWS_PROFILE=secform4 terraform init`
-3. `AWS_PROFILE=secform4 terraform plan -out tfplan`
-4. Read the plan.
-5. `AWS_PROFILE=secform4 terraform apply tfplan`
+3. `AWS_PROFILE=secform4 terraform plan -lock=false`
 
-The provider block also names the profile `secform4`, and `allowed_account_ids` rejects any other account.
+The provider's `allowed_account_ids` rejects any other account. A local apply from a branch is undone by the next apply of master.
 
-### Switch on and off
+### Switches
 
-`switched_on` in `infra/envs/demo/variables.tf` defaults to `false`.
+`infra/envs/demo/switch.auto.tfvars` holds three switches. A change takes effect when it is merged to master and its apply is approved.
 
-1. To switch on, run `AWS_PROFILE=secform4 terraform apply -var switched_on=true`. Terraform creates the Elastic IP, the NAT gateway and the private default route.
-2. To switch off, run `AWS_PROFILE=secform4 terraform apply`. Terraform deletes the three resources, and billing for them stops.
+| Switch | Default | While `true` |
+| --- | --- | --- |
+| `switched_on` | `false` | The NAT gateway exists. The two schedules below may run. |
+| `weekly_retrain_enabled` | `true` | The Saturday `retrain` schedule is enabled, if `switched_on` is `true`. |
+| `live_enabled` | `true` | The live poller schedule is enabled, if `switched_on` is `true`. |
 
-The NAT gateway takes a few minutes to create and to delete. In the planned design, the same variable also enables the weekly retrain schedule and the live-path poller schedule.
+`make switch-on` and `make switch-off` set `switched_on` from master, commit the change and push it. They leave the other two switches as they are. The NAT gateway takes a few minutes to create and to delete.
+
+Turn `weekly_retrain_enabled` off while a long manual run uses the batch queues. Turn `live_enabled` off while a full load runs the scraper at 8 requests per second: with the live path's 4.5, the total passes SEC's 10.
 
 ### Secrets
 
-The secrets go into SSM Parameter Store as `SecureString` parameters under `/secform4strategy/`. None exist yet. Create them with the AWS CLI, never in Terraform, so their values never enter the Terraform state:
+The secrets are `SecureString` parameters in SSM Parameter Store: `/secform4strategy/sec-user-agent`, `/secform4strategy/alpaca-api-key` and `/secform4strategy/alpaca-api-secret`. Create or change them with the AWS CLI, never in Terraform, so their values never enter the Terraform state:
 
 ```bash
-aws ssm put-parameter --profile secform4 --type SecureString --name /secform4strategy/<name> --value '<value>'
+aws ssm put-parameter --profile secform4 --type SecureString --overwrite --name /secform4strategy/<name> --value '<value>'
 ```
 
-The execution role can read only parameters under `/secform4strategy/`. The planned task definitions pass the Alpaca keys and `SEC_USER_AGENT` to the containers from there.
+ECS tasks read a changed value at their next start. Lambda functions read it at their next cold start.
+
+### Start a run by hand
+
+```bash
+aws stepfunctions start-execution --profile secform4 \
+  --state-machine-arn arn:aws:states:us-east-1:100118195151:stateMachine:secform4strategy-retrain \
+  --name <run-name> --input '<run input>'
+```
+
+The run name must be unique among the state machine's runs. "Run input" above lists the overrides.
+
+### Test the live path with one filing
+
+Send one filing to `live-filings`. The message body is `{"accession": ..., "file_path": ..., "filed_at": ...}`, as master-index builds it. Then follow it:
+
+1. Read `/aws/lambda/secform4strategy-live-scraper`. It logs `1 of 1 filings -> <n> transactions`.
+2. Read `/aws/lambda/secform4strategy-live-kafka-to-store`. It logs `Upserted <n> of <n> transactions into BI4`.
+3. Open the newest run of `secform4strategy-live-score` in the Step Functions console. Its input holds the tickers.
+
+To test only `live-score`, send `{"tickers": ["<ticker>"]}` to `live-tickers`. target needs `RT4`, which the batch target step writes, and inference needs a model in `models/`.
 
 ## Design decisions
 
 | Decision | Rejected alternative | Reason |
 | --- | --- | --- |
-| scikit-learn model in S3, scored in a Lambda or a task | SageMaker | The model is a small scikit-learn pipeline, and scoring runs in batches. A SageMaker endpoint bills every hour it is up. |
+| scikit-learn model in S3, scored in a Lambda function or a task | SageMaker | The model is a small scikit-learn pipeline. A SageMaker endpoint bills every hour it is up. |
+| Live path as Lambda handlers of the batch services, on the same images | A separate scorer that computes the features again | One feature implementation for training and live scoring leaves no skew between them. |
+| Live path scores and trades at once | Waiting for the next market print, which the label uses | The label uses the next print because historical execution times are not available. Trading earlier keeps the speed from disclosure. |
+| No provisioned concurrency | One warm instance per live function | It costs about $10 per month per function. A cold filing reaches inference about 1 to 2 minutes later. |
+| Lambda secrets read by `SsmSettings` at cold start | Terraform reads them and sets them as environment variables | The values would enter the Terraform state. |
+| `skip_destroy` on task definitions | Terraform deregisters replaced revisions | A running `retrain` run can no longer start tasks from a deregistered revision. |
+| `FARGATE` launch type | Fargate Spot | Fargate Spot does not run ARM64 tasks. |
 | NAT gateway only while switched on | An always-on NAT gateway | An always-on NAT gateway costs about $32 per month, more than six times the budget. |
-| S3 gateway endpoint plus NAT gateway | Interface endpoints for ECR (API and Docker), CloudWatch Logs, SQS and SSM | Five interface endpoints in two availability zones cost about $73 per month. The tasks need the internet for SEC, Yahoo Finance and Alpaca anyway, so the NAT gateway is required. |
+| S3 gateway endpoint plus NAT gateway | Interface endpoints for ECR (API and Docker), CloudWatch Logs, SQS and SSM | Five interface endpoints in two availability zones cost about $73 per month. The services need the internet for SEC, Yahoo Finance and Alpaca anyway, so the NAT gateway is required. |
 | OIDC roles for CI | An IAM user with access keys stored in GitHub | A stored key lives until someone rotates it, and anyone who reads it can use it. OIDC credentials are temporary and bound to one repository and one trigger. |

@@ -96,7 +96,7 @@ switch-on switch-off:
 	@test "$$(git branch --show-current)" = master || { echo 'Switch from master: CI applies only master'; exit 1; }
 	@git diff --quiet && git diff --cached --quiet || { echo 'Commit or stash your changes first'; exit 1; }
 	@git pull --ff-only --quiet
-	@echo 'switched_on = $(if $(filter switch-on,$@),true,false)' > $(SWITCH_FILE)
+	@sed -i.bak 's/^switched_on = .*/switched_on = $(if $(filter switch-on,$@),true,false)/' $(SWITCH_FILE) && rm -f $(SWITCH_FILE).bak
 	@if git diff --quiet -- $(SWITCH_FILE); then echo 'The stack is already $(subst switch-,,$@)'; else \
 		git commit --quiet -m 'chore: switch the stack $(subst switch-,,$@)' -- $(SWITCH_FILE) && git push --quiet && \
 		echo 'Pushed; approve the apply in GitHub: Actions > terraform'; fi
