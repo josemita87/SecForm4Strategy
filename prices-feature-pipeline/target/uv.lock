@@ -715,6 +715,7 @@ requires-dist = [
     { name = "pydantic", marker = "extra == 'broker'", specifier = ">=2,<3" },
     { name = "pydantic", marker = "extra == 'feature-store'", specifier = ">=2,<3" },
     { name = "pydantic", marker = "extra == 'model-store'", specifier = ">=2,<3" },
+    { name = "pydantic-settings", marker = "extra == 'aws'", specifier = ">=2.10,<3" },
     { name = "pyiceberg", extras = ["sql-sqlite", "pyarrow", "glue"], marker = "extra == 'feature-store'", specifier = ">=0.12,<0.13" },
     { name = "pyyaml", marker = "extra == 'feature-store'", specifier = ">=6,<7" },
     { name = "quixstreams", marker = "extra == 'messaging'", specifier = ">=3.1,<4" },

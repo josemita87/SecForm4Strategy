@@ -4,7 +4,8 @@ from datetime import timedelta
 from typing import Literal
 
 from pydantic import BaseModel, Field, computed_field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+from secform4strategy_clients.ssm_settings import SsmSettings
 
 
 class Kafka(BaseModel):
@@ -23,7 +24,7 @@ class Sqs(BaseModel):
     region: str
 
 
-class Config(BaseSettings):
+class Config(SsmSettings):
     """Settings for the scraper service loaded from environment variables."""
 
     # Message queue: QUEUE__BACKEND picks it, QUEUE__<FIELD> sets its fields

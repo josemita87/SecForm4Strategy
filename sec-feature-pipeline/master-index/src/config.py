@@ -3,7 +3,8 @@
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+from secform4strategy_clients.ssm_settings import SsmSettings
 
 
 class Kafka(BaseModel):
@@ -20,7 +21,7 @@ class Sqs(BaseModel):
     region: str
 
 
-class Config(BaseSettings):
+class Config(SsmSettings):
     """Settings for the master-index service loaded from environment variables."""
 
     # Message queue: QUEUE__BACKEND picks it, QUEUE__<FIELD> sets its fields

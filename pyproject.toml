@@ -27,7 +27,7 @@ dev = [
     "xxhash>=3.5,<4",
     "types-PyYAML>=6",
     "types-requests>=2.32",
-    "boto3-stubs[dynamodb,s3,sqs]>=1.35,<2",
+    "boto3-stubs[dynamodb,s3,sqs,ssm]>=1.35,<2",
 ]
 
 [tool.mypy]
@@ -112,6 +112,7 @@ strict = true
 runtime-evaluated-base-classes = [
   "pydantic.BaseModel",
   "pydantic_settings.BaseSettings",
+  "secform4strategy_clients.ssm_settings.SsmSettings",
 ]
 runtime-evaluated-decorators = [
   "dataclasses.dataclass",
