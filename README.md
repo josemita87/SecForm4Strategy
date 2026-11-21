@@ -13,7 +13,7 @@ When a corporate insider sells their own company's stock, they must disclose it 
 **The motivating question:** do corporate insiders actually beat the market? Insiders trade their own company's stock with an information advantage no one else has. SecForm4Strategy is the apparatus built to settle empirically whether their sales precede real underperformance or whether the signal is already priced in, and the engineering below is what makes that answer trustworthy.
 
 - **Disclosure time, not trade time.** Every transaction is stamped with the moment SEC accepted its filing. A label enters at the first market price a trader could act on after that moment and exits at the first close a period later. The insider's trade date, often days earlier, is only a feature.
-- **No look-ahead anywhere.** Positions are valued at the last close before the acceptance day; a ticker's past-return feature averages only labels already realised at acceptance, the same rule in training and inference; the train/test split is chronological and purged.
+- **No look-ahead anywhere.** Positions are valued at the last close before the acceptance day; a ticker's past-return feature averages only labels already realised at acceptance, the same rule in training and inference; the holdout and the walk-forward validation folds are split by time and purged.
 - **One row per trading opportunity.** Everything disclosed for a ticker before its next market price is one row, with the cluster of insiders who sold in the preceding 30 days, so several insiders selling together is visible to the model, and no label is counted twice.
 - **Prices that stay honest.** Returns use split- and dividend-adjusted prices; values use the price as it traded that day; an incremental refresh detects when Yahoo has re-based past prices and fetches the history again.
 - **Clean boundaries, tested.** Each microservice owns one stage; every external system sits behind a typed port in one shared package; unit tests run on real Form 4 submissions and typed fakes, never mocks.
@@ -72,7 +72,7 @@ The AWS deployment, what is built and what is planned, is described in [docs/aws
 | **sec-feature-pipeline/kafka-to-store** | Consumes transactions, casts and validates them, and upserts them into `BT4` / `BI4`. |
 | **prices-feature-pipeline/yahoo_connect** | Refreshes daily bars for the transactions' tickers into `P`, never mixing price bases and never storing a provisional close. |
 | **prices-feature-pipeline/target** | Collapses transactions into one row per ticker and next market print, adds insider clusters, company context and values, computes labels, and writes `RT4` / `BIR4`. |
-| **training** | Purged chronological split, a scikit-learn pipeline (preprocessing + gradient-boosted regressor), baselines, a short-side simulation; saves the pipeline with its metadata. |
+| **training** | Purged walk-forward grid search with a time holdout ([docs/training.md](docs/training.md)), a scikit-learn pipeline (preprocessing + gradient-boosted regressor), baselines, a short-side simulation; saves the pipeline with its metadata. |
 | **inference** | Loads the saved pipeline, scores the newest `BIR4` rows and places short orders through Alpaca. |
 | **packages/secform4strategy-clients** | The ports, their adapters (EDGAR, Kafka, Iceberg, yfinance, Alpaca, model store) and typed fakes for tests. See its [README](packages/secform4strategy-clients/README.md). |
 

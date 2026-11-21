@@ -63,7 +63,8 @@ class ModelMetadata:
     """The facts saved with a trained model to reproduce, audit and score with it.
 
     ``features`` is the column order the model's input arrays follow; ``metrics`` holds the
-    model and its baselines by name.
+    model and its baselines by name, scored on the holdout. The defaulted fields record the
+    walk-forward validation, per fold, and the threshold the shorts were scored at.
     """
 
     trained_at: datetime
@@ -72,11 +73,14 @@ class ModelMetadata:
     feature_group_version: int
     target: str
     features: tuple[str, ...]
-    model_params: Mapping[str, float]
+    model_params: Mapping[str, bool | int | float | str]
     train_rows: int
     test_rows: int
     test_start: datetime
     metrics: Mapping[str, Scores]
+    prediction_threshold: float | None = None
+    validation_mae: tuple[float, ...] = ()
+    validation_zero_mae: tuple[float, ...] = ()
 
 
 def is_many(value: object) -> TypeGuard[Iterable[object]]:

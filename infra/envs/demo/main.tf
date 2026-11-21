@@ -115,7 +115,9 @@ locals {
     MODEL_STORE__REGION  = local.region
     MODEL_STORE__BUCKET  = module.storage.data_bucket
   }
-  training_run = { SYSTEM_TRAINING = "true", FILTER_KEY = "acquired_disposed", ACQUIRED_DISPOSED = "D" }
+  # Training evaluates at the threshold inference trades at, so both read this one value
+  prediction_threshold = "-0.05"
+  training_run         = { SYSTEM_TRAINING = "true", FILTER_KEY = "acquired_disposed", ACQUIRED_DISPOSED = "D" }
 }
 
 module "tasks" {
@@ -156,19 +158,21 @@ module "tasks" {
       memory        = 16384
       environment   = merge(local.lakehouse, local.training_run, { DELTA_PERIOD = "30" })
     }
+    # Grid search fits 128 models in parallel (n_jobs=-1) on ~400k rows from the 5-year backfill
     training = {
       task_role_arn = local.roles.training
-      cpu           = 1024
-      memory        = 4096
+      cpu           = 4096
+      memory        = 16384
       environment = merge(local.lakehouse, local.models, {
-        TRAIN_TEST_RATIO = "0.2", RANDOM_STATE = "42", TARGET_FEATURE = "pct_change"
+        HOLDOUT_RATIO = "0.2", N_FOLDS = "4", PREDICTION_THRESHOLD = local.prediction_threshold
+        RANDOM_STATE  = "42", TARGET_FEATURE = "pct_change"
       })
     }
     inference = {
       task_role_arn = local.roles.inference
       memory        = 2048
       environment = merge(local.lakehouse, local.models, {
-        ALPACA_BASE_URL = "https://paper-api.alpaca.markets", QTY = "1", PREDICTION_THRESHOLD = "-0.05"
+        ALPACA_BASE_URL = "https://paper-api.alpaca.markets", QTY = "1", PREDICTION_THRESHOLD = local.prediction_threshold
       })
       secrets = { ALPACA_API_KEY = "alpaca-api-key", ALPACA_API_SECRET = "alpaca-api-secret" }
     }
@@ -267,7 +271,7 @@ module "live" {
       memory    = 2048
       timeout   = 180
       environment = merge(local.lakehouse, local.models, {
-        ALPACA_BASE_URL = "https://paper-api.alpaca.markets", QTY = "1", PREDICTION_THRESHOLD = "-0.05"
+        ALPACA_BASE_URL = "https://paper-api.alpaca.markets", QTY = "1", PREDICTION_THRESHOLD = local.prediction_threshold
         SSM_PARAMETERS  = jsonencode({ alpaca_api_key = "/secform4strategy/alpaca-api-key", alpaca_api_secret = "/secform4strategy/alpaca-api-secret" })
       })
     }
