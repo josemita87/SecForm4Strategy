@@ -1,9 +1,9 @@
 """Model evaluation against baselines, and the plot of the shorts it would take."""
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -45,23 +45,58 @@ def plot_shorts(y_true: pd.Series[float], y_pred: pd.Series[float], scores: Scor
     logger.info(f'Plot saved as {plot_path}')
 
 
-def evaluate(y_true: pd.Series[float], predictions: Mapping[str, pd.Series[float]]) -> dict[str, Scores]:
-    """Score the model and its baselines on the same rows: error and the return of shorting their negatives.
+class Shorts(NamedTuple):
+    """The mean return captured per short (positive is a profit), and how many rows were shorted."""
 
-    Each predictor shorts every row it expects to fall.
+    short_return: float
+    n_shorts: int
+
+
+def shorts(y_true: pd.Series[float], pred: pd.Series[float], threshold: float) -> Shorts:
+    """Short every row predicted to return less than ``threshold``.
+
+    Args:
+        y_true: Actual returns.
+        pred: Predicted returns, aligned with ``y_true``.
+        threshold: Rows predicted below it are shorted.
+
+    Returns:
+        The return captured per short (0.0 when none) and the number of shorts.
+    """
+    shorted = pred < threshold
+    return Shorts(float(-y_true[shorted].mean()) if shorted.any() else 0.0, int(shorted.sum()))
+
+
+def evaluate(
+    y_true: pd.Series[float], predictions: Mapping[str, pd.Series[float]], threshold: float
+) -> dict[str, Scores]:
+    """Score the model and its baselines on the same rows: error and the return of the shorts they would take.
 
     Args:
         y_true: Actual returns.
         predictions: Predictor name -> predicted returns, aligned with ``y_true``.
+        threshold: Each predictor shorts the rows it predicts below this return.
 
     Returns:
         Predictor name -> its scores.
     """
     return {
-        name: Scores(
-            mae=float(mean_absolute_error(y_true, pred)),
-            short_return=float(-y_true[shorted].mean()) if (shorted := pred < 0).any() else 0.0,
-            n_shorts=int(shorted.sum()),
-        )
+        name: Scores(float(mean_absolute_error(y_true, pred)), *shorts(y_true, pred, threshold))
         for name, pred in predictions.items()
     }
+
+
+def threshold_sweep(
+    y_true: pd.Series[float], pred: pd.Series[float], thresholds: Iterable[float]
+) -> dict[float, Shorts]:
+    """Return the shorts taken at each threshold, to show how the captured return trades off against their number.
+
+    Args:
+        y_true: Actual returns.
+        pred: Predicted returns, aligned with ``y_true``.
+        thresholds: Thresholds to short below.
+
+    Returns:
+        Threshold -> the shorts taken below it.
+    """
+    return {threshold: shorts(y_true, pred, threshold) for threshold in thresholds}

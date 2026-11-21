@@ -20,7 +20,8 @@ def build_pipeline(X: pd.DataFrame, params: dict[str, Any]) -> Pipeline:
     Preprocessing lives inside the pipeline so it is fitted on the training split
     only and persisted with the model. Columns are addressed by position, so the
     fitted pipeline scores plain arrays whose columns follow ``X``'s order, with no
-    DataFrame needed at inference.
+    DataFrame needed at inference. With ``early_stopping``, each fit holds out a random
+    ``validation_fraction`` of its rows (drawn with ``random_state``) to decide when to stop.
 
     Args:
         X: Training features; their dtypes decide which columns are scaled

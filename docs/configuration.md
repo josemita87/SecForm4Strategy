@@ -50,8 +50,10 @@ Current formats:
 **training**
 
 - `columns_to_drop`: removed before the model sees the frame.
-- `identification_features`: kept for traceability, excluded from the model inputs. `accepted_at` (acceptance) and `label_known_at` (exit close), both UTC timestamps, drive the chronological, purged train/test split: the test set is the latest `TRAIN_TEST_RATIO` of filings, and training keeps only labels known before it starts.
-- `model_params`: keyword arguments for `HistGradientBoostingRegressor` (`random_state` comes from `RANDOM_STATE`).
+- `identification_features`: kept for traceability, excluded from the model inputs. `accepted_at` (acceptance) and `label_known_at` (exit close), both UTC timestamps, drive the holdout split and the walk-forward folds: the holdout is the latest `HOLDOUT_RATIO` of filings, and each training set keeps only labels known before its validation or holdout period starts ([training.md](training.md)).
+- `model_params`: fixed keyword arguments for `HistGradientBoostingRegressor` (`random_state` comes from `RANDOM_STATE`).
+- `param_grid`: the values the grid search tries on top of `model_params`.
+- `report_thresholds`: the prediction thresholds at which training logs the holdout short return.
 
 Inference has only its catalog: the model's input columns and their order come from the trained model's metadata (`features`).
 
@@ -72,4 +74,4 @@ Paths default to these files and can be overridden with `MARKET_CAPS_PATH` and `
 
 ## Model artifacts
 
-Training saves the fitted pipeline as `model.joblib` and its metadata beside it as `model.meta.json`: training time, git SHA (`GIT_SHA`, else `git rev-parse HEAD`), scikit-learn version, feature-group version, target, ordered `features`, model parameters, row counts, test start and the `Scores` of the model and its baselines, as the `ModelMetadata` record (`secform4strategy_clients.ports`). The pipeline addresses columns by position, so inputs must follow `features`. Inference refuses a model saved under another scikit-learn version.
+Training saves the fitted pipeline as `model.joblib` and its metadata beside it as `model.meta.json`: training time, git SHA (`GIT_SHA`, else `git rev-parse HEAD`), scikit-learn version, feature-group version, target, ordered `features`, model parameters, row counts, holdout start, the `Scores` of the model and its baselines on the holdout, the per-fold validation MAE of the model and the zero baseline, and the prediction threshold, as the `ModelMetadata` record (`secform4strategy_clients.ports`). The pipeline addresses columns by position, so inputs must follow `features`. Inference refuses a model saved under another scikit-learn version.
