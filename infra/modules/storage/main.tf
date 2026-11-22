@@ -61,6 +61,15 @@ resource "aws_athena_workgroup" "lakehouse" {
   }
 }
 
+resource "aws_athena_named_query" "demo" {
+  for_each    = fileset("${path.module}/queries", "*.sql")
+  name        = trimsuffix(each.value, ".sql")
+  description = trimprefix(split("\n", file("${path.module}/queries/${each.value}"))[0], "-- ")
+  workgroup   = aws_athena_workgroup.lakehouse.name
+  database    = aws_glue_catalog_database.lakehouse.name
+  query       = file("${path.module}/queries/${each.value}")
+}
+
 resource "aws_ecr_repository" "service" {
   for_each             = var.services
   name                 = "${var.name}/${each.key}"
