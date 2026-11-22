@@ -321,7 +321,7 @@ Four workflows run in `.github/workflows/`:
 
 A merge to master therefore runs `quality`, then `images`, and a `terraform` run with two jobs:
 
-1. `plan` runs `terraform plan -out=tfplan` on the merged commit with the read-only plan role. The plan appears on the run's summary page, and the saved plan is kept as an artifact for one day, because it holds sensitive values in plain text.
+1. `plan` runs `terraform plan -out=tfplan` on the merged commit with the read-only plan role. The plan appears on the run's summary page. The saved plan holds sensitive values in plain text, and the artifacts of a public repository can be downloaded by any signed-in GitHub user, so the job encrypts it (AES-256 with PBKDF2, key in the repository secret `TFPLAN_KEY`) and keeps the encrypted artifact for one day. The apply job decrypts it with the same secret.
 2. `apply` waits for approval in the environment `aws`, then runs `terraform apply tfplan`. It applies exactly the plan the reviewer read. If the state changed after the plan, Terraform refuses the saved plan and the run fails; run the workflow again for a fresh plan. A plan without changes skips `apply`.
 
 Master runs queue one after another, so each plan is made after the previous apply. Terraform reads the newest image of each repository when it plans, so a run that plans before `images` finishes keeps the previous images; run the workflow by hand after `images` to deploy them.
