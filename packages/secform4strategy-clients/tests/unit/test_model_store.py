@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from secform4strategy_clients.model_store import LocalModelStore
-from secform4strategy_clients.records import ModelMetadata, Scores
+from secform4strategy_clients.records import CutoffShorts, ModelMetadata, Scores
 
 METADATA_RECORD = ModelMetadata(
     trained_at=datetime(2026, 11, 13, 6, 0, tzinfo=UTC),
@@ -22,8 +22,16 @@ METADATA_RECORD = ModelMetadata(
     train_rows=100,
     test_rows=20,
     test_start=datetime(2026, 10, 1, tzinfo=UTC),
-    metrics={'model': Scores(mae=0.1, short_return=0.02, n_shorts=5)},
+    metrics={'model': Scores(short_return=0.02, n_shorts=5, average_precision=0.3)},
+    probability_cutoff=0.55,
+    cutoff_sweep=(CutoffShorts(0.55, 5, 0.02, None),),
 )
+#: A regressor's metadata, saved before the classifier fields existed
+REGRESSOR_JSON = b"""{"trained_at": "2026-11-20T21:06:17Z", "git_sha": "abc", "sklearn_version": "1.9.1",
+ "feature_group_version": 1, "target": "pct_change", "features": ["a"], "model_params": {"loss": "absolute_error"},
+ "train_rows": 100, "test_rows": 20, "test_start": "2026-10-01T00:00:00Z",
+ "metrics": {"model": {"mae": 0.12, "short_return": 0.02, "n_shorts": 5}}, "prediction_threshold": -0.05,
+ "validation_mae": [0.11], "validation_zero_mae": [0.1], "report_thresholds": [0.0, -0.05]}"""
 
 
 @pytest.fixture
@@ -59,3 +67,15 @@ class TestPromote:
         with pytest.raises(FileNotFoundError):
             store.promote('20991231T000000Z')
         assert store.latest_version() is None
+
+
+class TestOlderMetadata:
+    """A model saved before the classifier fields still loads, with those fields unset."""
+
+    def test_a_regressors_metadata_loads_without_a_cutoff(self, store: LocalModelStore) -> None:
+        folder = store.path.parent / '20261120T210617Z'
+        folder.mkdir(parents=True)
+        (folder / 'model.meta.json').write_bytes(REGRESSOR_JSON)
+        metadata = store.metadata('20261120T210617Z')
+        assert (metadata.probability_cutoff, metadata.train_rows) == (None, 100)
+        assert metadata.metrics['model'] == Scores(short_return=0.02, n_shorts=5)

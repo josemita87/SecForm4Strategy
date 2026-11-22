@@ -1,8 +1,9 @@
 """Lakehouse reads analysed with pandas and scikit-learn, building model.json and explore.json.
 
-model.json is the current model's training facts and its holdout replayed: thresholds, shorts, returns, importance.
+model.json is the current model's training facts and its holdout replayed: cutoffs, shorts, returns, importance.
 The holdout is rebuilt from RT4 as training cut it: rows accepted from ``test_start`` on whose label was known
-before the model was trained. It is scored with the saved pipeline on arrays in its ``features`` order.
+before the model was trained. The saved pipeline gives each row's probability of a short winner, on arrays in its
+``features`` order, and the rows at or above the model's probability cutoff are shorted.
 
 explore.json is the largest insider sales of the last days, and the tickers several insiders sold together.
 Sales are non-derivative transactions disposed of (``acquired_disposed == 'D'``), from BT4 (the batch load) and
@@ -21,13 +22,13 @@ from constants import DISPOSED, ROLES, Col, FeatureGroup, Section, file_name
 from records import (
     Cluster,
     CumulativePoint,
+    CutoffRow,
     Explore,
     Fold,
     Importance,
     Metric,
     ModelReport,
     Sale,
-    ThresholdRow,
 )
 from sklearn.inspection import permutation_importance
 
@@ -86,44 +87,45 @@ def holdout(rows: pd.DataFrame, metadata: ModelMetadata) -> pd.DataFrame:
     return held.dropna(subset=[metadata.target]).sort_values(Col.ACCEPTED_AT, kind='stable')
 
 
-def scored(rows: pd.DataFrame, predicted: npt.NDArray[np.float64], target: str) -> pd.DataFrame:
-    """Return the holdout's ticker, acceptance, prediction and actual return.
+def scored(rows: pd.DataFrame, probability: npt.NDArray[np.float64], target: str) -> pd.DataFrame:
+    """Return the holdout's ticker, acceptance, probability of a short winner and actual return.
 
     Args:
         rows: The holdout rows.
-        predicted: The model's prediction per row.
-        target: The label column.
+        probability: The model's probability per row.
+        target: The return column.
 
     Returns:
-        ``ticker``, ``accepted_at``, ``predicted`` and ``actual`` per row.
+        ``ticker``, ``accepted_at``, ``probability`` and ``actual`` per row.
     """
     return pd.DataFrame(
         {
             Col.TICKER: rows[Col.TICKER].to_numpy(),
             Col.ACCEPTED_AT: pd.to_datetime(rows[Col.ACCEPTED_AT], utc=True).to_numpy(),
-            Col.PREDICTED: predicted,
+            Col.PROBABILITY: probability,
             Col.ACTUAL: rows[target].to_numpy(dtype=float),
         }
     )
 
 
-def threshold_table(rows: pd.DataFrame, thresholds: Iterable[float]) -> tuple[ThresholdRow, ...]:
-    """Return the shorts each threshold takes and their mean return (a short earns minus the actual return).
+def cutoff_table(rows: pd.DataFrame, cutoffs: Iterable[float]) -> tuple[CutoffRow, ...]:
+    """Return the shorts each cutoff takes and their mean and median return (a short earns minus the actual return).
 
     Args:
         rows: Scored holdout rows.
-        thresholds: Thresholds to short below.
+        cutoffs: Probability cutoffs to short at or above.
 
     Returns:
-        One row per threshold.
+        One row per cutoff.
     """
     return tuple(
-        ThresholdRow(
-            threshold=threshold,
-            n_shorts=len(shorted := rows.loc[rows[Col.PREDICTED] < threshold, Col.ACTUAL]),
+        CutoffRow(
+            cutoff=cutoff,
+            n_shorts=len(shorted := rows.loc[rows[Col.PROBABILITY] >= cutoff, Col.ACTUAL]),
             mean_return=float(-shorted.mean()) if len(shorted) else None,
+            median_return=float(-shorted.median()) if len(shorted) else None,
         )
-        for threshold in thresholds
+        for cutoff in cutoffs
     )
 
 
@@ -168,14 +170,14 @@ def cumulative(shorts: pd.DataFrame, closes: pd.Series[float]) -> tuple[Cumulati
 
 
 def importance(
-    model: Any, X: npt.NDArray[Any], y: npt.NDArray[np.float64], features: Sequence[str], spec: ImportanceSpec
+    model: Any, X: npt.NDArray[Any], y: npt.NDArray[np.bool_], features: Sequence[str], spec: ImportanceSpec
 ) -> tuple[Importance, ...]:
-    """Return the features whose shuffling raises the holdout MAE most, on a seeded sample of rows.
+    """Return the features whose shuffling lowers the holdout average precision most, on a seeded sample of rows.
 
     Args:
-        model: The fitted pipeline, scoring arrays in ``features`` order.
+        model: The fitted classifier pipeline, scoring arrays in ``features`` order.
         X: Holdout features.
-        y: Holdout labels.
+        y: Holdout labels, True for a short winner.
         features: Column names of ``X``.
         spec: Repeats, seed, sample size and how many features to keep.
 
@@ -189,7 +191,7 @@ def importance(
         model,
         X[sample],
         y[sample],
-        scoring='neg_mean_absolute_error',
+        scoring='average_precision',
         n_repeats=spec.n_repeats,
         random_state=spec.random_state,
     )
@@ -207,9 +209,9 @@ def folds(metadata: ModelMetadata) -> tuple[Fold, ...]:
         One fold per validation block, in time order.
     """
     return tuple(
-        Fold(fold=fold, model_mae=model_mae, zero_mae=zero_mae)
-        for fold, (model_mae, zero_mae) in enumerate(
-            zip(metadata.validation_mae, metadata.validation_zero_mae, strict=True), start=1
+        Fold(fold=fold, model_ap=model_ap, base_rate=base_rate)
+        for fold, (model_ap, base_rate) in enumerate(
+            zip(metadata.validation_ap, metadata.validation_base_rate, strict=True), start=1
         )
     )
 
@@ -219,7 +221,7 @@ def model_report(
     version: str,
     metadata: ModelMetadata,
     rows: pd.DataFrame,
-    shorts_below: float,
+    cutoff: float,
     closes: pd.Series[float],
     ranked: tuple[Importance, ...],
 ) -> ModelReport:
@@ -230,8 +232,8 @@ def model_report(
         version: The model's version folder.
         metadata: The model's metadata.
         rows: Scored holdout rows.
-        shorts_below: The threshold the model trades; the cumulative series shorts the rows predicted below it, and the
-            threshold table falls back to it alone when the metadata names no report thresholds.
+        cutoff: The probability cutoff the model trades at; the cumulative series shorts the rows at or above it,
+            and the cutoff table reports the metadata's sweep cutoffs, or this one alone without a sweep.
         closes: Benchmark closes by date.
         ranked: Permutation importance, most important first.
 
@@ -247,23 +249,26 @@ def model_report(
         train_rows=metadata.train_rows,
         test_rows=metadata.test_rows,
         test_start=metadata.test_start,
-        prediction_threshold=shorts_below,
+        probability_cutoff=cutoff,
+        label_return=metadata.label_return,
+        base_rate=metadata.base_rate,
         folds=folds(metadata),
         metrics={
-            name: Metric(mae=scores.mae, short_return=scores.short_return, n_shorts=scores.n_shorts)
+            name: Metric(
+                average_precision=scores.average_precision,
+                roc_auc=scores.roc_auc,
+                precision=scores.precision,
+                short_return=scores.short_return,
+                median_return=scores.median_return,
+                trimmed_return=scores.trimmed_return,
+                n_shorts=scores.n_shorts,
+            )
             for name, scores in metadata.metrics.items()
         },
-        thresholds=threshold_table(rows, metadata.report_thresholds or (shorts_below,)),
-        cumulative=cumulative(rows[rows[Col.PREDICTED] < shorts_below], closes),
+        cutoffs=cutoff_table(rows, tuple(row.cutoff for row in metadata.cutoff_sweep) or (cutoff,)),
+        cumulative=cumulative(rows[rows[Col.PROBABILITY] >= cutoff], closes),
         importance=ranked,
     )
-
-
-class ModelSpec(NamedTuple):
-    """How model.json is built: the threshold of models saved without one, and permutation importance."""
-
-    fallback_threshold: float
-    importance: ImportanceSpec
 
 
 def benchmark_closes(market: MarketData, start: date) -> pd.Series[float]:
@@ -282,7 +287,7 @@ def benchmark_closes(market: MarketData, start: date) -> pd.Series[float]:
 
 def build_model(
     now: datetime,
-    spec: ModelSpec,
+    spec: ImportanceSpec,
     site: Site,
     models: ModelFiles,
     store: ModelStore,
@@ -293,7 +298,7 @@ def build_model(
 
     Args:
         now: When the report is built.
-        spec: How to build it.
+        spec: How permutation importance is computed.
         site: The site, whose model.json names the version published.
         models: The model store's pointer, read cheaply first.
         store: The model store the model is loaded from.
@@ -301,7 +306,7 @@ def build_model(
         market: Benchmark prices.
 
     Returns:
-        The report, or None when no model was saved or model.json is current.
+        The report, or None when no model was saved, model.json is current, or the model predates the classifier.
     """
     if (version := models.latest_version()) is None or version == published_version(
         site.read(file_name(Section.MODEL))
@@ -309,20 +314,23 @@ def build_model(
         logger.info(f'model.json is current (model {version})')
         return None
     model, metadata = store.load()
+    if (cutoff := metadata.probability_cutoff) is None or (label_return := metadata.label_return) is None:
+        logger.warning(f'Model {version} has no probability cutoff or label: it predates the classifier')
+        return None
     columns = dict.fromkeys([*metadata.features, metadata.target, Col.TICKER, Col.ACCEPTED_AT, Col.LABEL_KNOWN_AT])
     rows = holdout(recent.read_since(FeatureGroup.RT4, metadata.test_start, columns), metadata)
     X = rows[list(metadata.features)].to_numpy()
-    y = rows[metadata.target].to_numpy(dtype=float)
-    holdout_rows = scored(rows, model.predict(X) if len(X) else np.empty(0), metadata.target)
+    y = rows[metadata.target].to_numpy(dtype=float) < label_return
+    holdout_rows = scored(rows, model.predict_proba(X)[:, 1] if len(X) else np.empty(0), metadata.target)
     logger.info(f'Model {version}: {len(holdout_rows)} complete holdout rows from {metadata.test_start}')
     return model_report(
         now,
         version,
         metadata,
         holdout_rows,
-        spec.fallback_threshold if metadata.prediction_threshold is None else metadata.prediction_threshold,
+        cutoff,
         benchmark_closes(market, metadata.test_start.date() - timedelta(days=10)),
-        importance(model, X, y, metadata.features, spec.importance),
+        importance(model, X, y, metadata.features, spec),
     )
 
 

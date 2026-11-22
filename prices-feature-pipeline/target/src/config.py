@@ -30,6 +30,10 @@ class Config(BaseSettings):
     cluster_window_days: int = Field(
         default_factory=lambda: yaml.safe_load(SPEC_PATH.read_text())['cluster_window_days']
     )
+    # Largest plausible label; a higher return is left unlabelled (spec.yaml)
+    max_label_return: float = Field(
+        default_factory=lambda: yaml.safe_load(SPEC_PATH.read_text())['max_label_return'], gt=0
+    )
 
     # System settings
     system_training: bool = False

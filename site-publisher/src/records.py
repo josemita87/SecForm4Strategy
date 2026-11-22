@@ -63,16 +63,16 @@ class OrderFill(Record):
 
 
 class Prediction(Record):
-    """One row of inference's ``predictions`` output."""
+    """One row of inference's ``predictions`` output: its probability of a short winner, None in older runs."""
 
     key: str
     ticker: str
     accepted_at: UtcTime
-    prediction: float | None = None
+    probability: float | None = None
 
 
 class LiveFiling(Prediction):
-    """One scored row: its prediction, whether it was shorted, and its order."""
+    """One scored row: its probability, whether it was shorted, and its order."""
 
     shorted: bool
     order: OrderFill | None
@@ -88,13 +88,15 @@ class Run(Record):
     tickers: tuple[str, ...]
     steps: tuple[Step, ...]
     error: str | None
+    # The cutoff inference shorted at; None for runs that scored nothing, or predate the classifier
+    probability_cutoff: float | None
     filings: tuple[LiveFiling, ...]
 
 
 class Live(DataFile):
     """live.json."""
 
-    prediction_threshold: float
+    probability_cutoff: float | None
     poller_enabled: bool
     runs: tuple[Run, ...]
 
@@ -218,27 +220,32 @@ class Portfolio(DataFile):
 
 # model.json
 class Fold(Record):
-    """One walk-forward fold: the chosen model's error against predicting no move."""
+    """One walk-forward fold: the chosen model's average precision against the fold's share of short winners."""
 
     fold: int
-    model_mae: float
-    zero_mae: float
+    model_ap: float
+    base_rate: float
 
 
 class Metric(Record):
-    """A predictor's holdout error and the mean return of the shorts it takes."""
+    """A predictor's holdout ranking scores and the captured returns of the shorts it takes at the cutoff."""
 
-    mae: float
+    average_precision: float | None
+    roc_auc: float | None
+    precision: float | None
     short_return: float
+    median_return: float | None
+    trimmed_return: float | None
     n_shorts: int
 
 
-class ThresholdRow(Record):
-    """The holdout shorts at one threshold; ``mean_return`` is null when none is taken."""
+class CutoffRow(Record):
+    """The holdout shorts at one probability cutoff; the returns are null when none is taken."""
 
-    threshold: float
+    cutoff: float
     n_shorts: int
     mean_return: float | None
+    median_return: float | None
 
 
 class CumulativePoint(Record):
@@ -250,7 +257,7 @@ class CumulativePoint(Record):
 
 
 class Importance(Record):
-    """A feature's permutation importance: the rise in holdout MAE when it is shuffled."""
+    """A feature's permutation importance: the fall in holdout average precision when it is shuffled."""
 
     feature: str
     importance: float
@@ -262,14 +269,16 @@ class ModelReport(DataFile):
     version: str
     trained_at: UtcTime
     git_sha: str
-    params: dict[str, bool | int | float | str]
+    params: dict[str, bool | int | float | str | None]
     train_rows: int
     test_rows: int
     test_start: UtcTime
-    prediction_threshold: float
+    probability_cutoff: float
+    label_return: float | None
+    base_rate: float | None
     folds: tuple[Fold, ...]
     metrics: dict[str, Metric]
-    thresholds: tuple[ThresholdRow, ...]
+    cutoffs: tuple[CutoffRow, ...]
     cumulative: tuple[CumulativePoint, ...]
     importance: tuple[Importance, ...]
 

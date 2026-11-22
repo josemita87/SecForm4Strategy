@@ -47,9 +47,10 @@ OUTPUT = {
     'tickers': ['DBX', 'TGT'],
     'scored': 2,
     'shorts': [KEY],
+    'probability_cutoff': 0.55,
     'predictions': [
-        {'key': KEY, 'ticker': 'DBX', 'accepted_at': '2026-11-23T14:30:00Z', 'prediction': -0.071},
-        {'key': 'TGT@2026-11-23T14:31Z', 'ticker': 'TGT', 'accepted_at': '2026-11-23T14:31:00Z', 'prediction': 0.01},
+        {'key': KEY, 'ticker': 'DBX', 'accepted_at': '2026-11-23T14:30:00Z', 'probability': 0.71},
+        {'key': 'TGT@2026-11-23T14:31Z', 'ticker': 'TGT', 'accepted_at': '2026-11-23T14:31:00Z', 'probability': 0.2},
     ],
 }
 INPUT = json.dumps([{'body': json.dumps({'tickers': ['DBX']})}, {'body': json.dumps({'tickers': ['TGT', 'DBX']})}])
@@ -146,7 +147,7 @@ class TestFilings:
 
     def test_shorted_filing_carries_its_order(self) -> None:
         dbx, tgt = filings(OUTPUT, {KEY: ORDER})
-        assert (dbx.shorted, dbx.prediction) == (True, -0.071)
+        assert (dbx.shorted, dbx.probability) == (True, 0.71)
         assert dbx.order is not None
         assert (dbx.order.id, dbx.order.status, dbx.order.filled_avg_price) == ('o-1', 'filled', 27.1)
         assert (tgt.shorted, tgt.order) == (False, None)
@@ -173,9 +174,9 @@ class TestLiveReport:
                 history(('target', 0, None)),
             ),
         ]
-        report = json.loads(live_report(T0, -0.05, True, sources, [ORDER]).model_dump_json())
+        report = json.loads(live_report(T0, True, sources, [ORDER]).model_dump_json())
         assert report['generated_at'] == '2026-11-23T15:00:00Z'
-        assert (report['prediction_threshold'], report['poller_enabled']) == (-0.05, True)
+        assert (report['probability_cutoff'], report['poller_enabled']) == (0.55, True)
         running, succeeded, failed = report['runs']
         assert (running['status'], running['stopped_at'], running['tickers'], running['filings']) == (
             'RUNNING',
@@ -187,7 +188,7 @@ class TestLiveReport:
             'key': KEY,
             'ticker': 'DBX',
             'accepted_at': '2026-11-23T14:30:00Z',
-            'prediction': -0.071,
+            'probability': 0.71,
             'shorted': True,
             'order': {'id': 'o-1', 'status': 'filled', 'filled_avg_price': 27.1},
         }

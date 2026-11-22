@@ -176,22 +176,23 @@ def run(source: RunSource, orders: Mapping[str, BrokerOrder]) -> Run:
         tickers=tickers(execution.input, output),
         steps=steps(source.events, execution.status),
         error=error_message(execution.error, execution.cause),
+        probability_cutoff=output.get('probability_cutoff'),
         filings=filings(output, orders),
     )
 
 
 def live_report(
     generated_at: datetime,
-    prediction_threshold: float,
     poller_enabled: bool,
     sources: Sequence[RunSource],
     orders: Iterable[BrokerOrder],
 ) -> Live:
     """Return live.json from the runs, newest first, and the account's orders.
 
+    The report's probability cutoff is the newest run's that reports one: the cutoff inference shorts at now.
+
     Args:
         generated_at: When the report is built.
-        prediction_threshold: The threshold inference shorts below.
         poller_enabled: Whether the live poller's schedule is enabled.
         sources: The runs, newest first.
         orders: Alpaca orders; a filing's order is the one whose client order id is its key.
@@ -200,20 +201,20 @@ def live_report(
         The report.
     """
     by_key = {order.client_order_id: order for order in orders}
+    runs = tuple(run(source, by_key) for source in sources)
     return Live(
         generated_at=generated_at,
-        prediction_threshold=prediction_threshold,
+        probability_cutoff=next((r.probability_cutoff for r in runs if r.probability_cutoff is not None), None),
         poller_enabled=poller_enabled,
-        runs=tuple(run(source, by_key) for source in sources),
+        runs=runs,
     )
 
 
 class LiveSpec(NamedTuple):
-    """Where live.json reads from: the state machine and the poller schedule; the threshold, and how many runs."""
+    """Where live.json reads from: the state machine and the poller schedule, and how many runs."""
 
     state_machine_arn: str
     poller_schedule: str
-    prediction_threshold: float
     runs: int
 
 
@@ -251,7 +252,7 @@ def build_live(
     except Exception:
         logger.exception('Alpaca orders unavailable; live.json lists the filings without their orders')
         placed = ()
-    return live_report(now, spec.prediction_threshold, schedules.enabled(spec.poller_schedule), sources, placed)
+    return live_report(now, schedules.enabled(spec.poller_schedule), sources, placed)
 
 
 # health.json

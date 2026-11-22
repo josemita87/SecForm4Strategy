@@ -43,7 +43,7 @@ store = IcebergFeatureStore(
 
 
 def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
-    """Score the tickers' fresh rows, and short the predicted losers at once.
+    """Score the tickers' fresh rows, and short the likely short winners at once.
 
     A row is fresh when its latest filing was accepted within ``MAX_SIGNAL_AGE_MINUTES``: the event
     carries tickers, and their older rows must not trade late. Orders carry their row key as client
@@ -54,37 +54,39 @@ def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
         _context: The Lambda context, unused; Lambda passes it to every handler.
 
     Returns:
-        The tickers, how many rows were scored, the keys of the rows below the threshold, and each scored
-        row's key, ticker, acceptance time and predicted return (the site's live feed reads them).
+        The tickers, how many rows were scored, the keys of the rows at or above the probability cutoff, the
+        cutoff (None when nothing was scored), and each scored row's key, ticker, acceptance time and probability
+        of a short winner (the site's live feed reads them).
 
     Raises:
         RetryableError: Orders failed transiently; the state machine retries, and placed orders are not repeated.
     """
     if not (tickers := list(event['tickers'])):
         logger.info('No tickers with rows to score')
-        return {'tickers': tickers, 'scored': 0, 'shorts': [], 'predictions': []}
+        return {'tickers': tickers, 'scored': 0, 'shorts': [], 'probability_cutoff': None, 'predictions': []}
     rows = store.read(FeatureGroup.BIR4, where={Col.TICKER: tickers})
     since = datetime.now(UTC) - timedelta(minutes=config.max_signal_age_minutes)
     fresh = rows[pd.to_datetime(rows[Col.ACCEPTED_AT], utc=True) > since]
     if fresh.empty:
         logger.info(f'No rows of {tickers} accepted since {since:%Y-%m-%d %H:%M} UTC')
-        return {'tickers': tickers, 'scored': 0, 'shorts': [], 'predictions': []}
-    model, features = pipeline.load_model()
-    predictions = score(model, features, fresh)
-    shorts = predictions.loc[predictions[Col.PREDICTIONS] < config.prediction_threshold, Col.KEY].tolist()
+        return {'tickers': tickers, 'scored': 0, 'shorts': [], 'probability_cutoff': None, 'predictions': []}
+    loaded = pipeline.load_model(config.probability_cutoff)
+    predictions = score(loaded.pipeline, loaded.features, fresh)
+    shorts = predictions.loc[predictions[Col.PROBABILITY] >= loaded.probability_cutoff, Col.KEY].tolist()
     logger.info(f'{len(predictions)} of {len(fresh)} rows complete and scored for {tickers}; shorting {shorts}')
     if retry_later := pipeline.execute_trades(
         predictions,
-        config.prediction_threshold,
+        loaded.probability_cutoff,
         OrderSpec(config.qty, config.side, config.order_type, config.time_in_force),
     ):
         raise RetryableError(f'Orders left for a retry: {retry_later}')
-    scored = predictions[[Col.KEY, Col.TICKER, Col.ACCEPTED_AT, Col.PREDICTIONS]].assign(
+    scored = predictions[[Col.KEY, Col.TICKER, Col.ACCEPTED_AT, Col.PROBABILITY]].assign(
         **{Col.ACCEPTED_AT: pd.to_datetime(predictions[Col.ACCEPTED_AT], utc=True).dt.strftime('%Y-%m-%dT%H:%M:%SZ')}
     )
     return {
         'tickers': tickers,
         'scored': len(predictions),
         'shorts': shorts,
-        'predictions': scored.rename(columns={Col.PREDICTIONS: Col.PREDICTION}).to_dict('records'),
+        'probability_cutoff': loaded.probability_cutoff,
+        'predictions': scored.to_dict('records'),
     }

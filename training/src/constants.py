@@ -16,6 +16,11 @@ class FeatureGroup(str, Enum):
 class Col(StrEnum):
     """Columns this service reads or writes."""
 
+    TICKER = 'ticker'
     ACCEPTED_AT = 'accepted_at'
     LABEL_KNOWN_AT = 'label_known_at'
-    AVG_TARGET_EXPANDING = 'avg_target_expanding'
+    TICKER_HISTORY = 'ticker_history'
+
+
+#: Share of the captured returns cut from each end for the trimmed mean.
+TRIMMED_SHARE = 0.05

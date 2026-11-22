@@ -39,7 +39,10 @@ class Gate(NamedTuple):
 
 
 def gate(new: ModelMetadata, current: ModelMetadata | None, spec: PromotionSpec) -> Gate:
-    """Check a new model's data, contract and holdout; the current model's MAE is not compared, as the holdouts differ.
+    """Check a new model's data, contract and holdout; the current model's scores are not compared, as holdouts differ.
+
+    Only the current model's row count, feature-group version and features are read, so a current model saved
+    before the classifier fields (a regressor) still compares.
 
     Args:
         new: The new model's metadata.
@@ -82,14 +85,14 @@ def gate(new: ModelMetadata, current: ModelMetadata | None, spec: PromotionSpec)
         ),
         Check('test_rows', new.test_rows > 0, f'{new.test_rows} holdout rows'),
         Check(
-            'holdout_mae',
-            scores is not None and math.isfinite(scores.mae),
-            'no model scores' if scores is None else f'holdout MAE {scores.mae}',
+            'holdout_average_precision',
+            scores is not None and scores.average_precision is not None and math.isfinite(scores.average_precision),
+            'no model scores' if scores is None else f'holdout average precision {scores.average_precision}',
         ),
         Check(
             'n_shorts',
             scores is not None and scores.n_shorts > 0,
-            'no model scores' if scores is None else f'{scores.n_shorts} holdout shorts at the traded threshold',
+            'no model scores' if scores is None else f'{scores.n_shorts} holdout shorts at the probability cutoff',
         ),
     )
     return Gate(all(check.passed for check in checks), checks)

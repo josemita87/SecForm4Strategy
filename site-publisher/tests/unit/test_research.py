@@ -14,6 +14,7 @@ from research import (
     ImportanceSpec,
     clusters,
     cumulative,
+    cutoff_table,
     explore_report,
     folds,
     holdout,
@@ -24,10 +25,9 @@ from research import (
     role,
     sales,
     scored,
-    threshold_table,
 )
-from secform4strategy_clients.records import ModelMetadata, Scores
-from sklearn.linear_model import LinearRegression
+from secform4strategy_clients.records import CutoffShorts, ModelMetadata, Scores
+from sklearn.linear_model import LogisticRegression
 
 # model.json
 
@@ -47,17 +47,24 @@ def metadata(**overrides: object) -> ModelMetadata:
         'train_rows': 10,
         'test_rows': 4,
         'test_start': TEST_START,
-        'metrics': {'model': Scores(0.12, 0.1, 3), 'zero': Scores(0.11, 0.0, 0), 'train_mean': Scores(0.2, 0.0, 0)},
+        'metrics': {
+            'model': Scores(0.1, 3, average_precision=0.4, median_return=0.08),
+            'base_rate': Scores(0.0, 0, average_precision=0.3),
+            'ticker_history': Scores(-0.02, 5, average_precision=0.32),
+        },
+        'probability_cutoff': 0.55,
+        'label_return': -0.05,
+        'base_rate': 0.3,
     }
     return ModelMetadata(**(fields | overrides))  # type: ignore[arg-type]
 
 
-def rows_scored(accepted: list[str], predicted: list[float], actual: list[float]) -> pd.DataFrame:
+def rows_scored(accepted: list[str], probability: list[float], actual: list[float]) -> pd.DataFrame:
     return pd.DataFrame(
         {
             'ticker': [f'T{i}' for i in range(len(accepted))],
             'accepted_at': pd.to_datetime(accepted, utc=True),
-            'predicted': predicted,
+            'probability': probability,
             'actual': actual,
         }
     )
@@ -87,23 +94,23 @@ class TestHoldout:
         rows = pd.DataFrame(
             {'ticker': ['X'], 'accepted_at': pd.to_datetime(['2026-07-01'], utc=True), 'pct_change': [-0.1]}
         )
-        result = scored(rows, np.array([-0.07]), 'pct_change')
+        result = scored(rows, np.array([0.7]), 'pct_change')
         assert result.to_dict('records') == [
-            {'ticker': 'X', 'accepted_at': pd.Timestamp('2026-07-01', tz='UTC'), 'predicted': -0.07, 'actual': -0.1}
+            {'ticker': 'X', 'accepted_at': pd.Timestamp('2026-07-01', tz='UTC'), 'probability': 0.7, 'actual': -0.1}
         ]
 
 
-class TestThresholdTable:
-    """Each threshold reports its shorts and their mean return, minus the actual return."""
+class TestCutoffTable:
+    """Each cutoff reports its shorts and their mean and median return, minus the actual return."""
 
     def test_table(self) -> None:
-        rows = rows_scored(['2026-07-01'] * 4, [-0.12, -0.06, -0.01, 0.02], [-0.2, 0.1, -0.05, 0.3])
-        table = threshold_table(rows, (0.0, -0.05, -0.10, -0.5))
-        assert [(t.threshold, t.n_shorts, t.mean_return) for t in table] == [
-            (0.0, 3, pytest.approx((0.2 - 0.1 + 0.05) / 3)),
-            (-0.05, 2, pytest.approx((0.2 - 0.1) / 2)),
-            (-0.10, 1, pytest.approx(0.2)),
-            (-0.5, 0, None),
+        rows = rows_scored(['2026-07-01'] * 4, [0.9, 0.7, 0.5, 0.2], [-0.2, 0.1, -0.05, 0.3])
+        table = cutoff_table(rows, (0.5, 0.7, 0.9, 0.95))
+        assert [(t.cutoff, t.n_shorts, t.mean_return, t.median_return) for t in table] == [
+            (0.5, 3, pytest.approx((0.2 - 0.1 + 0.05) / 3), pytest.approx(0.05)),
+            (0.7, 2, pytest.approx((0.2 - 0.1) / 2), pytest.approx(0.05)),
+            (0.9, 1, pytest.approx(0.2), pytest.approx(0.2)),
+            (0.95, 0, None, None),
         ]
 
 
@@ -117,7 +124,7 @@ class TestCumulative:
 
     def test_strategy_against_spy(self) -> None:
         shorts = rows_scored(
-            ['2026-07-01T14:00Z', '2026-07-01T20:00Z', '2026-07-04T14:00Z'], [-0.1] * 3, [-0.1, -0.3, 0.1]
+            ['2026-07-01T14:00Z', '2026-07-01T20:00Z', '2026-07-04T14:00Z'], [0.9] * 3, [-0.1, -0.3, 0.1]
         )
         points = [(p.date, p.strategy, p.spy) for p in cumulative(shorts, self.CLOSES)]
         assert points == [
@@ -129,7 +136,7 @@ class TestCumulative:
         ]
 
     def test_without_spy_prices_the_benchmark_is_null(self) -> None:
-        shorts = rows_scored(['2026-07-01T14:00Z'], [-0.1], [-0.1])
+        shorts = rows_scored(['2026-07-01T14:00Z'], [0.9], [-0.1])
         points = cumulative(shorts, pd.Series(dtype=float))
         assert [(p.date, p.strategy, p.spy) for p in points] == [
             (date(2026, 6, 30), 0.0, None),
@@ -141,13 +148,13 @@ class TestCumulative:
 
 
 class TestImportance:
-    """Permutation importance ranks the features that drive the predictions first, and keeps the top ones."""
+    """Permutation importance ranks the features that drive the probabilities first, and keeps the top ones."""
 
     def test_the_driving_feature_ranks_first(self) -> None:
         rng = np.random.default_rng(0)
         X = rng.normal(size=(200, 3))
-        y = 2 * X[:, 1] + 0.01 * X[:, 0]
-        model = LinearRegression().fit(X, y)
+        y = 2 * X[:, 1] + 0.3 * X[:, 0] + rng.normal(scale=0.5, size=200) > 0
+        model = LogisticRegression().fit(X, y)
         ranked = importance(model, X, y, ('noise', 'driver', 'tiny'), ImportanceSpec(3, 42, 100, 2))
         assert [item.feature for item in ranked] == ['driver', 'noise']
         assert ranked[0].importance > ranked[1].importance
@@ -159,9 +166,9 @@ class TestImportance:
 class TestMetadataFields:
     """Folds and the published version come from the saved metadata and file."""
 
-    def test_folds_pair_the_model_and_zero_errors(self) -> None:
-        result = folds(metadata(validation_mae=(0.15, 0.12), validation_zero_mae=(0.11, 0.10)))
-        assert [(f.fold, f.model_mae, f.zero_mae) for f in result] == [(1, 0.15, 0.11), (2, 0.12, 0.10)]
+    def test_folds_pair_the_model_ap_and_the_base_rate(self) -> None:
+        result = folds(metadata(validation_ap=(0.35, 0.33), validation_base_rate=(0.28, 0.30)))
+        assert [(f.fold, f.model_ap, f.base_rate) for f in result] == [(1, 0.35, 0.28), (2, 0.33, 0.30)]
 
     def test_models_before_walk_forward_have_no_folds(self) -> None:
         assert folds(metadata()) == ()
@@ -175,14 +182,15 @@ class TestModelReport:
     """The report combines the metadata with the scored holdout."""
 
     def test_report_json(self) -> None:
-        rows = rows_scored(['2026-07-01T14:00Z', '2026-07-02T14:00Z'], [-0.08, 0.01], [-0.12, 0.02])
+        rows = rows_scored(['2026-07-01T14:00Z', '2026-07-02T14:00Z'], [0.7, 0.2], [-0.12, 0.02])
+        sweep = (CutoffShorts(0.5, 1, 0.12, 0.12), CutoffShorts(0.55, 1, 0.12, 0.12))
         report = json.loads(
             model_report(
                 TRAINED,
                 '20261120T210617Z',
-                metadata(prediction_threshold=-0.05, report_thresholds=(0.0, -0.05)),
+                metadata(cutoff_sweep=sweep),
                 rows,
-                -0.05,
+                0.55,
                 pd.Series([100.0, 101.0, 95.0], index=pd.to_datetime(['2026-06-30', '2026-07-01', '2026-08-31'])),
                 (),
             ).model_dump_json()
@@ -192,20 +200,24 @@ class TestModelReport:
             '19a068a',
             '2026-06-01T00:00:00Z',
         )
-        assert set(report['metrics']) == {'model', 'zero', 'train_mean'}
+        assert set(report['metrics']) == {'model', 'base_rate', 'ticker_history'}
+        assert (report['metrics']['model']['average_precision'], report['metrics']['model']['median_return']) == (
+            0.4,
+            0.08,
+        )
         assert report['cumulative'][0] == {'date': '2026-06-30', 'strategy': 0.0, 'spy': 0.0}
-        assert (report['folds'], report['prediction_threshold']) == ([], -0.05)
-        assert [row['threshold'] for row in report['thresholds']] == [0.0, -0.05]
+        assert (report['folds'], report['probability_cutoff'], report['base_rate']) == ([], 0.55, 0.3)
+        assert [row['cutoff'] for row in report['cutoffs']] == [0.5, 0.55]
 
-    def test_models_without_report_thresholds_report_the_active_one(self) -> None:
-        rows = rows_scored(['2026-07-01T14:00Z'], [-0.08], [-0.12])
-        report = model_report(TRAINED, 'v1', metadata(), rows, -0.05, pd.Series(dtype=float), ())
-        assert ([row.threshold for row in report.thresholds], report.prediction_threshold) == ([-0.05], -0.05)
+    def test_models_without_a_sweep_report_the_active_cutoff(self) -> None:
+        rows = rows_scored(['2026-07-01T14:00Z'], [0.7], [-0.12])
+        report = model_report(TRAINED, 'v1', metadata(), rows, 0.55, pd.Series(dtype=float), ())
+        assert ([row.cutoff for row in report.cutoffs], report.probability_cutoff) == ([0.55], 0.55)
 
-    def test_shorts_are_strictly_below_the_threshold(self) -> None:
-        rows = rows_scored(['2026-07-01'] * 3, [-0.08, -0.05, -0.051], [-0.1, -0.2, -0.3])
-        report = model_report(TRAINED, 'v1', metadata(), rows, -0.05, pd.Series(dtype=float), ())
-        assert (report.thresholds[0].n_shorts, report.thresholds[0].mean_return) == (2, pytest.approx(0.2))
+    def test_shorts_are_at_or_above_the_cutoff(self) -> None:
+        rows = rows_scored(['2026-07-01'] * 3, [0.6, 0.55, 0.549], [-0.1, -0.3, -0.2])
+        report = model_report(TRAINED, 'v1', metadata(), rows, 0.55, pd.Series(dtype=float), ())
+        assert (report.cutoffs[0].n_shorts, report.cutoffs[0].mean_return) == (2, pytest.approx(0.2))
         assert report.cumulative[-1].strategy == pytest.approx(0.4)
 
 

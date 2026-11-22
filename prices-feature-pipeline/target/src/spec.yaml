@@ -20,3 +20,5 @@ feature_groups:
 
 # Days of preceding filings counted in each row's cluster of insiders
 cluster_window_days: 30
+# A 30-day return above +300% is almost always a bad split adjustment, a reused ticker or a sub-penny quote
+max_label_return: 3.0

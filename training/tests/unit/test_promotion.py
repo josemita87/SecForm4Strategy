@@ -24,13 +24,16 @@ CURRENT = ModelMetadata(
     feature_group_version=1,
     target='pct_change',
     features=('a', 'b'),
-    model_params={'loss': 'absolute_error'},
+    model_params={'learning_rate': 0.1},
     train_rows=2000,
     test_rows=500,
     test_start=datetime(2026, 9, 1, tzinfo=UTC),
-    metrics={'model': Scores(mae=0.12, short_return=0.1, n_shorts=30)},
+    metrics={'model': Scores(short_return=0.1, n_shorts=30, average_precision=0.35)},
+    probability_cutoff=0.55,
 )
 NEW = replace(CURRENT, trained_at=datetime(2026, 11, 21, 6, 0, tzinfo=UTC), train_rows=2100)
+#: The promoted regressor, as its saved metadata loads: no cutoff and no average precision
+REGRESSOR = replace(CURRENT, metrics={'model': Scores(short_return=0.03, n_shorts=600)}, probability_cutoff=None)
 
 
 def check(new: ModelMetadata, current: ModelMetadata | None, name: str) -> Check:
@@ -50,14 +53,19 @@ class TestGate:
             'feature_group_version',
             'features',
             'test_rows',
-            'holdout_mae',
+            'holdout_average_precision',
             'n_shorts',
         }
 
     def test_the_first_model_skips_the_comparisons_with_a_current_one(self) -> None:
         verdict = gate(NEW, None, SPEC)
         assert verdict.promote
-        assert [check.name for check in verdict.checks] == ['min_train_rows', 'test_rows', 'holdout_mae', 'n_shorts']
+        assert [check.name for check in verdict.checks] == [
+            'min_train_rows',
+            'test_rows',
+            'holdout_average_precision',
+            'n_shorts',
+        ]
 
     def test_the_first_model_still_needs_enough_rows(self) -> None:
         assert not gate(replace(NEW, train_rows=999), None, SPEC).promote
@@ -71,10 +79,13 @@ class TestGate:
             ({'features': ('b', 'a')}, 'features'),
             ({'features': ('a', 'b', 'c')}, 'features'),
             ({'test_rows': 0}, 'test_rows'),
-            ({'metrics': {'model': Scores(mae=float('nan'), short_return=0.1, n_shorts=30)}}, 'holdout_mae'),
-            ({'metrics': {'model': Scores(mae=float('inf'), short_return=0.1, n_shorts=30)}}, 'holdout_mae'),
-            ({'metrics': {}}, 'holdout_mae'),
-            ({'metrics': {'model': Scores(mae=0.12, short_return=0.0, n_shorts=0)}}, 'n_shorts'),
+            (
+                {'metrics': {'model': Scores(short_return=0.1, n_shorts=30, average_precision=float('nan'))}},
+                'holdout_average_precision',
+            ),
+            ({'metrics': {'model': Scores(short_return=0.1, n_shorts=30)}}, 'holdout_average_precision'),
+            ({'metrics': {}}, 'holdout_average_precision'),
+            ({'metrics': {'model': Scores(short_return=0.0, n_shorts=0, average_precision=0.35)}}, 'n_shorts'),
             ({'metrics': {}}, 'n_shorts'),
         ],
     )
@@ -86,9 +97,13 @@ class TestGate:
     def test_the_row_ratio_boundary_passes(self) -> None:
         assert check(replace(NEW, train_rows=1600), CURRENT, 'train_rows_vs_current').passed
 
-    def test_a_worse_holdout_mae_than_the_current_model_still_passes(self) -> None:
-        worse = replace(NEW, metrics={'model': Scores(mae=0.5, short_return=-0.1, n_shorts=3)})
+    def test_a_worse_holdout_than_the_current_model_still_passes(self) -> None:
+        worse = replace(NEW, metrics={'model': Scores(short_return=-0.1, n_shorts=3, average_precision=0.1)})
         assert gate(worse, CURRENT, SPEC).promote
+
+    def test_a_classifier_compares_with_a_promoted_regressor(self) -> None:
+        assert gate(NEW, REGRESSOR, SPEC).promote
+        assert not check(replace(NEW, train_rows=1599), REGRESSOR, 'train_rows_vs_current').passed
 
 
 class TestDecide:

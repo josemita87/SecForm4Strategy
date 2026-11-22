@@ -175,6 +175,7 @@ main { display: block; }
 
 .gauge { position: relative; height: 10px; border-radius: 999px; background: var(--panel2); max-width: 460px; }
 .gauge-zone { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px 0 0 999px; background: linear-gradient(90deg, color-mix(in srgb, var(--g2) 55%, transparent), color-mix(in srgb, var(--g1) 25%, transparent)); }
+.gauge-zone.upper { right: 0; border-radius: 0 999px 999px 0; background: linear-gradient(270deg, color-mix(in srgb, var(--g2) 55%, transparent), color-mix(in srgb, var(--g1) 25%, transparent)); }
 .gauge-thr { position: absolute; top: -5px; bottom: -5px; width: 2px; background: var(--ink); opacity: .7; }
 .gauge-thr i { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-style: normal; font-size: 11px; color: var(--muted); white-space: nowrap; }
 .gauge-zero { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--edge); }

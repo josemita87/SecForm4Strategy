@@ -8,15 +8,17 @@ The training service (`training/src/main.py`) fits a `HistGradientBoostingRegres
 | --- | --- | --- |
 | `HOLDOUT_RATIO` | `0.2` | Share of the latest rows held out for the final score |
 | `N_FOLDS` | `4` | Number of walk-forward validation folds on the development set |
-| `PREDICTION_THRESHOLD` | `-0.05` | The evaluation shorts rows predicted below this return. Inference trades at the same variable and value. |
-| `RANDOM_STATE` | `42` | Seed of the regressor |
+| `RANDOM_STATE` | `42` | Seed of the classifier |
 | `TARGET_FEATURE` | `pct_change` | The label column |
 
-`training/src/spec.yaml` holds three model sections:
+`training/src/spec.yaml` holds these model sections:
 
-- `model_params`: the fixed regressor parameters, `max_iter=500`, `early_stopping=true` and `validation_fraction=0.1`.
+- `short_return`: the label. A row is a short winner when its `pct_change` is below `-0.05`.
+- `model_params`: the fixed classifier parameters, `max_iter=500`, `early_stopping=true` and `validation_fraction=0.1`.
 - `param_grid`: the parameters the grid search tries on top of `model_params`.
-- `report_thresholds`: the thresholds at which training logs the holdout short return. Training saves them in the model metadata, and the site's `model.json` reports the holdout at the same thresholds.
+- `cutoff_grid`: the probability cutoffs from 0.30 to 0.80 in steps of 0.05. Training chooses the cutoff from this grid on the development folds and reports the holdout shorts at each cutoff. The site's `model.json` reports the holdout at the same cutoffs.
+- `min_fold_shorts`: a cutoff qualifies only when it shorts at least 100 rows in every fold.
+- `fallback_cutoff`: the cutoff saved when no cutoff qualifies, `0.5`.
 
 ## Splits
 
@@ -98,11 +100,15 @@ Training logs:
 | --- | --- |
 | `model_params` | The fixed parameters and the best grid combination |
 | `train_rows`, `test_rows`, `test_start` | The development and holdout row counts, and `holdout_start` |
-| `validation_mae` | The best combination's validation MAE per fold |
-| `validation_zero_mae` | The zero baseline's MAE per fold |
-| `prediction_threshold` | The threshold used to score the holdout |
-| `report_thresholds` | The `report_thresholds` of `spec.yaml`; empty in models saved before training recorded them |
+| `probability_cutoff` | The cutoff chosen on the development folds; inference shorts rows whose probability is at least this value |
+| `label_return` | The `short_return` of `spec.yaml` |
+| `base_rate` | The holdout's share of short winners, which is also the average precision of a constant predictor |
+| `validation_ap` | The best combination's validation average precision per fold |
+| `validation_base_rate` | Each fold's share of short winners in its validation rows |
+| `cutoff_sweep` | The holdout shorts at each cutoff of `cutoff_grid`: `cutoff`, `n_shorts`, `mean_return`, `median_return` |
 | `metrics` | The holdout scores of the model and its baselines |
+
+Models saved before the classifier have none of these fields except `metrics`. They still load, so the promotion gate can compare a new model with them.
 
 [configuration.md](configuration.md) lists the rest of the record.
 
@@ -129,8 +135,8 @@ The `retrain` task definition sets `PROMOTE=gated`, `MIN_TRAIN_ROWS=50000` and `
 | `feature_group_version` | The feature-group version equals the current model's |
 | `features` | The `features` tuple, names and order, equals the current model's |
 | `test_rows` | `test_rows > 0` |
-| `holdout_mae` | The model's holdout MAE is finite |
-| `n_shorts` | The model shorts at least one holdout row at `PREDICTION_THRESHOLD` |
+| `holdout_average_precision` | The model's holdout average precision is finite |
+| `n_shorts` | The model shorts at least one holdout row at `probability_cutoff` |
 
 If no model is promoted yet, the gate skips the three checks that compare with the current model. `train_rows_vs_current` catches a truncated dataset, for example a run on 1 day of data. `features` and `feature_group_version` catch a model whose inputs differ from the rows that inference builds.
 
@@ -144,7 +150,7 @@ Training logs the saved version. Under `never`, it logs that the model was saved
 
 `scripts/promote_model.sh` uses the AWS profile `secform4` unless `AWS_PROFILE` is set. It reads the bucket `secform4strategy-data-<account>`, or `MODELS_BUCKET` when set.
 
-1. Run `scripts/promote_model.sh` without an argument. It prints each saved version with `trained_at`, `train_rows`, the model's and the zero baseline's holdout MAE, and `n_shorts`. It marks the promoted version with `<- promoted`.
+1. Run `scripts/promote_model.sh` without an argument. It prints each saved version with `trained_at`, `train_rows`, the model's holdout average precision, the holdout base rate, the probability cutoff, and `n_shorts`. It marks the promoted version with `<- promoted`.
 2. Run `scripts/promote_model.sh <version>`. It checks that the version folder holds `model.meta.json` and `model.joblib`, then writes `{"version": "<version>"}` to `latest.json`.
 
 To roll back, promote an earlier version the same way. Inference loads the model at each invocation, so the next invocation uses the promoted version.

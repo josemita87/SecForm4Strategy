@@ -50,7 +50,8 @@ class Config(SsmSettings):
     side: Side = 'sell'
     order_type: OrderType = 'market'
     time_in_force: TimeInForce = 'gtc'
-    prediction_threshold: float
+    # Shorts rows whose probability of a short winner reaches this; the model metadata's cutoff when unset
+    probability_cutoff: float | None = Field(None, gt=0, lt=1)
     # Live path: rows whose latest filing was accepted longer ago are not traded
     max_signal_age_minutes: int = Field(60, gt=0)
 

@@ -224,7 +224,7 @@ def add_value_features(rows: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame
     )
 
 
-def compute_target(rows: pd.DataFrame, prices: pd.DataFrame, period: int) -> pd.DataFrame:
+def compute_target(rows: pd.DataFrame, prices: pd.DataFrame, period: int, max_return: float) -> pd.DataFrame:
     """Label each disclosure row with the forward return from the first price a trader could act on.
 
     Every trading day offers two prices, its 09:30 open and its 16:00 close (US/Eastern).
@@ -233,12 +233,14 @@ def compute_target(rows: pd.DataFrame, prices: pd.DataFrame, period: int) -> pd.
     the first close ``period`` days after the entry day;
     ``label_known_at`` (UTC) is that exit close. A row stays unlabelled when its
     exit falls after its ticker's last bar, or when the entry or exit price is more than
-    ``MAX_PRICE_WAIT`` away (a gap in the ticker's bars).
+    ``MAX_PRICE_WAIT`` away (a gap in the ticker's bars). Two guards leave ``pct_change`` missing on an
+    implausible label: an entry or exit adjusted price that is not positive, and a return above ``max_return``.
 
     Args:
         rows: Disclosure rows from ``aggregate_disclosures``, with ``next_print``.
         prices: Daily bars prepared by ``normalize_prices``, with adjusted ``open`` and ``close``.
         period: Days between the entry day and the exit.
+        max_return: The largest plausible return; a higher one is left missing.
 
     Returns:
         The rows with ``pct_change`` and ``label_known_at``.
@@ -285,7 +287,11 @@ def compute_target(rows: pd.DataFrame, prices: pd.DataFrame, period: int) -> pd.
         allow_exact_matches=True,
         tolerance=MAX_PRICE_WAIT,
     )
-    es[Col.PCT_CHANGE] = ((es[Col.EXIT_PRICE] - es[Col.ENTRY_PRICE]) / es[Col.ENTRY_PRICE]).round(5)
+    # Adjusted prices can turn non-positive after large dividend adjustments; such a return is not a price move
+    pct_change = ((es[Col.EXIT_PRICE] - es[Col.ENTRY_PRICE]) / es[Col.ENTRY_PRICE]).round(5)
+    es[Col.PCT_CHANGE] = pct_change.where(
+        (es[Col.ENTRY_PRICE] > 0) & (es[Col.EXIT_PRICE] > 0) & (pct_change <= max_return)
+    )
     es[Col.LABEL_KNOWN_AT] = instant(es[Col.EXIT_DATE] + MARKET_CLOSE)
 
     es = es.drop(
@@ -451,7 +457,9 @@ if __name__ == '__main__':
         P = normalize_prices(store.read(FeatureGroup.PRICES, where={Col.TICKER: tickers}, columns=PRICE_COLUMNS))
         daily = disclosure_rows(transactions, P, reference, window)
         # Every labelled row is kept, its average missing until a label of its ticker is known
-        RT4 = compute_target(daily, P, config.delta_period).dropna(subset=[Col.LABEL_KNOWN_AT, Col.PCT_CHANGE])
+        RT4 = compute_target(daily, P, config.delta_period, config.max_label_return).dropna(
+            subset=[Col.LABEL_KNOWN_AT, Col.PCT_CHANGE]
+        )
         store.push(FeatureGroup.RT4, RT4.assign(**{Col.AVG_TARGET_EXPANDING: known_label_mean(RT4, RT4)}))
         logger.info(f'Pushed {len(RT4)} labelled rows of {len(daily)} disclosure rows to RT4')
     else:

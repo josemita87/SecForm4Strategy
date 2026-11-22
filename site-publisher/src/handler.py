@@ -87,7 +87,6 @@ def builders(now: datetime) -> dict[Section, Callable[[], BaseModel | None]]:
             operations.LiveSpec(
                 config.live_score_state_machine_arn,
                 config.poller_schedule_name,
-                config.prediction_threshold,
                 spec.live_runs,
             ),
             executions,
@@ -122,7 +121,7 @@ def builders(now: datetime) -> dict[Section, Callable[[], BaseModel | None]]:
         Section.MODEL: partial(
             research.build_model,
             now,
-            research.ModelSpec(config.prediction_threshold, research.ImportanceSpec(**spec.importance.model_dump())),
+            research.ImportanceSpec(**spec.importance.model_dump()),
             site,
             models,
             models,
