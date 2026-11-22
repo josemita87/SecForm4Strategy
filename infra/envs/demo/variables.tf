@@ -27,9 +27,3 @@ variable "live_enabled" {
   type        = bool
   default     = true
 }
-
-variable "site_publisher_enabled" {
-  description = "Create the site publisher Lambda and its triggers; true only once CI has pushed its image."
-  type        = bool
-  default     = false
-}

@@ -459,7 +459,6 @@ A pull request therefore cannot change any resource. Only a job in the GitHub en
 | `switched_on` | `false` | The NAT gateway exists, and the two schedules below may run |
 | `weekly_retrain_enabled` | `true` | The Saturday `retrain` schedule is enabled, if `switched_on` is `true` |
 | `live_enabled` | `true` | The live poller schedule is enabled, if `switched_on` is `true` |
-| `site_publisher_enabled` | `false` | The site publisher Lambda and its triggers exist (Section 5.6) |
 
 `make switch-on` and `make switch-off` set `switched_on` on master, then commit and push the change. The change takes effect after a reviewer approves the Terraform apply. At the time of writing the stack is switched on for the 5-year backfill, with `weekly_retrain_enabled` and `live_enabled` off. The live path is off during a full load because the batch scraper at 8 requests per second plus the live path's 4.5 would exceed the SEC's 10.
 
@@ -575,9 +574,9 @@ The publisher is a Lambda on the image `secform4strategy/site-publisher` (arm64,
 | `data/model.json` | When the model version changes | Parameters, folds, holdout metrics, threshold results, cumulative return against SPY, feature importance |
 | `data/explore.json` | Every 15 minutes | The largest insider sales and the insider clusters of the last 7 days |
 
-Lambda drops an event older than 60 seconds and retries no failed invocation, so a slow publish does not queue more behind it. The next minute's publish replaces a missed one. The publisher needs an image in a repository that only the first apply creates, so `site_publisher_enabled` creates the function in a second apply.
+Lambda drops an event older than 60 seconds and retries no failed invocation, so a slow publish does not queue more behind it. The next minute's publish replaces a missed one. The publisher needs an image in a repository that only the first apply creates, so its first deploy took two applies: the first created the repository, and the second, after CI pushed the image, created the function.
 
-The site costs a few cents per month for S3 and stays inside the CloudFront free tier. The publisher adds about $1 per month while switched on: a local `all` publish took about 7 seconds and peaked at 585 MB.
+The site costs a few cents per month for S3 and stays inside the CloudFront free tier. The publisher adds about $1 per month while switched on: a local `all` publish took about 7 seconds and peaked at 585 MB. Its every-minute schedule runs only while `switched_on` is `true`.
 
 ---
 
