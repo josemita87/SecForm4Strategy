@@ -317,9 +317,14 @@ Four workflows run in `.github/workflows/`:
 | --- | --- | --- |
 | `quality.yml` | Pull requests and pushes to master | The quality gate: quality-static and type-check |
 | `images.yml` | A successful `quality` run on a push to master | Builds a `linux/arm64` image for each service whose code changed, tags it with that code's last commit, and pushes it to ECR |
-| `terraform.yml` | Pull requests and pushes to master that change `infra/` or `site/` | `terraform plan` on pull requests; `terraform apply` on master, after approval |
+| `terraform.yml` | Pull requests and pushes to master that change `infra/` or `site/`, or a manual run | `terraform plan` on pull requests; on master, a plan of the merged commit, then an apply of exactly that plan after approval |
 
-A merge to master therefore runs `quality`, then `images`, then a `terraform` apply that waits for approval. Approve the apply after `images` succeeds. Terraform reads the newest image of each repository, so an apply before the build deploys the previous image.
+A merge to master therefore runs `quality`, then `images`, and a `terraform` run with two jobs:
+
+1. `plan` runs `terraform plan -out=tfplan` on the merged commit with the read-only plan role. The plan appears on the run's summary page, and the saved plan is kept as an artifact for one day, because it holds sensitive values in plain text.
+2. `apply` waits for approval in the environment `aws`, then runs `terraform apply tfplan`. It applies exactly the plan the reviewer read. If the state changed after the plan, Terraform refuses the saved plan and the run fails; run the workflow again for a fresh plan. A plan without changes skips `apply`.
+
+Master runs queue one after another, so each plan is made after the previous apply. Terraform reads the newest image of each repository when it plans, so a run that plans before `images` finishes keeps the previous images; run the workflow by hand after `images` to deploy them.
 
 The branch rules of master require a pull request whose `quality-static` check passes. They block force pushes and deletion of master.
 
@@ -327,12 +332,12 @@ The branch rules of master require a pull request whose `quality-static` check p
 
 GitHub Actions authenticates to AWS with OIDC. A workflow requests a token from `token.actions.githubusercontent.com`, and AWS STS exchanges it for temporary credentials of one role. GitHub holds no AWS key.
 
-Each role trusts the provider only for the audience `sts.amazonaws.com` and one exact `sub` claim. `github_repository` in `infra/envs/demo/main.tf` sets the repository.
+Each role trusts the provider only for the audience `sts.amazonaws.com` and exact `sub` claims. `github_repository` in `infra/envs/demo/main.tf` sets the repository.
 
 | Role | Trusted subject | Permissions |
 | --- | --- | --- |
 | `secform4strategy-github-images` | `repo:<owner>/SecForm4Strategy:ref:refs/heads/master` | `ecr:GetAuthorizationToken`, and image push and pull on `secform4strategy/*` |
-| `secform4strategy-github-plan` | `repo:<owner>/SecForm4Strategy:pull_request` | `ReadOnlyAccess`, plus `s3:PutObject` and `s3:DeleteObject` on `*.tflock` in the state bucket, minus `cloudfront-keyvaluestore:GetKey` and `ListKeys` |
+| `secform4strategy-github-plan` | `repo:<owner>/SecForm4Strategy:pull_request`, and `repo:<owner>/SecForm4Strategy:ref:refs/heads/master` for the plan of a master run | `ReadOnlyAccess`, plus `s3:PutObject` and `s3:DeleteObject` on `*.tflock` in the state bucket, minus `cloudfront-keyvaluestore:GetKey` and `ListKeys` |
 | `secform4strategy-github-apply` | `repo:<owner>/SecForm4Strategy:environment:aws` | `AdministratorAccess` |
 
 The plan role can read every resource and the state, and can write only the lock file. A pull request therefore cannot change any resource. The inline policy `deny-site-keys` denies the plan role `cloudfront-keyvaluestore:GetKey` and `cloudfront-keyvaluestore:ListKeys` on all resources. A pull request branch can assume the plan role, and the key-value store `secform4strategy-site-auth` holds the hash of the site password.
