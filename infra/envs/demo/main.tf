@@ -197,6 +197,8 @@ module "retrain" {
   subnet_ids           = module.network.private_subnet_ids
   security_group_id    = module.network.security_group_id
   schedule_enabled     = var.switched_on && var.weekly_retrain_enabled
+  # Every step is idempotent (upserts by key, SQS redelivery), so a reclaimed Spot task only repeats its batch
+  spot_steps = ["master-index", "scraper", "kafka-to-store", "yahoo-connect", "target", "training"]
 }
 
 output "retrain" {

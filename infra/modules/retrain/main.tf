@@ -67,6 +67,50 @@ locals {
   }
 }
 
+locals {
+  # One runTask.sync state per launch option; Spot and On-Demand differ only in where the task runs
+  run_task = {
+    for step in local.steps : step => {
+      Cluster              = var.cluster_arn
+      TaskDefinition       = var.task_definition_arns[step]
+      NetworkConfiguration = local.network
+      Overrides = {
+        ContainerOverrides = [{
+          Name        = step
+          Environment = "{% [$each($states.input.overrides.`${step}`, function($value, $name) { {'Name': $name, 'Value': $value} })] %}"
+        }]
+      }
+    }
+  }
+  # The retry interval outlasts the 300-second SQS visibility timeout, so a rerun finds the unfinished messages
+  retry = { ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 600, BackoffRate = 1 }
+  next  = { for index, step in local.steps : step => index < length(local.steps) - 1 ? { Next = local.steps[index + 1] } : { End = true } }
+
+  # A Spot step retries on Spot, then finishes on On-Demand; Spot reclaiming a task fails it like any other error
+  # The Catch takes every error: RunTask failures (no Spot capacity at launch) arrive as AmazonECS.Unknown, not States.TaskFailed
+  spot_states = {
+    for step in var.spot_steps : step => merge({
+      Type      = "Task"
+      Resource  = "arn:aws:states:::ecs:runTask.sync"
+      Arguments = merge(local.run_task[step], { CapacityProviderStrategy = [{ CapacityProvider = "FARGATE_SPOT", Weight = 1 }] })
+      Output    = "{% $states.input %}"
+      Retry     = [merge(local.retry, { MaxAttempts = 2 })]
+      Catch     = [{ ErrorEquals = ["States.ALL"], Next = "${step}-wait", Output = "{% $states.input %}" }]
+    }, local.next[step])
+  }
+  # The fallback waits out the visibility timeout too, or it would find the reclaimed task's messages hidden
+  wait_states = { for step in var.spot_steps : "${step}-wait" => { Type = "Wait", Seconds = 600, Next = "${step}-on-demand" } }
+  on_demand_states = {
+    for step in local.steps : (contains(var.spot_steps, step) ? "${step}-on-demand" : step) => merge({
+      Type      = "Task"
+      Resource  = "arn:aws:states:::ecs:runTask.sync"
+      Arguments = merge(local.run_task[step], { LaunchType = "FARGATE" })
+      Output    = "{% $states.input %}"
+      Retry     = [merge(local.retry, { MaxAttempts = contains(var.spot_steps, step) ? 1 : 3 })]
+    }, local.next[step])
+  }
+}
+
 resource "aws_sfn_state_machine" "retrain" {
   name     = "${var.name}-retrain"
   role_arn = aws_iam_role.retrain.arn
@@ -74,34 +118,7 @@ resource "aws_sfn_state_machine" "retrain" {
     Comment       = "New filings to a new model, one ECS task per step"
     QueryLanguage = "JSONata"
     StartAt       = local.steps[0]
-    States = {
-      for index, step in local.steps : step => merge(
-        {
-          Type     = "Task"
-          Resource = "arn:aws:states:::ecs:runTask.sync"
-          Arguments = {
-            Cluster              = var.cluster_arn
-            TaskDefinition       = var.task_definition_arns[step]
-            LaunchType           = "FARGATE"
-            NetworkConfiguration = local.network
-            Overrides = {
-              ContainerOverrides = [{
-                Name        = step
-                Environment = "{% [$each($states.input.overrides.`${step}`, function($value, $name) { {'Name': $name, 'Value': $value} })] %}"
-              }]
-            }
-          }
-          Output = "{% $states.input %}"
-          Retry = [{
-            ErrorEquals     = ["States.TaskFailed"]
-            IntervalSeconds = 600
-            MaxAttempts     = 3
-            BackoffRate     = 1
-          }]
-        },
-        index < length(local.steps) - 1 ? { Next = local.steps[index + 1] } : { End = true }
-      )
-    }
+    States        = merge(local.on_demand_states, local.spot_states, local.wait_states)
   })
 }
 

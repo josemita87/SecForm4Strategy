@@ -32,3 +32,13 @@ variable "schedule_enabled" {
   description = "Whether the weekly retrain runs; true only while the stack is switched on."
   type        = bool
 }
+
+variable "spot_steps" {
+  description = "Steps that run on Fargate Spot first and fall back to On-Demand; the others run On-Demand only."
+  type        = list(string)
+  default     = []
+  validation {
+    condition     = alltrue([for step in var.spot_steps : contains(["master-index", "scraper", "kafka-to-store", "yahoo-connect", "target", "training"], step)])
+    error_message = "spot_steps may name only the retrain steps."
+  }
+}

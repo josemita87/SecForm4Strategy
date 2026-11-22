@@ -895,6 +895,7 @@ const DECIDE = [
   ["engineering", "The repository is public", "<b>OIDC</b> roles, no stored key + an <b>encrypted saved plan</b>"],
   ["model", "A bad model loses money", "The <b>promotion gate</b>; promote and roll back by hand"],
   ["engineering", "Parallel Iceberg commits to one table conflict", "One batch writer per table; live gathers a burst into <b>one commit</b>"],
+  ["business", "$5 budget; batch steps are idempotent and can be rerun", "<b>Fargate Spot</b> (about 70% cheaper) with an <b>On-Demand fallback</b>"],
 ];
 const DTAG = { business: "acc", model: "good", data: "", engineering: "" };
 section({
@@ -902,7 +903,7 @@ section({
   h1: "Each cloud decision answers a constraint",
   steps: [
     { cap: "The <strong>business</strong>, the <strong>model</strong> and the <strong>engineering</strong> set the constraints. The AWS services follow from them.",
-      notes: ["This is the thesis of the talk: no service is here for its own sake.", "The next chapters zoom into these rows one by one.", "Rejected alternatives: Lambda for everything, an always-on container, interface endpoints, an IAM user with keys, a model registry service."] },
+      notes: ["This is the thesis of the talk: no service is here for its own sake.", "The next chapters zoom into these rows one by one.", "Rejected alternatives: Lambda for everything, an always-on container, On-Demand-only Fargate, interface endpoints, an IAM user with keys, a model registry service."] },
   ],
   html: () => `
     <div class="w" style="left:60px;top:205px;width:1480px">
@@ -969,8 +970,8 @@ section({
   steps: [
     { cap: "Step Functions machine <code>secform4strategy-retrain</code> runs six steps in order.",
       notes: ["master-index lists the filings, scraper parses them, kafka-to-store stores them.", "yahoo-connect refreshes prices, target builds labelled rows, training saves a model.", "Each state uses <code>ecs:runTask.sync</code>: Step Functions waits for the task to stop."] },
-    { cap: "Each step is an <strong>ECS task on Fargate ARM64</strong>. EventBridge Scheduler starts the machine on <strong>Saturday 06:00 UTC</strong>.",
-      notes: ["Schedule: <code>cron(0 6 ? * SAT *)</code>, time zone UTC.", "Tasks run in the private subnets with no public IP.", "Retry on <code>States.TaskFailed</code>: wait 600 s, up to 3 retries (<code>MaxAttempts = 3</code>). 600 s is longer than the 300 s SQS visibility timeout, so unfinished messages are visible again.", "Fargate has no run-time limit; Lambda stops after 15 minutes. That is why batch is on Fargate.", "Step Functions bills per state transition and costs nothing idle; Airflow on MWAA runs around the clock."] },
+    { cap: "Each step is an <strong>ECS task on Fargate Spot (ARM64)</strong> with an On-Demand fallback. EventBridge Scheduler starts the machine on <strong>Saturday 06:00 UTC</strong>.",
+      notes: ["Schedule: <code>cron(0 6 ? * SAT *)</code>, time zone UTC.", "Tasks run in the private subnets with no public IP.", "Spot first: capacity provider <code>FARGATE_SPOT</code>, retried on <code>States.TaskFailed</code> after 600 s, at most 2 times, so 3 Spot attempts.", "Then a <code>Catch</code> on <code>States.ALL</code> waits 600 s and runs the step with launch type <code>FARGATE</code> (On-Demand), retried once. <code>States.ALL</code>, because a failed RunTask (no Spot capacity) arrives as <code>AmazonECS.Unknown</code>.", "Every wait is 600 s, longer than the 300 s SQS visibility timeout, so unfinished messages are visible again.", "Spot is about 70% cheaper. Every step is idempotent, so a reclaimed task loses only its in-flight batch. A code failure now runs 5 times, not 4: about 40 minutes of retries, not 30.", "Fargate has no run-time limit; Lambda stops after 15 minutes. That is why batch is on Fargate.", "Step Functions bills per state transition and costs nothing idle; Airflow on MWAA runs around the clock."] },
     { cap: "training saves a new model folder. <code>latest.json</code> moves only if the promotion gate passes (<code>PROMOTE=gated</code>). Ad-hoc runs use <code>PROMOTE=never</code>.",
       notes: ["Each folder holds <code>model.joblib</code> and <code>model.meta.json</code>. inference loads only what <code>latest.json</code> names.", "The gate checks: at least 50,000 development rows, and at least 80% of the current model's; the same features; holdout rows and a finite holdout MAE; at least one short.", "It does not compare MAE with the current model, because each model holds out a different period.", "<code>scripts/promote_model.sh</code> lists the saved models and promotes one by hand. That is also the rollback."] },
     { cap: "The first full load is the <strong>same machine</strong>, started once with overrides in its input.",
@@ -980,10 +981,10 @@ section({
     ${node({ s: 0, id: "b-sch", x: 50, y: 210, w: 430, k: "int", i: "sched", t: "EventBridge Scheduler", sub: "cron(0 6 ? * SAT *) · UTC", submono: true })}
     ${edge({ s: 0, id: "b-e0", d: "M265 282 V343" })}
     ${frame({ s: 0, x: 40, y: 345, w: 1520, h: 235, t: "Step Functions · secform4strategy-retrain" })}
-    ${STEPS6.map((n, k) => node({ s: 0, dl: k + 1, id: `b-st${k}`, x: 70 + k * 248, y: 400, w: 222, k: "compute", i: "fargate", t: n, sub: "Fargate ARM64" })).join("")}
+    ${STEPS6.map((n, k) => node({ s: 0, dl: k + 1, id: `b-st${k}`, x: 70 + k * 248, y: 400, w: 222, k: "compute", i: "fargate", t: n, sub: "Spot · ARM64" })).join("")}
     ${STEPS6.slice(0, 5).map((_, k) => edge({ s: 0, id: `b-e${k + 1}`, d: `M${292 + k * 248} 436 H${318 + k * 248}` })).join("")}
     ${STEPS6.map((_, k) => `<rect class="rv" data-s="0" x="${70 + k * 248}" y="484" width="222" height="6" rx="3" fill="var(--panel2)"/><rect id="b-bar${k}" x="${70 + k * 248}" y="484" width="0" height="6" rx="3" fill="var(--accent)"/>`).join("")}
-    ${label({ s: 0, x: 70, y: 552, t: "Retry on States.TaskFailed: wait 600 s, up to 3 retries · private subnets · no public IP" })}
+    ${label({ s: 0, x: 70, y: 552, t: "Spot: 3 attempts, 600 s apart · then On-Demand after 600 s, 1 retry · private subnets · no public IP" })}
     ${frame({ s: 2, x: 40, y: 605, w: 960, h: 265, t: "S3 · models/" })}
     ${node({ s: 2, id: "b-old", x: 80, y: 650, w: 400, h: 100, k: "store", i: "s3", t: "<previous trained_at>/", sub: "model.joblib · model.meta.json", mono: true })}
     ${node({ s: 2, id: "b-new", x: 560, y: 650, w: 400, h: 100, k: "store", i: "s3", t: "<new trained_at>/", sub: "model.joblib · model.meta.json", mono: true })}
@@ -1015,9 +1016,9 @@ section({
       ? `<span class="c">// weekly: EventBridge Scheduler sends</span>\n{}\n<span class="c">// task definitions: MODE=recent, DAYS_BACK=7,\n// SEC_MAX_RATE=5</span>`
       : `{<span class="k">"overrides"</span>: {\n  <span class="k">"master-index"</span>: {\n    <span class="k">"MODE"</span>: <span class="s">"historical"</span>, <span class="k">"YEARS"</span>: <span class="s">"5"</span>},\n  <span class="k">"scraper"</span>: {<span class="k">"SEC_MAX_RATE"</span>: <span class="s">"8"</span>},\n  <span class="k">"kafka-to-store"</span>: {<span class="k">"BUFFER_SIZE"</span>: <span class="s">"10000"</span>}}}`;
     tog(el, "#b-st0, #b-st1, #b-st2", "hot", v === 1);
-    $("#b-st0 .ns", el).textContent = v ? "MODE=historical" : "Fargate ARM64";
-    $("#b-st1 .ns", el).textContent = v ? "SEC_MAX_RATE=8" : "Fargate ARM64";
-    $("#b-st2 .ns", el).textContent = v ? "batches of 10,000" : "Fargate ARM64";
+    $("#b-st0 .ns", el).textContent = v ? "MODE=historical" : "Spot · ARM64";
+    $("#b-st1 .ns", el).textContent = v ? "SEC_MAX_RATE=8" : "Spot · ARM64";
+    $("#b-st2 .ns", el).textContent = v ? "batches of 10,000" : "Spot · ARM64";
     tog(el, "#b-sch", "off", v === 1);
   },
   reset(el, done) {
@@ -1208,7 +1209,7 @@ const MODULES = [
   ["iam", "sec", "shield", "ECS execution role, one task role per service, one role per Lambda"],
   ["ci", "ci", "git", "GitHub OIDC provider; images, plan and apply roles"],
   ["tasks", "compute", "fargate", "ECS cluster, Fargate ARM64 task definitions, log groups"],
-  ["retrain", "int", "sfn", "retrain state machine, Saturday 06:00 UTC schedule"],
+  ["retrain", "int", "sfn", "retrain state machine: Fargate Spot, On-Demand fallback; Saturday 06:00 UTC schedule"],
   ["live", "compute", "lambda", "6 Lambdas, seen table, Pipe, live-score, 1-minute schedule"],
   ["dashboard", "data", "logs", "CloudWatch dashboard: queues, runs, Lambda metrics, errors"],
   ["site", "store", "globe", "Study website: CloudFront, private S3 bucket, password, publisher Lambda"],
@@ -1243,7 +1244,7 @@ section({
       <text class="ft" x="630" y="463" text-anchor="end">Private subnets · no inbound</text>
       ${node({ id: "n-nat", x: 105, y: 322, w: 265, k: "data", i: "nat", t: "NAT gateway + EIP", sub: "$0.045/h + $0.045/GB" })}
       ${node({ id: "n-igw", x: 390, y: 322, w: 240, k: "data", i: "globe", t: "Internet gateway" })}
-      ${node({ id: "n-far", x: 105, y: 485, w: 300, k: "compute", i: "fargate", t: "ECS Fargate tasks", sub: "retrain steps", sid: "n-far-s" })}
+      ${node({ id: "n-far", x: 105, y: 485, w: 300, k: "compute", i: "fargate", t: "ECS Fargate tasks", sub: "retrain steps · Spot first", sid: "n-far-s" })}
       ${node({ id: "n-gw", x: 340, y: 735, w: 285, k: "store", i: "s3", t: "S3 gateway endpoint", sub: "free: S3, ECR layers" })}
       ${edge({ id: "n-e1", d: "M240 485 V394", data: { nat: 1 } })}
       <text class="lbl" x="252" y="434" data-nat="1" style="font-size:15px">internet</text>
@@ -1323,7 +1324,7 @@ section({
     tog(el, "#n-lam, [data-lam]", "off", !(on && lv));
     tog(el, "#n-wk, [data-wk]", "off", !(on && wk));
     tog(el, "#n-lv, [data-lv]", "off", !(on && lv));
-    $("#n-far-s", el).textContent = on ? "retrain steps" : "cannot pull images";
+    $("#n-far-s", el).textContent = on ? "retrain steps · Spot first" : "cannot pull images";
     $("#n-lam-s", el).textContent = on && lv ? "live path · outside the VPC" : "idle: poll schedule off";
     $("#n-wk-s", el).textContent = on && wk ? "Sat 06:00 UTC → retrain" : "schedule DISABLED";
     $("#n-lv-s", el).textContent = on && lv ? "every minute → poller" : "schedule DISABLED";
@@ -1714,7 +1715,7 @@ const FAQ = [
   ["How do you avoid duplicate orders?", "client_order_id is the row key ticker@next print. Alpaca rejects a second order with the same id."],
   ["How do you avoid look-ahead?", "Entry is the first print after accepted_at. Values use the close before the acceptance day. The walk-forward split is purged, and the holdout is scored once."],
   ["How does a bad model stay out of production?", "training always saves, but only the gate moves latest.json: enough development rows, the same features, a finite holdout MAE, at least one short. promote_model.sh promotes or rolls back by hand."],
-  ["What does it cost?", "Dormant: about $0 per day. Switched on: about $1.20 per day plus usage. A $5 monthly budget emails alerts."],
+  ["What does it cost?", "Dormant: about $0 per day. Switched on: about $1.20 per day plus usage. Batch tasks run on Fargate Spot, about 70% cheaper, with an On-Demand fallback. A $5 monthly budget emails alerts."],
   ["Why is the NAT switchable?", "It bills about $1.08 per day with no traffic. Always on, it would cost about $32 per month, over six times the budget."],
   ["Why no API for the website?", "A publisher Lambda writes static JSON. CloudFront reads the private S3 bucket through OAC; a CloudFront Function checks Basic auth against a hash in a KeyValueStore."],
   ["What about the Lambda concurrency limit of 10?", "maximum_concurrency 2 on each SQS trigger keeps the queue consumers inside the quota. A burst can still throttle a live-score step; a quota increase is a follow-up."],
@@ -1726,18 +1727,18 @@ section({
   thumbStep: 0,
   steps: [
     { cap: "The 5-year run is finished and its model promoted. Next: pull request #31 switches the live path and the weekly retrain on.",
-      notes: ["Done: target created RT4 → training with <code>PROMOTE=never</code> saved model <code>20261122T205816Z</code> → <code>scripts/promote_model.sh</code> promoted it.", "Today master has <code>switched_on = true</code>, <code>live_enabled = false</code> and <code>weekly_retrain_enabled = false</code>, so live is off.", "Pull request #31 sets <code>live_enabled = true</code> and <code>weekly_retrain_enabled = true</code>. It is merged about an hour before the presentation, after training and promotion, which are done. The apply still needs a reviewer's approval.", "Smaller images cut the cold start. Fargate Spot for scraper and kafka-to-store, with an On-Demand fallback in a Step Functions <code>Catch</code>, is designed: about 70% cheaper for the two longest steps."] },
+      notes: ["Done: target created RT4 → training with <code>PROMOTE=never</code> saved model <code>20261122T205816Z</code> → <code>scripts/promote_model.sh</code> promoted it.", "Today master has <code>switched_on = true</code>, <code>live_enabled = false</code> and <code>weekly_retrain_enabled = false</code>, so live is off.", "Pull request #31 sets <code>live_enabled = true</code> and <code>weekly_retrain_enabled = true</code>. It is merged about an hour before the presentation, after training and promotion, which are done. The apply still needs a reviewer's approval.", "Smaller images cut the cold start."] },
     { cap: "Click a card for the short answer.",
       notes: ["The cards are a prompt list for likely questions.", "Deeper answers: docs/presentation/glossary-and-faq.md.", "Close with: honest timing, honest evaluation, and a stack that costs nothing while idle."] },
   ],
   svg: () => `
     <g class="rv" data-s="0" data-u="0">
-      ${[["target", "215,334 rows → RT4 · by hand", "compute", "fargate", "done"], ["training", "PROMOTE=never · 5-year model", "ml", "model", "done"], ["Promote by hand", "20261122T205816Z", "sec", "gate", "done"], ["Switches on · PR #31", "live_enabled · weekly_retrain_enabled", "int", "sched", "next"], ["Smaller images", "faster cold starts", "ci", "image", ""], ["Fargate Spot", "On-Demand fallback in a Catch", "compute", "fargate", "designed"]].map(([t, sub, k, i, tag], j) => {
+      ${[["target", "215,334 rows → RT4 · by hand", "compute", "fargate", "done"], ["training", "PROMOTE=never · 5-year model", "ml", "model", "done"], ["Promote by hand", "20261122T205816Z", "sec", "gate", "done"], ["Switches on · PR #31", "live_enabled · weekly_retrain_enabled", "int", "sched", "next"], ["Smaller images", "faster cold starts", "ci", "image", ""]].map(([t, sub, k, i, tag], j, all) => {
         const x = 60 + (j % 3) * 500, y = 250 + Math.floor(j / 3) * 260;
         return `<g class="rv" data-s="0" data-u="0" data-d="${j + 1}">
           ${node({ x, y, w: 460, h: 96, k, i, t, sub, cls: tag === "done" ? "okk" : "" })}
           <text x="${x}" y="${y - 16}" class="ft">${String(j + 1).padStart(2, "0")}${tag ? " · " + tag : ""}</text>
-          ${j % 3 < 2 ? `<path class="edge flow" d="M${x + 460} ${y + 48} H${x + 500}" marker-end="url(#ah)"/>` : ""}
+          ${j % 3 < 2 && j < all.length - 1 ? `<path class="edge flow" d="M${x + 460} ${y + 48} H${x + 500}" marker-end="url(#ah)"/>` : ""}
           ${j === 2 ? `<path class="edge flow" d="M${x + 230} ${y + 96} C ${x + 230} ${y + 190}, 290 ${y + 150}, 290 ${y + 255}" marker-end="url(#ah)"/>` : ""}
         </g>`; }).join("")}
     </g>`,
