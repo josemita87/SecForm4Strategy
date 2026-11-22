@@ -1,4 +1,4 @@
-"""Recent rows come from an Iceberg table by event time; a table not created yet has none.
+"""Rows come from an Iceberg table, filtered by key or by event time and narrowed to some columns.
 
 Under test:
     packages/secform4strategy-clients/src/secform4strategy_clients/feature_store.py
@@ -43,3 +43,25 @@ class TestReadSince:
     def test_a_missing_table_has_no_rows(self, store: IcebergFeatureStore) -> None:
         rows = store.read_since('sales', SINCE, ('key', 'value'))
         assert (rows.empty, list(rows.columns)) == (True, ['key', 'value'])
+
+
+class TestRead:
+    """A filtered read returns every column, or only the columns asked for."""
+
+    ROWS = pd.DataFrame(
+        {
+            'key': ['a', 'b'],
+            'value': [1.0, 2.0],
+            'accepted_at': pd.to_datetime(['2026-11-19', '2026-11-21'], utc=True),
+        }
+    )
+
+    def test_every_column_by_default(self, store: IcebergFeatureStore) -> None:
+        store.push('sales', self.ROWS)
+        assert sorted(store.read('sales', where={'key': 'b'}).columns) == ['accepted_at', 'key', 'value']
+
+    def test_only_the_columns_asked_for(self, store: IcebergFeatureStore) -> None:
+        store.push('sales', self.ROWS)
+        assert store.read('sales', where={'key': ['a', 'b']}, columns=('key',)).sort_values('key').to_dict('list') == {
+            'key': ['a', 'b']
+        }

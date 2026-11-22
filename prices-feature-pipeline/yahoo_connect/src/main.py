@@ -37,7 +37,11 @@ def refresh_prices(store: FeatureStore, market: MarketData, tickers: list[str], 
         buffer_size: Tickers fetched per batch.
     """
     try:
-        stored = store.read(FeatureGroup.PRICES, where={Col.TICKER: tickers})
+        stored = store.read(
+            FeatureGroup.PRICES,
+            where={Col.TICKER: tickers},
+            columns=(Col.TICKER, Col.DATE, Col.CLOSE, Col.CLOSE_AS_TRADED),
+        )
     except NoSuchTableError:
         # The first run creates the price table, so every ticker fetches its full history
         stored = pd.DataFrame({Col.TICKER: [], Col.DATE: pd.to_datetime([]), Col.CLOSE: [], Col.CLOSE_AS_TRADED: []})
@@ -67,5 +71,8 @@ if __name__ == '__main__':
         load_feature_group_catalog(SPEC_PATH, config.feature_group_version),
     )
     refresh_prices(
-        store, MarketDataClient(), np.unique(store.read(source, where=where)[Col.TICKER]).tolist(), config.buffer_size
+        store,
+        MarketDataClient(),
+        np.unique(store.read(source, where=where, columns=(Col.TICKER,))[Col.TICKER]).tolist(),
+        config.buffer_size,
     )
