@@ -431,7 +431,7 @@ The orchestrators have their own roles:
 | --- | --- | --- |
 | `quality.yml` | Pull requests and pushes to master | The quality gate: `make quality-static`, and `make type-check` as a separate job |
 | `images.yml` | A successful `quality` run on a push to master | Builds a `linux/arm64` image for each service whose code changed, tags it with that code's last commit, and pushes it to ECR |
-| `terraform.yml` | Pull requests and pushes to master that change `infra/` or `site/` | `terraform plan` on pull requests; `terraform apply` on master, after approval |
+| `terraform.yml` | Pull requests and pushes to master that change `infra/` or `site/` | `terraform plan` on pull requests; on master, a saved plan of the merged commit, then an apply of exactly that plan after approval |
 
 Terraform manages every AWS resource, including the ECR repositories and the CI roles. CI manages only the images and the runs of plan and apply.
 
@@ -440,7 +440,7 @@ GitHub Actions authenticates with OIDC (OpenID Connect). A workflow requests a t
 | Role | Trusted subject | Permissions |
 | --- | --- | --- |
 | `secform4strategy-github-images` | `repo:<owner>/SecForm4Strategy:ref:refs/heads/master` | ECR push and pull on `secform4strategy/*` |
-| `secform4strategy-github-plan` | `repo:<owner>/SecForm4Strategy:pull_request` | `ReadOnlyAccess`, plus write and delete on the state lock file only; `deny-site-keys` denies reading the site's key-value store |
+| `secform4strategy-github-plan` | `repo:<owner>/SecForm4Strategy:pull_request`, and `ref:refs/heads/master` for the plan of a master run | `ReadOnlyAccess`, plus write and delete on the state lock file only; `deny-site-keys` denies reading the site's key-value store |
 | `secform4strategy-github-apply` | `repo:<owner>/SecForm4Strategy:environment:aws` | `AdministratorAccess` |
 
 A pull request therefore cannot change any resource. Only a job in the GitHub environment `aws` can assume the apply role. That environment admits only master and requires a reviewer's approval. The branch rules of master require a pull request whose `quality-static` check passes, and they block force pushes and deletion.

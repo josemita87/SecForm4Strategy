@@ -1,6 +1,6 @@
 name: terraform
 
-# Plans infra changes on pull requests; applies master after approval in the aws environment.
+# Plans pull requests; on master, plans the merged commit and applies exactly that plan after approval (docs/aws.md).
 # Run it by hand on master to deploy images pushed since the last apply.
 on:
   pull_request:
@@ -21,6 +21,11 @@ env:
   # Marked sensitive in Terraform, so plans print (sensitive value) instead of the address
   TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
 
+# Master runs queue one after another, so each plan is made after the previous apply
+concurrency:
+  group: terraform-${{ github.event_name == 'pull_request' && github.ref || 'master' }}
+  cancel-in-progress: false
+
 defaults:
   run:
     working-directory: infra/envs/demo
@@ -28,8 +33,10 @@ defaults:
 jobs:
   plan:
     # Pull requests from forks get no secrets and no OIDC token, so only same-repo branches are planned
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    outputs:
+      changes: ${{ steps.plan.outputs.changes }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +52,16 @@ jobs:
 
       - run: terraform init
 
-      - run: terraform plan -no-color -lock-timeout=5m | tee plan.txt
+      # Exit code 2 means the plan has changes; 1 is an error
+      - id: plan
+        run: |
+          set +e
+          terraform plan -no-color -lock-timeout=5m -detailed-exitcode -out=tfplan > plan.txt 2>&1
+          code=$?
+          set -e
+          cat plan.txt
+          [ "$code" -ne 1 ]
+          echo "changes=$([ "$code" -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
       - name: Show the plan on the run's summary page
         run: |
@@ -55,14 +71,20 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # The saved plan holds sensitive values in plain text, so it is kept one day only
+      - if: github.event_name != 'pull_request' && steps.plan.outputs.changes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: infra/envs/demo/tfplan
+          retention-days: 1
+
   apply:
-    if: github.event_name != 'pull_request'
+    needs: plan
+    if: github.event_name != 'pull_request' && needs.plan.outputs.changes == 'true'
     runs-on: ubuntu-latest
     # The environment admits only master and waits for a required reviewer's approval
     environment: aws
-    concurrency:
-      group: terraform-apply
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -76,6 +98,12 @@ jobs:
           terraform_version: 1.17.1
           terraform_wrapper: false
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: infra/envs/demo
+
       - run: terraform init
 
-      - run: terraform apply -auto-approve -no-color -lock-timeout=5m
+      # Applies the reviewed plan only; Terraform refuses it if the state changed since the plan
+      - run: terraform apply -no-color -lock-timeout=5m tfplan
