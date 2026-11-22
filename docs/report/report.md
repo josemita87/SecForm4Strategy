@@ -271,12 +271,12 @@ The data bucket `secform4strategy-data-<account>` holds three prefixes:
 | Prefix | Content |
 | --- | --- |
 | `warehouse/` | The Iceberg tables. It is the location of the Glue database `secform4strategy`. |
-| `models/` | One folder per trained model (`model.joblib`, `model.meta.json`), plus `latest.json` |
+| `models/` | One folder per trained model (`model.joblib`, `model.meta.json`), plus `latest.json`, which names the promoted model |
 | `athena-results/` | Athena query results, expired after 7 days |
 
 The bucket blocks all public access and encrypts objects with SSE-S3. Incomplete multipart uploads expire after 1 day. The AWS Glue Data Catalog is the Iceberg catalog: it records where each table's current metadata file is. The Athena workgroup `secform4strategy` queries the tables with SQL and cancels any query that scans more than 1 GiB.
 
-`S3ModelStore` saves each model in a folder named after its training time, then writes `latest.json`, which names that folder. A load reads `latest.json` first, so it never pairs a new model with old metadata. Earlier models stay in the bucket.
+`S3ModelStore` saves each model in a folder named after its training time. Saving does not change `latest.json`. Promoting a version writes `latest.json`, which names that folder. A load reads `latest.json` first, so it never pairs a new model with old metadata. Earlier models stay in the bucket.
 
 Each service has an ECR repository `secform4strategy/<service>`. Tags are immutable, ECR scans each image on push, and each repository keeps its 5 newest images.
 
@@ -289,13 +289,13 @@ The Step Functions state machine `secform4strategy-retrain` runs six ECS tasks i
 3. kafka-to-store reads the transactions and upserts them into `BT4`.
 4. yahoo-connect refreshes the prices of the tickers in the tables.
 5. target builds the labelled rows in `RT4`.
-6. training saves a new model to `models/`.
+6. training saves a new model to `models/`, and promotes it if it passes the gate.
 
 Each step runs one Fargate ARM64 (Graviton) task in the cluster `secform4strategy`, in the private subnets, and waits for it to stop. The tasks use the `FARGATE` launch type (On-Demand). Fargate Spot runs ARM64 tasks too, but a Spot interruption fails the step, and the retry policy allows only 3 attempts, which a multi-day backfill could use up. A failed step is retried after 600 seconds, at most 3 times. The wait is deliberately longer than the 300-second SQS visibility timeout. A rerun that started earlier would find the unfinished messages still hidden, stop at once and leave the work undone. Each task logs to `/secform4strategy/<service>`, kept 14 days.
 
 Task sizes follow the work. Most tasks run with 0.5 vCPU and 1 GB or 2 GB. kafka-to-store runs with 2 vCPU and 8 GB, because each Iceberg upsert loads and merges table rows, and at 0.5 vCPU a 10,000-row batch took about 40 seconds. target reads every ticker's price history at once and runs with 2 vCPU and 16 GB, because 4 GB ran out of memory on one year of filings. training runs the 128 grid-search fits in parallel on 4 vCPU and 16 GB.
 
-EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC (`secform4strategy-weekly-retrain`). master-index then runs with `MODE=recent` and `DAYS_BACK=7` and publishes only the filings of the last 7 days. Each run's model replaces the previous one.
+EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC (`secform4strategy-weekly-retrain`). master-index then runs with `MODE=recent` and `DAYS_BACK=7` and publishes only the filings of the last 7 days. The training task runs with `PROMOTE=gated`, so a run's model replaces the promoted model only if it passes the promotion gate. The gate requires at least 50,000 development rows and at least 80% of the current model's, the same feature-group version and `features`, holdout rows, a finite holdout MAE and at least one short. It does not compare MAE with the current model, because each model is scored on a different holdout period. `scripts/promote_model.sh` lists the saved models and promotes one by hand, which is also the rollback.
 
 **Run input.** A run's input can override environment variables per step:
 
@@ -752,7 +752,6 @@ The next research steps:
 | Smaller images for the live Lambdas | The about 1 GB images cause cold starts of up to 45 seconds. |
 | AWS WAF rate-based rule on the site | Limits password guessing; about $6 per month. |
 | Custom domain with an ACM certificate | Names the project and allows HSTS preload; about $15 per year. |
-| Compare a new model with the current one before replacing it | Training now replaces the model each week without a comparison. |
 | Add `type-check` to the pre-commit hook | mypy runs in CI as a separate job only. |
 
 ---

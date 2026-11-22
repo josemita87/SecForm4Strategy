@@ -7,6 +7,7 @@ from typing import Any, Literal
 import yaml
 from dotenv import load_dotenv
 from paths import LOG_PATH, MODEL_PATH, PLOT_PATH, SPEC_PATH
+from promotion import Policy
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -46,6 +47,11 @@ class Config(BaseSettings):
 
     # Model store: MODEL_STORE__BACKEND picks it, MODEL_STORE__<FIELD> sets its fields
     model_store: LocalModels | S3Models = Field(LocalModels(backend='local'), discriminator='backend')
+
+    # Promotion (docs/training.md#promotion): `never` only saves; `gated` promotes when every gate check passes
+    promote: Policy = 'never'
+    min_train_rows: int = Field(50_000, ge=0)
+    min_rows_ratio: float = Field(0.8, gt=0, le=1)
 
     # Paths (defaults anchored on the repo layout via paths.py; env overridable)
     plot_path: Path = PLOT_PATH

@@ -49,7 +49,7 @@ The services choose their adapters from environment variables, as [configuration
 
 `SqsQueue` sends and receives JSON bodies on SQS standard queues, 10 messages per call. `ack` deletes the finished messages. A large receive or ack runs up to 10 calls at once on a thread pool (`workers`), so a batch of 10,000 messages takes 1,000 calls in about 100 rounds instead of 1,000 in a row.
 
-`S3ModelStore` saves each model in a folder named after its training time, as `model.joblib` plus `model.meta.json`. It then writes `latest.json`, which names that folder. `load` reads `latest.json` first, so a load never pairs a new model with old metadata. Earlier models stay in the bucket.
+`S3ModelStore.save` writes each model to a folder named after its training time, as `model.joblib` plus `model.meta.json`, and returns that folder name as the version. `save` does not change `latest.json`. `promote(version)` reads the version's metadata, then writes `latest.json`, which names that folder. `load` reads `latest.json` first, so a load never pairs a new model with old metadata. Earlier models stay in the bucket.
 
 The live path adds three modules to `secform4strategy_clients`:
 
@@ -77,13 +77,13 @@ One Step Functions state machine, `retrain`, runs six ECS tasks in order:
 3. kafka-to-store reads the transactions and upserts them into `BT4`.
 4. yahoo-connect refreshes the prices of the tickers in the tables.
 5. target builds the labelled rows.
-6. training saves a new model to `models/` in S3.
+6. training saves a new model to `models/` in S3, and promotes it if it passes the gate.
 
 Each step runs one Fargate ARM64 task in the cluster `secform4strategy`, in the private subnets, and waits for it to stop. kafka-to-store runs with 2 vCPU and 8 GB, because each Iceberg upsert loads and merges table rows. The cluster has Container Insights enabled, so CloudWatch shows each task's CPU and memory use. The tasks use the `FARGATE` launch type (On-Demand). Fargate Spot runs ARM64 tasks too, but a Spot interruption fails the step, and the retry policy allows only 3 attempts, which a multi-day backfill could use up. A step whose task fails is retried after 600 seconds, at most 3 times. Each task writes its logs to the log group `/secform4strategy/<service>`, kept 14 days.
 
 EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC. master-index then runs with `MODE=recent` and `DAYS_BACK=7`: it reads the master indexes of the quarters that the last 7 days touch, and publishes only the filings of those 7 days. The schedule is enabled only while both `switched_on` and `weekly_retrain_enabled` are `true`.
 
-Each run's model replaces the previous one: training writes `latest.json` to point at the new model, without a comparison to the previous model.
+The training task runs with `PROMOTE=gated`. Training saves each run's model, and promotes it only if every gate check passes ([training.md](training.md#promotion)). A model that fails the gate stays saved, and the previous model stays promoted. Training reads the promoted model's metadata for the gate, so its task role has `models-read` as well as `models-write`.
 
 The batch scraper's task definition caps SEC requests at `SEC_MAX_RATE=5` per second. The live path uses at most 4.5 per second. Both send the same `User-Agent`, so together they stay under SEC's limit of 10 requests per second per client.
 
@@ -99,6 +99,12 @@ The first full load is the same state machine, started once by hand with `MODE=h
 
 ```json
 {"overrides": {"master-index": {"MODE": "historical", "YEARS": "5"}, "scraper": {"SEC_MAX_RATE": "8"}, "kafka-to-store": {"BUFFER_SIZE": "10000"}}}
+```
+
+A run started by hand for a test sets `PROMOTE=never` for training. Training then saves the model and does not promote it, whatever the gate would decide:
+
+```json
+{"overrides": {"training": {"PROMOTE": "never"}}}
 ```
 
 #### Throughput
@@ -415,7 +421,7 @@ ECS tasks read a changed value at their next start. Lambda functions read it at 
 | `tasks` | Each running ECS task, its revision, whether a run or a person started it, and for how long |
 | `errors` | The `ERROR` log lines of the last hour, per service, for the tasks and the Lambdas |
 | `live` | The `live-score` runs of the last 24 hours by outcome, and the latest failure's error |
-| `model` | The model folder `latest.json` names, and when it was written |
+| `model` | The promoted model folder that `latest.json` names, and when it was written |
 
 yahoo-connect, target and training read tables, not a queue, so they have no ETA. `make status` shows how long they have run.
 

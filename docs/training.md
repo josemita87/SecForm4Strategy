@@ -106,6 +106,49 @@ Training logs:
 
 [configuration.md](configuration.md) lists the rest of the record.
 
+## Promotion
+
+Training saves every model as a new version. Inference loads only the promoted version: the folder that `latest.json` names in S3, or the file at `MODEL_STORE__PATH` locally. A saved model that is not promoted changes nothing that trades.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PROMOTE` | `never` | `never` saves the model and does not promote it. `gated` promotes it when every gate check passes. |
+| `MIN_TRAIN_ROWS` | `50000` | The fewest development rows (`train_rows`) a promoted model may have |
+| `MIN_ROWS_RATIO` | `0.8` | The smallest share of the current model's `train_rows` a promoted model may have |
+
+The `retrain` task definition sets `PROMOTE=gated`, `MIN_TRAIN_ROWS=50000` and `MIN_ROWS_RATIO=0.8`, so the weekly schedule promotes through the gate. The local default is `never`.
+
+### Gate checks
+
+`promotion.gate` (`training/src/promotion.py`) compares the new model's metadata with the promoted model's metadata. It promotes only when every check passes:
+
+| Check | Passes when |
+| --- | --- |
+| `min_train_rows` | `train_rows >= MIN_TRAIN_ROWS` |
+| `train_rows_vs_current` | `train_rows >= MIN_ROWS_RATIO * current.train_rows` |
+| `feature_group_version` | The feature-group version equals the current model's |
+| `features` | The `features` tuple, names and order, equals the current model's |
+| `test_rows` | `test_rows > 0` |
+| `holdout_mae` | The model's holdout MAE is finite |
+| `n_shorts` | The model shorts at least one holdout row at `PREDICTION_THRESHOLD` |
+
+If no model is promoted yet, the gate skips the three checks that compare with the current model. `train_rows_vs_current` catches a truncated dataset, for example a run on 1 day of data. `features` and `feature_group_version` catch a model whose inputs differ from the rows that inference builds.
+
+The gate does not compare the holdout MAE with the current model's MAE. Each run holds out the latest 20% of its own rows, so two models are scored on different periods. A lower MAE on one period does not show that a model is better than a model scored on another period.
+
+### Logs
+
+Training logs the saved version. Under `never`, it logs that the model was saved and not promoted, and the `scripts/promote_model.sh` command that promotes it. Under `gated`, it logs one line per check, `pass` or `FAIL` with its values, and then whether the model was promoted. A model that fails the gate stays saved, and the previous model stays promoted. The metadata does not record the decision, because training writes the metadata before the gate runs.
+
+### Manual promotion and rollback
+
+`scripts/promote_model.sh` uses the AWS profile `secform4` unless `AWS_PROFILE` is set. It reads the bucket `secform4strategy-data-<account>`, or `MODELS_BUCKET` when set.
+
+1. Run `scripts/promote_model.sh` without an argument. It prints each saved version with `trained_at`, `train_rows`, the model's and the zero baseline's holdout MAE, and `n_shorts`. It marks the promoted version with `<- promoted`.
+2. Run `scripts/promote_model.sh <version>`. It checks that the version folder holds `model.meta.json` and `model.joblib`, then writes `{"version": "<version>"}` to `latest.json`.
+
+To roll back, promote an earlier version the same way. Inference loads the model at each invocation, so the next invocation uses the promoted version.
+
 ## Run time
 
 The ECS task has 4 vCPU and 16 GB of memory. On the 1-year data (73,195 rows), the 128 fits plus the refit used about 2,200 CPU-seconds: 3 minutes on a 16-core laptop. Fit time grows about linearly with rows, so the 5-year data (about 400,000 rows) should take 45 to 60 minutes on the task. Early stopping makes each fit's time depend on the parameters; a smaller `param_grid` shortens the run.

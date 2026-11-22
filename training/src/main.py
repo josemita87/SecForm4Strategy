@@ -1,4 +1,4 @@
-"""Entry point: wires the ports from config, tunes the regressor walk-forward, scores it on the holdout, saves it."""
+"""Entry point: wires the ports, tunes the regressor walk-forward, scores it on the holdout, saves and gates it."""
 
 import logging
 import subprocess
@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import model
 import pandas as pd
+import promotion
 import simulation
 import sklearn
 import validation
@@ -118,9 +119,9 @@ if __name__ == '__main__':
             model_store = LocalModelStore(local.path)
         case S3Models() as s3:
             model_store = S3ModelStore(s3.region, s3.bucket, s3.prefix)
-    model_store.save(
+    version = model_store.save(
         pipeline,
-        ModelMetadata(
+        metadata := ModelMetadata(
             trained_at=datetime.now(UTC),
             git_sha=git_sha,
             sklearn_version=sklearn.__version__,
@@ -138,4 +139,24 @@ if __name__ == '__main__':
             report_thresholds=config.report_thresholds,
         ),
     )
-    logger.info(f'Model saved to: {config.model_store}')
+    logger.info(f'Model {version} saved to: {config.model_store}')
+
+    # Promotion: inference loads only the promoted version, never a merely saved one
+    verdict = promotion.decide(
+        model_store,
+        version,
+        metadata,
+        config.promote,
+        promotion.PromotionSpec(config.min_train_rows, config.min_rows_ratio),
+    )
+    if verdict is None:
+        logger.info(
+            f'Model {version} saved, not promoted (PROMOTE=never); promote it with scripts/promote_model.sh {version}'
+        )
+    else:
+        for check in verdict.checks:
+            logger.info(f'gate {check.name}: {"pass" if check.passed else "FAIL"} ({check.detail})')
+        logger.log(
+            logging.INFO if verdict.promote else logging.WARNING,
+            f'Model {version} {"promoted" if verdict.promote else "not promoted: a gate check failed"}',
+        )

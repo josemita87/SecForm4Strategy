@@ -71,7 +71,7 @@ module "iam" {
     kafka-to-store = { receives = ["transactions"], capabilities = ["lakehouse-write"] }
     yahoo-connect  = { capabilities = ["lakehouse-write"] }
     target         = { capabilities = ["lakehouse-write"] }
-    training       = { capabilities = ["lakehouse-read", "models-write"] }
+    training       = { capabilities = ["lakehouse-read", "models-read", "models-write"] }
     inference      = { capabilities = ["lakehouse-read", "models-read"] }
   }
   lambda_access = {
@@ -169,6 +169,8 @@ module "tasks" {
       environment = merge(local.lakehouse, local.models, {
         HOLDOUT_RATIO = "0.2", N_FOLDS = "4", PREDICTION_THRESHOLD = local.prediction_threshold
         RANDOM_STATE  = "42", TARGET_FEATURE = "pct_change"
+        # Scheduled runs promote through the gate; an ad-hoc run overrides PROMOTE to "never" (docs/training.md#promotion)
+        PROMOTE = "gated", MIN_TRAIN_ROWS = "50000", MIN_ROWS_RATIO = "0.8"
       })
     }
     inference = {
