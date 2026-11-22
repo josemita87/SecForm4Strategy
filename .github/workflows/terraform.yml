@@ -71,12 +71,19 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # The saved plan holds sensitive values in plain text, so it is kept one day only
+      # The saved plan holds sensitive values in plain text and artifacts of a public repo are public: encrypt it
+      - if: github.event_name != 'pull_request' && steps.plan.outputs.changes == 'true'
+        env:
+          TFPLAN_KEY: ${{ secrets.TFPLAN_KEY }}
+        run: |
+          test -n "$TFPLAN_KEY"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:TFPLAN_KEY -in tfplan -out tfplan.enc
+
       - if: github.event_name != 'pull_request' && steps.plan.outputs.changes == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tfplan
-          path: infra/envs/demo/tfplan
+          path: infra/envs/demo/tfplan.enc
           retention-days: 1
 
   apply:
@@ -102,6 +109,10 @@ jobs:
         with:
           name: tfplan
           path: infra/envs/demo
+
+      - env:
+          TFPLAN_KEY: ${{ secrets.TFPLAN_KEY }}
+        run: openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:TFPLAN_KEY -in tfplan.enc -out tfplan
 
       - run: terraform init
 
