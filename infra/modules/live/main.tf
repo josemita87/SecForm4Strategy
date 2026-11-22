@@ -50,11 +50,6 @@ resource "aws_lambda_function" "service" {
     variables = merge({ HOME = "/tmp" }, each.value.environment)
   }
 
-  vpc_config {
-    subnet_ids         = var.subnet_ids
-    security_group_ids = [var.security_group_id]
-  }
-
   logging_config {
     log_format = "Text"
     log_group  = aws_cloudwatch_log_group.function[each.key].name

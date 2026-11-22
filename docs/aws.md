@@ -6,7 +6,7 @@ The AWS deployment runs the same services as the local stack, on serverless AWS 
 
 ![AWS architecture](diagrams/aws-architecture.drawio.svg)
 
-The batch path runs ECS tasks and the live path runs Lambda functions, both in the private subnets. Orange dashed outlines and lines exist only while the stack is switched on.
+The batch path runs ECS tasks in the private subnets. The live path runs Lambda functions outside the VPC. Orange dashed outlines and lines exist only while the stack is switched on.
 
 Terraform state is in the bucket `secform4strategy-tfstate-<account>`, which `infra/bootstrap` creates. The backend locks the state with S3 native locking (`use_lockfile = true`). The root module `infra/envs/demo` calls eight modules:
 
@@ -83,7 +83,7 @@ EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC. master-index
 
 Each run's model replaces the previous one: training writes `latest.json` to point at the new model, without a comparison to the previous model.
 
-The batch scraper's task definition caps SEC requests at `SEC_MAX_RATE=5` per second. The live path uses at most 4.5 per second, so both together stay under SEC's 10 per IP address, which the NAT gateway's address shares.
+The batch scraper's task definition caps SEC requests at `SEC_MAX_RATE=5` per second. The live path uses at most 4.5 per second. Both send the same `User-Agent`, so together they stay under SEC's limit of 10 requests per second per client.
 
 #### Run input
 
@@ -140,7 +140,7 @@ The schedule is enabled only while both `switched_on` and `live_enabled` are `tr
 | target | `live-score` | 2048 MB, 180 s |
 | inference | `live-score` | 2048 MB, 180 s; `QTY=1`, `PREDICTION_THRESHOLD=-0.05` |
 
-Each function runs `<service directory>/.venv/bin/python -m awslambdaric` with the handler `handler.handle`, or `src.handler.handle` for yahoo-connect and target. `awslambdaric` is the Lambda runtime interface client: it receives events from the Lambda service and calls the handler. Each handler sits beside the service's `main.py` and calls the same functions as the batch loop. The functions run in the private subnets, with `HOME=/tmp`, because the image's file system is read-only. Each function writes its logs to `/aws/lambda/secform4strategy-live-<service>`, kept 14 days.
+Each function runs `<service directory>/.venv/bin/python -m awslambdaric` with the handler `handler.handle`, or `src.handler.handle` for yahoo-connect and target. `awslambdaric` is the Lambda runtime interface client: it receives events from the Lambda service and calls the handler. Each handler sits beside the service's `main.py` and calls the same functions as the batch loop. The functions run outside the VPC, with `HOME=/tmp`, because the image's file system is read-only. Each function writes its logs to `/aws/lambda/secform4strategy-live-<service>`, kept 14 days.
 
 The SQS triggers report partial batch failures. A handler returns the messages it did not finish in `batchItemFailures`, and SQS delivers only those again, after the 300-second visibility timeout.
 
@@ -176,7 +176,9 @@ Warm invocations take a few seconds. A filing that arrives after a quiet period 
 
 The private subnets are in the availability zones `use1-az1` and `use1-az2`. Fargate ARM64 is not available in `use1-az3`.
 
-The ECS tasks and the Lambda functions run in the private subnets. They have no public IP address, and the security group accepts no inbound connections. Nothing on the internet can open a connection to them.
+The ECS tasks run in the private subnets. They have no public IP address, and the security group accepts no inbound connections. Nothing on the internet can open a connection to them.
+
+The live Lambda functions run outside the VPC, in the Lambda service's own network. They reach SEC EDGAR, Yahoo Finance, Alpaca and the AWS APIs directly, without the NAT gateway, and accept no inbound connections. Their outbound address is not fixed. They work while the stack is dormant, because they do not depend on the NAT gateway.
 
 The public subnets hold only the NAT gateway. The NAT gateway gives the private subnets outbound internet access, which the services need for SEC EDGAR, Yahoo Finance and Alpaca. It also carries their calls to the AWS APIs other than S3: ECR, SQS, Glue, SSM, DynamoDB and CloudWatch Logs.
 
@@ -192,7 +194,7 @@ The `iam` module creates three kinds of role:
 | --- | --- | --- | --- |
 | `secform4strategy-execution` | `ecs-tasks.amazonaws.com` | The ECS agent, before the container starts | `AmazonECSTaskExecutionRolePolicy` (pull images from ECR, write CloudWatch logs), plus `ssm:GetParameters` on `/secform4strategy/*` |
 | `secform4strategy-<service>` | `ecs-tasks.amazonaws.com` | The service's code in an ECS task | Only the queues and data that service uses, from `task_access` |
-| `secform4strategy-live-<service>` | `lambda.amazonaws.com` | The service's code in a Lambda function | `AWSLambdaVPCAccessExecutionRolePolicy` (logs, and the network interfaces in the VPC), plus the entries in `lambda_access` |
+| `secform4strategy-live-<service>` | `lambda.amazonaws.com` | The service's code in a Lambda function | `AWSLambdaVPCAccessExecutionRolePolicy` (logs, and deletion of the network interfaces of earlier VPC-attached versions), plus the entries in `lambda_access` |
 
 In ECS, the execution role reads the secrets from SSM and injects them as environment variables, so the task roles hold no SSM permission. In Lambda, the function's own role reads them, so the three Lambda roles that use secrets hold the `read-secrets` capability.
 

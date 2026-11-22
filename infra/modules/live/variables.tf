@@ -26,16 +26,6 @@ variable "poller" {
   type        = string
 }
 
-variable "subnet_ids" {
-  description = "Private subnets the functions run in; they reach the internet through the NAT gateway."
-  type        = list(string)
-}
-
-variable "security_group_id" {
-  description = "Security group of the functions."
-  type        = string
-}
-
 variable "schedule_enabled" {
   description = "Poll the filing feed every minute; off, the live path receives nothing."
   type        = bool
