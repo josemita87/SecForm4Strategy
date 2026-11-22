@@ -59,7 +59,7 @@ scikit-learn `GridSearchCV` fits every parameter combination on every fold, with
 
 The grid has 32 combinations. With 4 folds, that is 128 fits. Each fit uses early stopping with a cap of `max_iter=500`.
 
-`GridSearchCV` selects the combination with the lowest mean validation MAE (mean absolute error). The short return is not the selection metric. At the traded threshold, each fold's short return comes from a few hundred trades (265 on the 1-year holdout), which is too noisy to rank 32 combinations.
+`GridSearchCV` selects the combination with the lowest mean validation MAE (mean absolute error). The short return is not the selection metric. At the traded threshold, each fold's short return comes from a few hundred trades (265 on the 1-year holdout, 619 on the 5-year holdout), which is too noisy to rank 32 combinations.
 
 ## Final model and holdout
 
@@ -151,7 +151,55 @@ To roll back, promote an earlier version the same way. Inference loads the model
 
 ## Run time
 
-The ECS task has 4 vCPU and 16 GB of memory. On the 1-year data (73,195 rows), the 128 fits plus the refit used about 2,200 CPU-seconds: 3 minutes on a 16-core laptop. Fit time grows about linearly with rows, so the 5-year data (about 400,000 rows) should take 45 to 60 minutes on the task. Early stopping makes each fit's time depend on the parameters; a smaller `param_grid` shortens the run.
+The task definition in `infra/envs/demo/main.tf` gives training 4 vCPU and 16 GB of memory. Early stopping makes each fit's time depend on the parameters; a smaller `param_grid` shortens the run.
+
+| Data | Rows | Where | Run time |
+| --- | --- | --- | --- |
+| 1 year | 73,195 | A 16-core laptop | About 2,200 CPU-seconds for the 128 fits plus the refit: 3 minutes |
+| 5 years | 215,334 | ECS on AWS Fargate, revision 11, overridden to 16 vCPU and 32 GB, `PROMOTE=never` | About 10 minutes, from 20:48 to 20:58 UTC on 2026-11-22 |
+
+The 5-year run overrode the configured size at run time. Container Insights shows it used all 16 vCPU at 100% and peaked at about 20 GB of memory, because each `n_jobs` worker holds a copy of the data. The configured 4 vCPU and 16 GB are therefore enough for the weekly runs. The override only shortened the run, from an expected 35 minutes at 4 vCPU to about 10 minutes.
+
+The 5-year run was the first `training` run on AWS Fargate. It saved model `20261122T205816Z`, and `scripts/promote_model.sh 20261122T205816Z` promoted it by hand in place of `20261120T210617Z`.
+
+## 5-year results
+
+The 5-year training data has 215,334 rows and 34 columns. The development set has 169,990 rows after purging. The holdout has 43,067 rows and starts at 2025-10-24 18:24 UTC. The best parameters are `loss=absolute_error`, `learning_rate=0.03`, `max_leaf_nodes=15`, `min_samples_leaf=200` and `l2_regularization=0.0`.
+
+Each fold validates on 33,998 rows. The model is worse than zero in every fold:
+
+| Fold | Training rows | Validation period | Model MAE | Zero MAE |
+| --- | --- | --- | --- | --- |
+| 1 | 30,472 | 2021-11-22 to 2022-12-21 | 0.11050 | 0.10804 |
+| 2 | 64,675 | 2022-12-21 to 2023-12-19 | 0.11192 | 0.11030 |
+| 3 | 97,893 | 2023-12-19 to 2024-11-14 | 0.10011 | 0.09908 |
+| 4 | 133,002 | 2024-11-14 to 2025-09-23 | 0.11330 | 0.11307 |
+
+Holdout scores at `PREDICTION_THRESHOLD` = -0.05:
+
+| Predictor | MAE | Short return | Shorts |
+| --- | --- | --- | --- |
+| `model` | 0.12653 | +2.64% | 619 |
+| `zero` | 0.12646 | 0 | 0 |
+| `train_mean` | 0.12657 | 0 | 0 |
+| `ticker_history` | 0.13548 | -6.42% | 2,982 |
+
+The model's holdout short return at each of `report_thresholds`:
+
+| Threshold | Shorts | Mean return captured |
+| --- | --- | --- |
+| 0 | 28,356 | -1.44% |
+| -0.02 | 6,602 | -3.24% |
+| -0.05 | 619 | +2.64% |
+| -0.10 | 51 | +5.04% |
+
+- The model has no MAE edge over predicting zero, on the holdout or on any fold.
+- The holdout profit sits only in the extreme tail. The 619 shorts at -0.05 are 1.4% of the holdout, and only 51 rows fall below -0.10.
+- The return does not grow steadily with the threshold: -0.02 loses while -0.05 gains. That pattern is consistent with noise.
+- `ticker_history` loses 6.42% per short, so the naive baseline fails clearly.
+- The returns exclude borrow fees, slippage and commissions.
+
+The 1-year holdout MAE (0.1216) and the 5-year holdout MAE are not comparable, because each model holds out a different period. For the same reason, the promotion gate does not compare MAE.
 
 ## Limits
 

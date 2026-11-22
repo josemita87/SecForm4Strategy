@@ -114,7 +114,7 @@ A run started by hand for a test sets `PROMOTE=never` for training. Training the
 | scraper | 6 to 7.8 filings per second | `SEC_MAX_RATE`, `FETCH_WORKERS=12`, `BUFFER_SIZE=200`, `RETRY_PAUSE=5` |
 | kafka-to-store | About 40 seconds per 10,000-row batch at 0.5 vCPU, about 25 seconds at 2 vCPU; about 75 seconds per 30,000 rows, so about 400 rows per second whatever the batch size | The task's CPU up to one core; the per-row cleaning and upsert work runs on one core, so bigger batches do not raise the rate |
 
-Most of kafka-to-store's batch time is the Iceberg upsert, not SQS. The upsert matches the batch's keys against the whole `BT4` table, so it slows as the table grows. Two writers to one Iceberg table conflict at commit: pyiceberg uses optimistic concurrency, so the second commit fails and retries. More kafka-to-store tasks therefore do not speed up the load. A larger `BUFFER_SIZE` does, because each batch pays the table scan once.
+Most of kafka-to-store's batch time is the Iceberg upsert, not SQS. The upsert matches the batch's keys against the whole `BT4` table, so it slows as the table grows. Two writers to one Iceberg table conflict at commit: pyiceberg uses optimistic concurrency, so the second commit fails and retries. More kafka-to-store tasks therefore do not speed up the load, and neither does a larger `BUFFER_SIZE`, because the cost is per row.
 
 The scraper downloads up to `FETCH_WORKERS` filings at once. SEC answers each request in about 0.5 seconds, so several requests in flight keep the rate near the cap. `EdgarClient` spaces request starts at least `1 / SEC_MAX_RATE` seconds apart across all threads.
 
@@ -204,7 +204,7 @@ Warm invocations take a few seconds. A filing that arrives after a quiet period 
 | Security group `secform4strategy-tasks` | No inbound rules; all outbound traffic allowed |
 | NAT gateway and Elastic IP | In `secform4strategy-public-0`, only while `switched_on = true` |
 
-The private subnets are in the availability zones `use1-az1` and `use1-az2`. Fargate ARM64 is not available in `use1-az3`.
+The subnets take the first two availability zones that AWS reports as available, which in this account are `use1-az1` and `use1-az2`. Fargate ARM64 is not available in `use1-az3`, and nothing in the module excludes that zone.
 
 ### Why the project has a VPC
 

@@ -24,7 +24,7 @@ Both paths share the same container images and one Apache Iceberg lakehouse on S
 
 **How to read this report.** Chapter 2 states the business problem and ends in ten requirements. Chapter 3 gives the data, the model and the engineering only as far as they shape the cloud design. Chapters 4 and 5 are the core: each architecture decision names the requirement that drives it, the alternative it was weighed against, and why it won.
 
-**The outcome.** On one year of data, the model does not beat a constant zero prediction on mean absolute error (holdout MAE 0.1216 against 0.1193). Its most negative predictions still rank well: the 265 holdout rows predicted below -5% fell by 10.8% on average, before costs. The live path ran end to end on real filings. The deliverable is therefore cloud infrastructure that can test the insider-selling hypothesis rigorously, not a proven trading strategy.
+**The outcome.** On one year and on five years of data, the model does not beat a constant zero prediction on mean absolute error. On five years its holdout MAE is 0.12653 against 0.12646 for zero, and it is worse than zero in all four validation folds. Its 619 holdout shorts below -5% returned +2.64% on average before costs, while the shorts below -2% lost 3.24%. That pattern is consistent with noise. The architecture ran every step on five years of data, and the live path ran end to end on real filings. The deliverable is therefore cloud infrastructure that can test the insider-selling hypothesis rigorously, not a proven trading strategy.
 
 ## Contents
 
@@ -39,7 +39,8 @@ Both paths share the same container images and one Apache Iceberg lakehouse on S
 9. [Limitations and future work](#9-limitations-and-future-work)
 10. [Conclusion](#10-conclusion)
 11. [Appendix A: Resource inventory](#appendix-a-resource-inventory)
-12. [Appendix B: Glossary](#appendix-b-glossary)
+12. [Appendix B: Configuration reference](#appendix-b-configuration-reference)
+13. [Appendix C: Glossary](#appendix-c-glossary)
 
 ---
 
@@ -63,7 +64,7 @@ The target client is an investor who lets the system trade part of their money o
 | Budget | $5 per month. The demo is on for the presentation and the backfill, off otherwise. |
 | Broker | Alpaca paper trading; its keys can place and cancel orders |
 | Repository | Public on GitHub, including its workflow artifacts |
-| Data volume | About 250,000 filings per year; about 1.06 million in 5 years |
+| Data volume | About 155,000 to 192,000 filings with transactions per year; about 1.05 million from January 2021 to November 2026 |
 
 ### 2.4 Requirements
 
@@ -107,7 +108,7 @@ The five tables are Iceberg tables with deterministic keys. A transaction's key 
 | Data property | Value | Cloud consequence |
 | --- | --- | --- |
 | Live arrival | A few filings per minute in market hours, in bursts | Per-event compute that costs nothing between events (R1) |
-| History | About 1.06 million filings in 5 years; the scraper runs at 6 to 7.8 filings per second | A load of days, beyond any 15-minute limit (R2) |
+| History | About 1.05 million filings in 5 years; the scraper runs at 6 to 7.8 filings per second | A load of days, beyond any 15-minute limit (R2) |
 | Warehouse size | About 430 MB after the 5-year scrape | Object storage, no database server (R7) |
 
 ### 3.2 Constraints from the model
@@ -120,7 +121,7 @@ The five tables are Iceberg tables with deterministic keys. A transaction's key 
 | --- | --- | --- |
 | No look-ahead | Every row is timed by `accepted_at`. The label is the return from the next market print to the first close at least 30 days later. A label feeds later rows only after `label_known_at`. | Training and live scoring must compute features with the same code on the same tables: same images, one feature store (R4). |
 | Model | A scikit-learn `Pipeline`: scaling, one-hot encoding and a `HistGradientBoostingRegressor` | One `model.joblib` file. No GPU, no hosted endpoint: the model loads in a Lambda or a task (R7). |
-| Training | A walk-forward grid search: 32 parameter combinations on 4 purged time folds, so 128 fits, then one holdout score | About 2,200 CPU-seconds on one year. A 4 vCPU Fargate task fits it; Lambda's 15-minute limit does not (R2). |
+| Training | A walk-forward grid search: 32 parameter combinations on 4 purged time folds, so 128 fits, then one holdout score | About 2,200 CPU-seconds on one year. Five years took about 10 minutes on a Fargate task overridden to 16 vCPU, more cores than a Lambda function offers (R2). |
 | Retraining cadence | Weekly, on the last 7 days of filings | A scheduled batch run, idle the rest of the week (R2, R7) |
 | Trading rule | Short 1 share for each row predicted below -5% (`PREDICTION_THRESHOLD`), with the row key as `client_order_id` | Idempotent orders under at-least-once delivery (R5) |
 
@@ -132,7 +133,7 @@ The five tables are Iceberg tables with deterministic keys. A transaction's key 
 | Ports and adapters | Services depend on Python `Protocol`s; `main.py` or `handler.py` builds the adapter | The local stack (Redpanda, SQLite, disk) and AWS (SQS, Glue, S3) run the same code; three settings select the backends |
 | Error contract | An adapter retries transient errors, then raises `RetryableError` or `PermanentError` | SQS redelivery, Step Functions `Retry` and DLQs do the rest (Section 5.2) |
 | Secrets as types | Credentials are `SecretStr`, unwrapped only at the SDK call | Secrets come from SSM at run time (Section 5.5) |
-| Quality gate | ruff, pydoclint, bandit, config validation, unit tests without mocks, mypy | A required check before any merge and image build (Section 5.6) |
+| Quality gate | ruff, pydoclint, bandit, config validation, unit tests without mocks; mypy in a separate job | `quality-static` is a required check before any merge and image build (Section 5.6); mypy reports but does not block |
 
 ---
 
@@ -165,7 +166,7 @@ All resources are in account `100118195151`, region `us-east-1`. Terraform state
 
 | Module | Resources |
 | --- | --- |
-| `storage` | Data bucket, Glue database, Athena workgroup, one ECR repository per service, the monthly budget |
+| `storage` | Data bucket, Glue database, Athena workgroup and its seven saved queries, one ECR repository per service, the monthly budget |
 | `network` | VPC, two public and two private subnets, internet gateway, S3 gateway endpoint, security group, and the NAT gateway while switched on |
 | `queues` | Five SQS queues, each with a dead-letter queue and a CloudWatch alarm, and an SNS topic |
 | `iam` | The ECS execution role, one task role per service, one Lambda role per function |
@@ -180,73 +181,49 @@ All resources are in account `100118195151`, region `us-east-1`. Terraform state
 
 ## 5. Architecture decisions by area
 
-Each section opens with the requirements it serves. Each decision states the requirement that drives it, the alternative it was weighed against, and why it won.
+Chapter 4 showed what runs where. This chapter explains why. Each section starts from a pressure that the business, the model or the engineering puts on the system. It then gives the AWS choice, the alternative it beat, and its price. Chapter 8 collects decisions D1 to D23 in one table, and Appendix B holds the configuration details.
 
 ### 5.1 Compute: batch and live
 
-**Serves:** R1 speed, R2 long jobs, R3 SEC limit, R4 one feature implementation, R7 budget.
+The system has two workloads with opposite shapes. No single compute service serves both for $5 per month (R7), so each path gets its own.
 
-#### D1. Live path on Lambda
-
-- **Driven by:** R1. A filing must be scored within minutes. Filings arrive in bursts, and most minutes bring none.
-- **Decision:** six Lambda functions, one per service step, triggered by a schedule, SQS and Step Functions.
-- **Alternative:** a long-running container (an ECS service) that polls and scores.
-- **Why it won:** Lambda starts per event and bills per invocation, so an idle minute costs nothing. An always-on Fargate service would bill around the clock, against R7. The accepted cost is the cold start.
-
-#### D2. Batch path on Fargate
-
-- **Driven by:** R2. The 5-year load ran for days, a 10,000-row Iceberg upsert takes about 25 seconds, and training runs 128 fits in parallel. Lambda stops a run after 15 minutes and offers at most 10 GB of memory.
-- **Decision:** one ECS task per step on Fargate, started and awaited by Step Functions.
-- **Alternative:** Lambda for everything, or EC2 instances.
-- **Why it won:** Fargate has no run-time limit, sizes each task separately, and bills only while the task runs. EC2 would add instances to patch and stop. Lambda cannot run the long steps at all.
-
-#### D3. One image, two runtimes
-
-- **Driven by:** R4. Training and live scoring must build features with the same code.
-- **Decision:** each Lambda runs the service's own image with `<service directory>/.venv/bin/python -m awslambdaric`. `awslambdaric` is the Lambda runtime interface client: it receives events and calls the handler. Each handler sits beside the service's `main.py` and calls the same functions as the batch loop.
-- **Alternative:** a separate live scorer that computes the features again.
-- **Why it won:** one implementation leaves no skew between training and scoring. The cost is image size: about 1 GB, which lengthens cold starts.
-
-#### D4. ARM64 (Graviton) everywhere
-
-- **Driven by:** R7.
-- **Decision:** CI builds `linux/arm64` images. Task definitions set `cpu_architecture = "ARM64"`, and the Lambdas set `architectures = ["arm64"]`.
-- **Alternative:** x86_64.
-- **Why it won:** AWS prices Fargate and Lambda on Graviton about 20% below x86 for the same vCPU and memory. The Python stack needs no x86-only binaries. Fargate ARM64 is not available in `use1-az3`, so the private subnets avoid that zone.
-
-#### D5. Cold starts accepted
-
-- **Driven by:** R1 against R7.
-- **Decision:** no provisioned concurrency. A first cold start of a 1 GB image exceeds Lambda's 10-second initialization limit, so Lambda repeats the initialization inside the invocation, which then succeeds. Measured cold invocations were 10 seconds for scraper, 45 seconds for kafka-to-store and 39 seconds for yahoo-connect. Warm invocations take a few seconds.
-- **Alternative:** provisioned concurrency, about $10 per month per function.
-- **Why it won:** six warm functions would cost about $60 per month, twelve times the budget. A filing after a quiet period still reaches inference about 1 to 2 minutes after the poll, which keeps R1. Smaller images are the cheaper fix (Section 9).
-
-#### Sizes
-
-Task and function sizes follow measurements, not defaults.
-
-| Service | Batch task (Fargate) | Live function (Lambda) |
+| | Live (R1) | Batch (R2) |
 | --- | --- | --- |
-| master-index | 0.5 vCPU, 1 GB | 512 MB, 60 s, every minute |
-| scraper | 0.5 vCPU, 1 GB, `FETCH_WORKERS=12` | 1024 MB, 120 s, batches of 10, at most 2 at a time |
-| kafka-to-store | 2 vCPU, 8 GB: at 0.5 vCPU a 10,000-row batch took about 40 s, at 2 vCPU about 25 s | 2048 MB, 240 s, batches of up to 100, at most 2 at a time |
-| yahoo-connect | 0.5 vCPU, 2 GB | 2048 MB, 180 s |
-| target | 2 vCPU, 16 GB: 4 GB ran out of memory on one year | 2048 MB, 180 s |
-| training | 4 vCPU, 16 GB for the parallel grid search | Not on the live path |
-| inference | 0.5 vCPU, 2 GB (not a `retrain` step) | 2048 MB, 180 s |
+| Shape | A few filings per minute in market hours, in bursts; most minutes bring none | The 5-year load ran for days; a 10,000-row Iceberg upsert takes about 25 seconds; training runs 128 fits in parallel |
+| Need | Score each filing within minutes of `accepted_at` | Run for hours with no time limit |
+| Choice | Six Lambda functions, one per service step, triggered by a schedule, SQS and Step Functions (**D1**) | One ECS task per step on Fargate, started and awaited by Step Functions (**D2**) |
+| Rejected | A long-running container (an ECS service) that polls and scores | Lambda for everything, or EC2 instances |
 
-The account allows 10 concurrent Lambda executions in total, shared by the live functions and the site publisher. The `maximum_concurrency` of 2 on each SQS trigger keeps the two queue consumers inside that quota. Section 9 describes the remaining risk.
+Lambda starts per event and bills per invocation, so an idle minute costs nothing. An always-on Fargate service would bill around the clock. Lambda cannot run the batch steps at all. It stops a run after 15 minutes and offers at most 10 GB of memory. EC2 would add instances to patch and stop. Fargate has no run-time limit, sizes each task separately, and bills only while the task runs.
+
+Both paths run on ARM64 (Graviton) for R7 (**D4**). CI builds `linux/arm64` images, the task definitions set `cpu_architecture = "ARM64"`, and the Lambdas set `architectures = ["arm64"]`. AWS prices Fargate and Lambda on Graviton about 20% below x86_64 for the same vCPU and memory, and the Python stack needs no x86-only binaries. The private subnets take the first two availability zones that AWS reports as available, `use1-az1` and `use1-az2` in this account. Fargate ARM64 is not available in `use1-az3`, and nothing in the network module excludes that zone.
+
+Two runtimes create a modelling risk. If training and live scoring built features with different code, the model would score rows unlike the rows it learned from (R4).
+
+Each Lambda therefore runs the service's own image with `<service directory>/.venv/bin/python -m awslambdaric` (**D3**). `awslambdaric` is the Lambda runtime interface client, which receives events and calls the handler. Each handler sits beside the service's `main.py` and calls the same functions as the batch loop. A separate live scorer that computes the features again was the alternative. One implementation leaves no skew between training and scoring. Its price is image size: about 1 GB.
+
+Image size sets up the main trade-off of the live path, R1 against R7 (**D5**). A first cold start of a 1 GB image exceeds Lambda's 10-second initialization limit. Lambda then repeats the initialization inside the invocation, which succeeds.
+
+| Option | Latency | Cost |
+| --- | --- | --- |
+| Cold starts (chosen) | Cold invocations measured 10 s (scraper), 45 s (kafka-to-store), 39 s (yahoo-connect); warm ones take a few seconds | Nothing extra |
+| Provisioned concurrency | No cold start | About $10 per month per function: about $60 per month for six, twelve times the budget |
+
+A filing after a quiet period still reaches inference about 1 to 2 minutes after the poll, which keeps R1. Smaller images are the cheaper fix (Section 9).
+
+Each task and function size comes from a measurement. For example, kafka-to-store went from 0.5 to 2 vCPU because a 10,000-row batch took about 40 seconds at 0.5 vCPU and about 25 seconds at 2 vCPU. Appendix B.1 lists every size.
+
+The account allows 10 concurrent Lambda executions in total, shared by the live functions and the site publisher. The `maximum_concurrency` of 2 on each SQS trigger keeps the two queue consumers inside that quota. The same limit of 2 caps the live scrapers' share of the SEC rate (R3, Section 5.4). Section 9 describes the remaining risk.
 
 ### 5.2 Orchestration and messaging
 
-**Serves:** R1 speed, R2 long jobs, R5 at-least-once, R10 recovery.
+Both paths chain several steps, and any step can fail halfway. The batch path must wait hours for a task and retry it with nobody watching (R2, R10). The live path must absorb bursts and survive redelivery without duplicate rows or orders (R1, R5).
 
-#### D6. Step Functions for the batch path
+#### The batch path
 
-- **Driven by:** R2 and R7. Six steps must run in order, wait for long tasks, and retry.
-- **Decision:** the state machine `secform4strategy-retrain` runs each step with `arn:aws:states:::ecs:runTask.sync`, which starts a Fargate task and waits for it to stop. A failed step is retried after 600 seconds, at most 3 times (`IntervalSeconds = 600`, `MaxAttempts = 3`, `BackoffRate = 1`).
-- **Alternative:** Apache Airflow on Amazon MWAA.
-- **Why it won:** Step Functions bills per state transition and costs nothing idle. MWAA runs an environment around the clock, far above $5 per month. Step Functions gives waits and retries without a scheduler server.
+The state machine `secform4strategy-retrain` runs the six batch steps in order (**D6**). Each step uses `arn:aws:states:::ecs:runTask.sync`, which starts a Fargate task and waits for it to stop. A failed step is retried after 600 seconds, at most 3 times (`IntervalSeconds = 600`, `MaxAttempts = 3`, `BackoffRate = 1`).
+
+Apache Airflow on Amazon MWAA was the alternative. MWAA runs an environment around the clock, far above $5 per month (R7). Step Functions bills per state transition and costs nothing idle. It gives waits and retries without a scheduler server.
 
 The retry interval is longer than the 300-second SQS visibility timeout on purpose. A rerun that started earlier would find the unfinished messages still hidden, stop at once and leave the work undone.
 
@@ -256,42 +233,30 @@ EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC (`cron(0 6 ? 
 {"overrides": {"master-index": {"MODE": "historical", "YEARS": "5"}, "scraper": {"SEC_MAX_RATE": "8"}, "kafka-to-store": {"BUFFER_SIZE": "10000"}}}
 ```
 
-#### D7. Revision pinning with `skip_destroy`
+A run that lasts days meets a second problem: CI keeps deploying new images while it runs (R10). By default, Terraform deregisters a replaced revision. ECS cannot start a task from an `INACTIVE` revision, so a deploy during a backfill would break the run.
 
-- **Driven by:** R10. A multi-day run must keep starting the same task definition while CI deploys new images.
-- **Decision:** a run names exact task-definition revisions, for example `secform4strategy-kafka-to-store:3`. The task definitions set `skip_destroy = true`, so Terraform leaves the replaced revision active.
-- **Alternative:** Terraform deregisters replaced revisions, its default.
-- **Why it won:** ECS cannot start a task from an `INACTIVE` revision, so a deploy during a backfill would break the run. A pinned revision still needs its image in ECR (Section 6).
+A run therefore names exact task-definition revisions, for example `secform4strategy-kafka-to-store:3` (**D7**). The task definitions set `skip_destroy = true`, so Terraform leaves the replaced revision active. A pinned revision still needs its image in ECR (Section 6).
 
-#### D8. The live chain: Scheduler, SQS, Lambda, Pipe, Step Functions
+#### The live chain
 
-- **Driven by:** R1 and R5.
-- **Decision:**
-  1. EventBridge Scheduler invokes the master-index Lambda every minute (`rate(1 minute)`).
-  2. master-index reads the first page of the SEC's current Form 4 feed. It sends the filings that the DynamoDB table `secform4strategy-seen` does not hold to `live-filings`, then records them, with a 7-day expiry.
-  3. The scraper Lambda sends transactions to `live-transactions`.
-  4. kafka-to-store upserts them into `BI4` and sends `{"tickers": [...]}` to `live-tickers`.
-  5. The EventBridge Pipe `secform4strategy-live-tickers` starts one run of `live-score` per batch of up to 10 messages.
-  6. `live-score` runs yahoo-connect, target and inference in order. Each step is retried twice on `States.TaskFailed`, after 5 and 10 seconds.
-- **Alternative:** one Lambda that polls, scrapes, stores and scores in a single invocation.
-- **Why it won:** each queue absorbs a burst and retries only its own failed messages. The two queue consumers scale separately. The Pipe starts the scoring sequence without glue code, and Step Functions shows each run's steps, which the website reads. A minute is the finest rate EventBridge Scheduler offers; the SEC feed does not push.
+The SEC feed does not push, and a minute is the finest rate EventBridge Scheduler offers. The live chain therefore starts with a poll every minute and passes each filing down a line of queues (**D8**):
 
-DynamoDB on demand holds the seen keys. It bills per request and costs nothing idle. Each item expires after 7 days (`SEEN_DAYS`), so the table stays small.
+1. EventBridge Scheduler invokes the master-index Lambda every minute (`rate(1 minute)`).
+2. master-index reads the first page of the SEC's current Form 4 feed. It sends the filings that the DynamoDB table `secform4strategy-seen` does not hold to `live-filings`, then records them, with a 7-day expiry.
+3. The scraper Lambda sends transactions to `live-transactions`.
+4. kafka-to-store upserts them into `BI4` and sends `{"tickers": [...]}` to `live-tickers`.
+5. The EventBridge Pipe `secform4strategy-live-tickers` starts one run of `live-score` per batch of up to 10 messages.
+6. `live-score` runs yahoo-connect, target and inference in order. Each step is retried twice on `States.TaskFailed`, after 5 and 10 seconds.
 
-#### D9. SQS standard queues with dead-letter queues
+The alternative was one Lambda that polls, scrapes, stores and scores in a single invocation. The chain handles failure and load better. Each queue absorbs a burst and retries only its own failed messages. The two queue consumers scale separately. The Pipe starts the scoring sequence without glue code, and Step Functions shows each run's steps, which the website reads.
 
-- **Driven by:** R5. Every stage must survive a crash and a redelivery.
-- **Decision:** five SQS standard queues, each with a dead-letter queue (DLQ).
-- **Alternative:** SQS FIFO queues for exactly-once processing, or Amazon MSK (managed Kafka, as in the local stack).
-- **Why it won:** every write is an upsert by key and every order carries `client_order_id`, so duplicates are harmless and FIFO ordering buys nothing. Standard queues cost less per request. MSK bills brokers around the clock.
+DynamoDB on demand holds the seen keys, in place of an ElastiCache server. It bills per request and costs nothing idle. Each item expires after 7 days (`SEEN_DAYS`), so the table stays small.
 
-| Setting | Value |
-| --- | --- |
-| Queues | `secform4strategy-filings`, `-transactions`, `-live-filings`, `-live-transactions`, `-live-tickers` |
-| Dead-letter queues | The queue name plus `-dlq`, after 5 receives (`maxReceiveCount`) |
-| Visibility timeout | 300 seconds |
-| Retention | 4 days on the queues, 14 days on the DLQs |
-| Encryption | SSE with SQS-managed keys |
+#### Queues and failures
+
+Five SQS standard queues, each with a dead-letter queue (DLQ), connect the stages of both paths (**D9**). SQS FIFO queues would give exactly-once processing. Amazon MSK would match the managed Kafka of the local stack. Neither earns its cost. Every write is an upsert by key and every order carries `client_order_id`, so duplicates are harmless and FIFO ordering buys nothing. Standard queues cost less per request. MSK bills brokers around the clock.
+
+A message moves to its DLQ after 5 receives, and the visibility timeout is 300 seconds. Appendix B.2 lists the queue names, retention and encryption.
 
 The SQS triggers report partial batch failures. A handler returns the messages it did not finish in `batchItemFailures`, and SQS delivers only those again. The error contract of Section 3.3 maps onto these settings:
 
@@ -306,35 +271,39 @@ Retries therefore happen at three time scales: seconds in the adapter, minutes o
 
 ### 5.3 Storage: lakehouse and models
 
-**Serves:** R4 one feature store, R5 upserts, R6 model risk, R7 budget.
+Both paths need one store for the features (R4). The store must accept upserts by key and reprocessing (R5), and cost nothing while the stack sleeps (R7). A database server fails the last test. RDS bills every hour it runs, and its smallest instance alone would exceed the budget.
 
-#### D10. Iceberg on S3 with the Glue catalog
+The store is a set of Apache Iceberg tables in `s3://secform4strategy-data-<account>/warehouse/` (**D10**). The AWS Glue Data Catalog records where each table's current metadata file is. Athena queries the tables with SQL.
 
-- **Driven by:** R5 (upserts by key, reprocessing), R4 (one store for both paths) and R7.
-- **Decision:** Apache Iceberg tables in `s3://secform4strategy-data-<account>/warehouse/`. The AWS Glue Data Catalog records where each table's current metadata file is. Athena queries the tables with SQL.
-- **Alternative:** a relational database (RDS), or a hosted feature store.
-- **Why it won:** Iceberg supports upserts and schema changes on plain S3 objects, so it costs only storage while idle. RDS bills every hour it runs, and its smallest instance alone would exceed the budget. Batch tasks and live Lambdas read and write the same tables through the same catalog.
+Iceberg supports upserts and schema changes on plain S3 objects, so it costs only storage while idle. Batch tasks and live Lambdas read and write the same tables through the same catalog. It beat both RDS and a hosted feature store.
 
-| Prefix | Content |
-| --- | --- |
-| `warehouse/` | The Iceberg tables; the location of the Glue database `secform4strategy` |
-| `models/` | One folder per trained model, plus `latest.json`, which names the promoted model |
-| `athena-results/` | Athena query results, expired after 7 days |
+The data bucket has three prefixes: `warehouse/` for the tables, `models/` for the models and `athena-results/` for query results (Appendix B.3). It blocks all public access and encrypts objects with SSE-S3. Incomplete multipart uploads expire after 1 day. The Athena workgroup `secform4strategy` cancels any query that scans more than 1 GiB, so a careless query cannot break the budget. Terraform defines seven saved queries in that workgroup (`aws_athena_named_query.demo`, from `infra/modules/storage/queries/*.sql`). They show the table sizes, the transaction codes, the largest recent sales, insider clusters, split-adjusted prices, the training rows and the label by sector.
 
-The bucket blocks all public access and encrypts objects with SSE-S3. Incomplete multipart uploads expire after 1 day. The Athena workgroup `secform4strategy` cancels any query that scans more than 1 GiB, so a careless query cannot break the budget.
+Iceberg has one limit that shapes operations. pyiceberg uses optimistic concurrency. When two writers commit to one table, the second commit fails and redoes its upsert against the new snapshot. Parallel writers to one table therefore do not speed up a load (Section 6.2).
 
-Iceberg has one limit that shapes operations. pyiceberg uses optimistic concurrency: when two writers commit to one table, the second commit fails and redoes its upsert against the new snapshot. Parallel writers to one table therefore do not speed up a load (Section 6.2).
+The model is the one artefact that loses money when it is wrong. A run on truncated data, a changed feature contract or a test run must never trade (R6).
 
-#### D11. Model store with a promotion gate
+Training therefore always **saves** a model to its own folder (`model.joblib` and `model.meta.json`), and only **promote** writes `latest.json` (**D11**). inference loads only what `latest.json` names. `PROMOTE` selects the behaviour:
 
-- **Driven by:** R6. A run on truncated data, a changed feature contract or a test run must never trade.
-- **Decision:** training always **saves** a model to its own folder (`model.joblib` and `model.meta.json`). Only **promote** writes `latest.json`, and inference loads only what `latest.json` names. `PROMOTE` selects the behaviour:
-  - `never`: save only. The local default, and the override for test and manual runs.
-  - `gated`: promote when every gate check passes. The weekly `retrain` task definition sets it.
-- **Alternative:** each training run replaces the live model, or a model registry service.
-- **Why it won:** two S3 writes give versioning, promotion and rollback without another service. The gate requires at least 50,000 development rows and at least 80% of the current model's, the same feature-group version and features, holdout rows, a finite holdout MAE and at least one short. It does not compare MAE with the current model, because each model holds out a different period.
+| `PROMOTE` | Behaviour | Used by |
+| --- | --- | --- |
+| `never` | Save only | The local default, and the override for test and manual runs |
+| `gated` | Promote when every gate check passes | The weekly `retrain` task definition |
 
-The metadata is the model's lineage. It records the training time, the git SHA, the scikit-learn version, the feature order, the parameters, the row counts, the holdout start and scores, the per-fold MAE and the threshold. inference refuses a model saved under another scikit-learn version, before it places any order. `scripts/promote_model.sh` lists the saved models and promotes one by hand, which is also the rollback. inference loads the model at each invocation, so a promotion takes effect at once.
+The gate requires all of the following:
+
+- at least 50,000 development rows, and at least 80% of the current model's;
+- the same feature-group version and features;
+- holdout rows and a finite holdout MAE;
+- at least one short.
+
+The gate does not compare MAE with the current model, because each model holds out a different period.
+
+The alternatives were to let each training run replace the live model, or to run a model registry service. Two S3 writes give versioning, promotion and rollback without another service.
+
+The metadata is the model's lineage. It records the training time, the git SHA, the scikit-learn version, the feature order, the parameters, the row counts, the holdout start and scores, the per-fold MAE and the threshold. inference refuses a model saved under another scikit-learn version, before it places any order.
+
+`scripts/promote_model.sh` lists the saved models and promotes one by hand, which is also the rollback. inference loads the model at each invocation, so a promotion takes effect at once.
 
 ### 5.4 Network
 
@@ -342,22 +311,13 @@ The metadata is the model's lineage. It records the training time, the git SHA, 
 
 *Figure 3: AWS network. Only Fargate needs the VPC. The tasks run in private subnets with no inbound access (R8). S3 traffic uses the free gateway endpoint, and all other outbound traffic of the tasks, including SQS, uses the NAT gateway, which exists only while the stack is switched on (R7). Batch SEC traffic leaves from the NAT gateway's Elastic IP (R3). No batch task calls Alpaca.*
 
-**Serves:** R3 SEC limit, R7 budget, R8 security.
+Three constraints meet in the network. The SEC limit applies to every request the project sends (R3). The NAT gateway is the largest fixed cost (R7). Nothing in the network may accept connections from the internet (R8).
 
-| Resource | Value |
-| --- | --- |
-| VPC `secform4strategy` | `10.0.0.0/16`, DNS support and hostnames on |
-| Public subnets | `10.0.0.0/24`, `10.0.1.0/24`; they hold only the NAT gateway |
-| Private subnets | `10.0.10.0/24`, `10.0.11.0/24`, in `use1-az1` and `use1-az2` |
-| Private route table | S3 to the gateway endpoint; `0.0.0.0/0` to the NAT gateway only while switched on |
-| Security group `secform4strategy-tasks` | No inbound rules; all outbound allowed |
-| NAT gateway and Elastic IP | In `secform4strategy-public-0`, only while `switched_on = true` |
+The VPC `secform4strategy` (`10.0.0.0/16`) has two public subnets, which hold only the NAT gateway, and two private subnets for the tasks. Appendix B.4 lists the address ranges, routes and security group.
 
-#### D12. A VPC only for Fargate
+#### Who sits in the VPC
 
-- **Driven by:** R7 and R8. A VPC is required only where a service demands it.
-- **Decision:** only the ECS tasks run in the VPC. Fargate runs a task only in `awsvpc` mode, with a network interface in a subnet and a security group.
-- **Alternative:** put every compute resource in the VPC.
+The VPC holds only the ECS tasks (**D12**). Fargate runs a task only in `awsvpc` mode, with a network interface in a subnet and a security group. The alternative was to put every compute resource in the VPC.
 
 | Component | In the VPC | Reason |
 | --- | --- | --- |
@@ -366,12 +326,15 @@ The metadata is the model's lineage. It records the training time, the git SHA, 
 | Site publisher Lambda | No | It reads only regional AWS services and internet APIs |
 | Step Functions, SQS, DynamoDB, S3, EventBridge, CloudFront | Not applicable | Regional or global services, reached through endpoints and controlled by IAM |
 
-- **Why it won:** nothing the Lambdas touch is inside the VPC, so a place in the VPC would protect nothing. It would make the live path depend on a NAT gateway that bills about $32 per month when always on. Nothing in the private subnets has a public IP, and the security group accepts no inbound connections. The Lambdas accept no inbound connections either: only their triggers invoke them, through the Lambda API and IAM.
+Nothing the Lambdas touch is inside the VPC, so a place in the VPC would protect nothing. It would make the live path depend on the NAT gateway, at about $32 per month when always on.
 
-#### D13. The SEC rate budget and egress
+Nothing in the private subnets has a public IP, and the security group accepts no inbound connections. The Lambdas accept no inbound connections either. Only their triggers invoke them, through the Lambda API and IAM.
 
-- **Driven by:** R3. Every SEC request carries one `User-Agent`, read from the secret `/secform4strategy/sec-user-agent`. Batch and live send the same `User-Agent`, so the limit of 10 requests per second applies to their sum.
-- **Decision:** an explicit rate budget. `EdgarClient` spaces request starts at least `1 / SEC_MAX_RATE` seconds apart across its threads.
+#### The SEC rate budget
+
+Every SEC request carries one `User-Agent`, read from the secret `/secform4strategy/sec-user-agent`. Batch and live send the same `User-Agent`, so the limit of 10 requests per second applies to their sum.
+
+The system splits that limit into an explicit rate budget (**D13**). `EdgarClient` spaces request starts at least `1 / SEC_MAX_RATE` seconds apart across its threads.
 
 | Path | Cap | Egress |
 | --- | --- | --- |
@@ -380,48 +343,36 @@ The metadata is the model's lineage. It records the training time, the git SHA, 
 | Live poller | One feed request per minute (`SEC_MAX_RATE=1`) | Addresses that Lambda assigns |
 | Full load | Batch raised to 8, with `live_enabled = false` | NAT gateway Elastic IP |
 
-- **Alternative:** route the live Lambdas through the NAT gateway too, so all traffic leaves from one fixed address.
-- **Why it won:** a single address would serve R3 only cosmetically, because the SEC already sees one `User-Agent`. It would cost R7: the live path would need the NAT gateway always on. The cost of the decision is that the SEC no longer sees one fixed address for all of the project's traffic. A 403 locks the client out for about 10 minutes, and requests during the lockout extend it. The adapter therefore raises `RetryableError` at once on a 403, and the platform retries minutes later.
+The alternative was to route the live Lambdas through the NAT gateway too, so all traffic leaves from one fixed address. That address would serve R3 only cosmetically, because the SEC already sees one `User-Agent`. It would cost R7, because the live path would need the NAT gateway always on.
 
-#### D14. S3 gateway endpoint plus a switched NAT gateway
+The price is that the SEC no longer sees one fixed address for all of the project's traffic. A 403 locks the client out for about 10 minutes, and requests during the lockout extend it. The adapter therefore raises `RetryableError` at once on a 403, and the platform retries minutes later.
 
-- **Driven by:** R7.
-- **Decision:** a free S3 gateway endpoint on the private route table carries the Iceberg data, the models and the ECR image layers. The batch tasks reach S3 through the S3 gateway endpoint, and SQS, the ECR API, SSM, Glue, CloudWatch Logs, SEC EDGAR and Yahoo Finance through the NAT gateway. No batch task calls Alpaca. The live inference Lambda places the Alpaca orders directly, from outside the VPC, and the site publisher reads the Alpaca account the same way. The NAT gateway exists only while switched on.
-- **Alternative:** interface endpoints for the ECR API, ECR Docker, CloudWatch Logs, SQS and SSM, with no NAT gateway.
-- **Why it won:** five interface endpoints in two availability zones cost about $73 per month (about $0.01 per hour per endpoint per zone), and the tasks need the internet for SEC EDGAR and Yahoo Finance anyway. The NAT gateway costs about $1.08 per day plus its Elastic IP at about $0.12 per day, and only while switched on. S3 traffic through the gateway endpoint adds no NAT data charges. While dormant, the private subnets reach only S3, and no task can run because it cannot pull its image or read its secrets.
+#### Egress without interface endpoints
+
+A free S3 gateway endpoint on the private route table carries the Iceberg data, the models and the ECR image layers (**D14**). The batch tasks reach S3 through it, and reach SQS, the ECR API, SSM, Glue, CloudWatch Logs, SEC EDGAR and Yahoo Finance through the NAT gateway. No batch task calls Alpaca. The live inference Lambda places the Alpaca orders directly, from outside the VPC, and the site publisher reads the Alpaca account the same way. The NAT gateway exists only while switched on.
+
+The alternative was interface endpoints for the ECR API, ECR Docker, CloudWatch Logs, SQS and SSM, with no NAT gateway.
+
+| Option | Cost | Reaches the internet |
+| --- | --- | --- |
+| S3 gateway endpoint plus a switched NAT gateway (chosen) | Endpoint free; NAT gateway about $1.08 per day plus its Elastic IP at about $0.12 per day, only while switched on | Yes |
+| Five interface endpoints in two availability zones | About $73 per month (about $0.01 per hour per endpoint per zone) | No |
+
+The tasks need the internet for SEC EDGAR and Yahoo Finance anyway, which settles it. S3 traffic through the gateway endpoint adds no NAT data charges. While dormant, the private subnets reach only S3. No task can run then, because it cannot pull its image or read its secrets.
 
 ### 5.5 Identity, secrets and security
 
-**Serves:** R8 secrets and trading keys, R6 model risk.
+The repository is public, and so are its workflow artifacts. The Alpaca keys can place and cancel orders. The security design therefore assumes that anyone can read the code, and limits what a compromised service could do (R8). Only one service may trade (R6).
 
-#### D15. One role per service, built from capabilities
+The `iam` module creates one role per ECS task (`secform4strategy-<service>`) and one per Lambda (`secform4strategy-live-<service>`) (**D15**). `task_access` and `lambda_access` in `infra/envs/demo/main.tf` list, per service, the queues it sends to, the queues it receives from, and named capabilities. The module turns each entry into one inline policy. Appendix B.5 lists the actions that each capability grants. One shared role for all services would give the scraper the Alpaca keys and give training the right to place orders.
 
-- **Driven by:** R8. A compromised service must reach only what it uses, and only one service may trade.
-- **Decision:** the `iam` module creates one role per ECS task (`secform4strategy-<service>`) and one per Lambda (`secform4strategy-live-<service>`). `task_access` and `lambda_access` in `infra/envs/demo/main.tf` list, per service, the queues it sends to, the queues it receives from, and named capabilities. The module turns each entry into one inline policy.
-- **Alternative:** one shared role for all services.
-- **Why it won:** a shared role would give the scraper the Alpaca keys and training the right to place orders.
+For example, the scraper task can only receive from `filings` and send to `transactions`. It cannot touch the lakehouse. training can read the lakehouse and write models, but it cannot read secrets or place orders. Only inference and the site publisher can read the Alpaca keys. The orchestrators have their own roles. `secform4strategy-retrain` runs and stops the ECS tasks, the scheduler roles only start their one target, `secform4strategy-live-score` invokes only the three scoring Lambdas, and the Pipe role only reads `live-tickers` and starts `live-score`.
 
-| Capability | Grants |
-| --- | --- |
-| Send to a queue | `sqs:GetQueueUrl`, `sqs:SendMessage` on that queue |
-| Receive from a queue | `sqs:GetQueueUrl`, `sqs:GetQueueAttributes`, `sqs:ReceiveMessage`, `sqs:DeleteMessage` on that queue |
-| `lakehouse-read` | Glue reads on the database and its tables; `s3:GetObject` on `warehouse/*` |
-| `lakehouse-write` | `lakehouse-read` plus `glue:CreateTable`, `glue:UpdateTable` and `s3:PutObject` on `warehouse/*` |
-| `models-read` / `models-write` | `s3:GetObject` / `s3:PutObject` on `models/*` |
-| `seen-keys` | `dynamodb:BatchGetItem`, `dynamodb:BatchWriteItem` on `secform4strategy-seen` |
-| `read-secrets` | `ssm:GetParameters` on `/secform4strategy/*` |
-| `read-alpaca-keys` | `ssm:GetParameters` on the two Alpaca key parameters only |
+Terraform state stores every value it manages in plain text, so secrets stay out of Terraform (**D16**). They are `SecureString` parameters in SSM Parameter Store: `/secform4strategy/sec-user-agent`, `/secform4strategy/alpaca-api-key` and `/secform4strategy/alpaca-api-secret`. The operator creates them with the AWS CLI.
 
-For example, the scraper task can only receive from `filings` and send to `transactions`; it cannot touch the lakehouse. training can read the lakehouse and write models, but it cannot read secrets or place orders. Only inference and the site publisher can read the Alpaca keys. The orchestrators have their own roles: `secform4strategy-retrain` runs and stops the ECS tasks, the scheduler roles only start their one target, `secform4strategy-live-score` invokes only the three scoring Lambdas, and the Pipe role only reads `live-tickers` and starts `live-score`.
+In ECS, the execution role reads them and injects them as environment variables, so the task roles hold no SSM permission. Lambda cannot inject SSM parameters. Each live function reads its own at cold start: `SSM_PARAMETERS` names them, and `SsmSettings` reads them in one call.
 
-#### D16. Secrets in SSM, outside Terraform state
-
-- **Driven by:** R8. The repository is public, and Terraform state stores every value it manages in plain text.
-- **Decision:** the secrets are `SecureString` parameters in SSM Parameter Store: `/secform4strategy/sec-user-agent`, `/secform4strategy/alpaca-api-key` and `/secform4strategy/alpaca-api-secret`. The operator creates them with the AWS CLI, never in Terraform.
-  - In ECS, the execution role reads them and injects them as environment variables, so the task roles hold no SSM permission.
-  - Lambda cannot inject SSM parameters, so each live function reads its own at cold start: `SSM_PARAMETERS` names them, and `SsmSettings` reads them in one call.
-- **Alternative:** Terraform reads the parameters into environment variables, or AWS Secrets Manager.
-- **Why it won:** values that Terraform reads enter the state. SSM standard parameters are free; Secrets Manager costs $0.40 per secret per month and adds rotation the project does not use.
+Two alternatives lost. If Terraform read the parameters into environment variables, the values would enter the state. AWS Secrets Manager costs $0.40 per secret per month and adds rotation the project does not use. SSM standard parameters are free.
 
 No container holds a static AWS key. ECS and Lambda give the code temporary credentials for its role, and boto3 finds them in its default credential chain.
 
@@ -429,162 +380,103 @@ No container holds a static AWS key. ECS and Lambda give the code temporary cred
 
 ![AWS CI/CD](../diagrams/aws-ci-cd.drawio.svg)
 
-*Figure 4: CI/CD (R8). Three GitHub Actions workflows authenticate to AWS through OIDC. Master pushes images; pull requests get read-only plans; the approval-gated environment `aws` applies. The figure shows the deploy before it became two-stage: the plan role now also plans each master push, and the apply applies that saved, encrypted plan (see D18).*
+*Figure 4: CI/CD (R8). Three GitHub Actions workflows authenticate to AWS through OIDC. Pull requests get read-only plans. A merge to master pushes images, saves an encrypted plan, and applies exactly that plan after approval in the environment `aws`. A merge that changes only service code needs a manual Terraform run after the images.*
 
-**Serves:** R8 security, R10 operability.
+The repository is public, and its pipeline can change the AWS account. The pipeline must deploy without a stored key, and a reviewer must see exactly what changes (R8). It must also deploy safely during a multi-day run (R10).
 
-| Workflow | Trigger | Does |
-| --- | --- | --- |
-| `quality.yml` | Pull requests and pushes to master | `make quality-static`, and `make type-check` as a separate job |
-| `images.yml` | A successful `quality` run on a push to master | Builds a `linux/arm64` image for each service whose code changed, tags it with that code's last commit, and pushes it to ECR |
-| `terraform.yml` | Pull requests and pushes to master that change `infra/` or `site/` | `terraform plan` on pull requests; on master, a saved plan of the merged commit, then an apply of exactly that plan after approval |
+Three workflows make up the pipeline (Appendix B.6). `quality.yml` checks every pull request and master push. `images.yml` builds and pushes the `linux/arm64` images after a successful `quality` run on master. `terraform.yml` plans and applies changes to `infra/` and `site/`.
 
 Terraform manages every AWS resource, including the ECR repositories and the CI roles. CI manages only the images and the runs of plan and apply. Each service has an ECR repository `secform4strategy/<service>`. Tags are immutable, ECR scans each image on push, and each repository keeps its 5 newest images (Chapter 6 explains why 5).
 
-#### D17. GitHub OIDC instead of stored keys
+The workflows hold no AWS key (**D17**). A workflow requests a token from `token.actions.githubusercontent.com`, and AWS STS exchanges it for temporary credentials of one role. Each role trusts the audience `sts.amazonaws.com` and exact `sub` claims.
 
-- **Driven by:** R8.
-- **Decision:** a workflow requests a token from `token.actions.githubusercontent.com`, and AWS STS exchanges it for temporary credentials of one role. Each role trusts the audience `sts.amazonaws.com` and exact `sub` claims.
-- **Alternative:** an IAM user with access keys stored as GitHub secrets.
-- **Why it won:** a stored key lives until someone rotates it, and anyone who reads it can use it. OIDC credentials are temporary and bound to one repository and one trigger.
+The alternative was an IAM user with access keys stored as GitHub secrets. A stored key lives until someone rotates it, and anyone who reads it can use it. OIDC credentials are temporary and bound to one repository and one trigger.
 
-| Role | Trusted subject | Permissions |
-| --- | --- | --- |
-| `secform4strategy-github-images` | `repo:josemita87/SecForm4Strategy:ref:refs/heads/master` | ECR push and pull on `secform4strategy/*` |
-| `secform4strategy-github-plan` | `...:pull_request`, and `...:ref:refs/heads/master` for the plan of a master run | `ReadOnlyAccess`, plus write and delete on the state lock file only; `deny-site-keys` denies reading the site's key-value store |
-| `secform4strategy-github-apply` | `...:environment:aws` | `AdministratorAccess` |
+Each of the three roles does one job (Appendix B.6). `secform4strategy-github-images` can only push and pull images in ECR. `secform4strategy-github-plan` is read-only, apart from the state lock file, and serves pull requests and master plans. `secform4strategy-github-apply` has `AdministratorAccess`, and only a job in the GitHub environment `aws` can assume it. That environment admits only master and requires a reviewer's approval. A pull request can therefore assume only the plan role, so it cannot change any resource.
 
-A pull request can assume only the plan role, so it cannot change any resource. Only a job in the GitHub environment `aws` can assume the apply role. That environment admits only master and requires a reviewer's approval. The branch rules of master require a pull request whose `quality-static` check passes, and they block force pushes and deletion.
+Two GitHub rulesets protect master. "master: pull requests with checks" requires a pull request whose `quality-static` check passes, and the repository admin role bypasses it. "master: no force push or deletion" blocks force pushes and deletion, and nobody bypasses it. The switch commits of Section 5.7 use the admin bypass of the pull-request rule, and their apply still requires a reviewer's approval in `aws`.
 
-#### D18. Two-stage, encrypted deploy
+Approval raises a second question: what exactly does the reviewer approve? A merge to master that changes `infra/` or `site/` runs two jobs (**D18**):
 
-- **Driven by:** R8. The reviewer must approve exactly what is applied, and the repository's workflow artifacts are public.
-- **Decision:** a merge to master that changes `infra/` or `site/` runs two jobs:
-  1. `plan` runs `terraform plan -out=tfplan` on the merged commit with the read-only plan role and shows the plan on the run's summary page. It encrypts the saved plan (AES-256 with PBKDF2, key in the repository secret `TFPLAN_KEY`) and uploads only the encrypted file, kept for one day.
-  2. `apply` waits for a reviewer's approval in the environment `aws`, decrypts the plan and runs `terraform apply tfplan`.
+1. `plan` runs `terraform plan -out=tfplan` on the merged commit with the read-only plan role and shows the plan on the run's summary page. It encrypts the saved plan (AES-256 with PBKDF2, key in the repository secret `TFPLAN_KEY`) and uploads only the encrypted file, kept for one day.
+2. `apply` waits for a reviewer's approval in the environment `aws`, decrypts the plan and runs `terraform apply tfplan`.
 
-  A plan with no changes skips `apply`. If the state changed after the plan, Terraform refuses the saved plan and the run fails.
-- **Alternative:** `terraform apply -auto-approve` after a fresh plan, and an unencrypted plan artifact.
-- **Why it won:** a fresh plan after approval can differ from the plan the reviewer read. The saved plan holds sensitive values in plain text, and anyone signed in to GitHub can download the artifacts of a public repository.
+A plan with no changes skips `apply`. If the state changed after the plan, Terraform refuses the saved plan and the run fails.
 
-One gap remains. Terraform reads the newest image of each repository when it plans, so a plan made before `images.yml` finishes deploys the previous images. Section 9 lists the fix.
+The alternative was `terraform apply -auto-approve` after a fresh plan, with an unencrypted plan artifact. A fresh plan after approval can differ from the plan the reviewer read. The saved plan holds sensitive values in plain text, and anyone signed in to GitHub can download the artifacts of a public repository.
+
+One gap remains. Terraform reads the newest image of each repository when it plans, so a plan made before `images.yml` finishes deploys the previous images. A merge that changes only service code therefore needs a manual run of `terraform.yml` (`workflow_dispatch`) after `images.yml`. Section 9 lists the fix.
 
 ### 5.7 Cost and switches
 
-**Serves:** R7 budget.
+The budget is $5 per month (R7). A stack with a NAT gateway, Fargate, Lambda and a CDN fits inside it only if almost nothing bills while idle.
 
 | State | Cost | What is billed |
 | --- | --- | --- |
 | Dormant (`switched_on = false`) | About $0 per day | S3 and ECR storage. The VPC, subnets, gateway endpoint, IAM, Glue, idle queues, idle Lambdas, the on-demand DynamoDB table and the state machines cost nothing. |
 | Switched on | About $1.20 per day, plus usage | The NAT gateway (about $1.08 per day) and its Elastic IP (about $0.12 per day). Usage: Fargate, Lambda, Step Functions, SQS and DynamoDB requests, NAT data processing, Athena scans, and the site publisher at about $1 per month. |
 
-#### D19. Dormant by default, with three switches
+The stack is dormant by default (**D19**). It runs for the presentation and the backfill, and sleeps otherwise. The alternative, an always-on stack, fails on the NAT gateway alone: about $32 per month, more than six times the budget.
 
-- **Driven by:** R7. The demo runs for the presentation and the backfill, and sleeps otherwise.
-- **Decision:** `infra/envs/demo/switch.auto.tfvars` holds three switches.
+Every other component is serverless and bills nothing idle, so one switch on the NAT gateway and the schedules covers almost all fixed cost. `infra/envs/demo/switch.auto.tfvars` holds three switches:
 
-| Switch | Default | While `true` |
-| --- | --- | --- |
-| `switched_on` | `false` | The NAT gateway exists, the site publisher's schedule runs, and the two schedules below may run |
-| `weekly_retrain_enabled` | `true` | The Saturday `retrain` schedule is enabled, if `switched_on` is `true` |
-| `live_enabled` | `true` | The live poller schedule is enabled, if `switched_on` is `true` |
+| Switch | Default | On master, 2026-11-22 | While `true` |
+| --- | --- | --- | --- |
+| `switched_on` | `false` | `true` | The NAT gateway exists, the site publisher's schedule runs, and the two schedules below may run |
+| `weekly_retrain_enabled` | `true` | `false` | The Saturday `retrain` schedule is enabled, if `switched_on` is `true` |
+| `live_enabled` | `true` | `false` | The live poller schedule is enabled, if `switched_on` is `true` |
 
-- **Alternative:** an always-on stack.
-- **Why it won:** an always-on NAT gateway alone costs about $32 per month, more than six times the budget. Every other component is serverless and bills nothing idle, so one switch on the NAT gateway and the schedules covers almost all fixed cost.
+`make switch-on` and `make switch-off` set `switched_on` in that file, commit the change and push it straight to master through the admin bypass (Section 5.6). The change takes effect only after a reviewer approves the Terraform apply.
 
-`make switch-on` and `make switch-off` set `switched_on` on master, then commit and push. The change takes effect after a reviewer approves the Terraform apply, so the switch goes through the same reviewed path as any change. During a full load, `live_enabled` is off, because the batch scraper at 8 requests per second plus the live path's 4.5 would exceed the SEC's 10. `weekly_retrain_enabled` is also off, because the weekly run would use the same batch queues.
+During a full load, `live_enabled` is off, because the batch scraper at 8 requests per second plus the live path's 4.5 would exceed the SEC's 10. `weekly_retrain_enabled` is also off, because the weekly run would use the same batch queues. Both stay off on master after the backfill, so the live path is off. Pull request #31 sets both to `true`. It is merged about an hour before the presentation.
 
-#### Serverless everywhere
-
-| Need | Serverless choice | Server alternative avoided |
-| --- | --- | --- |
-| Compute | Fargate tasks, Lambda | EC2, an always-on ECS service |
-| Orchestration | Step Functions, EventBridge Scheduler and Pipes | MWAA (Airflow) |
-| Messaging | SQS | MSK (Kafka) |
-| Tables | Iceberg on S3, Glue catalog, Athena | RDS |
-| Seen keys | DynamoDB on demand | ElastiCache |
-| Model serving | The model file in S3, loaded by inference | SageMaker endpoint |
-| Website | CloudFront, S3, a publisher Lambda | A web server or API |
-
-**Guardrails.** The budget `secform4strategy-monthly` is $5 per month. It emails `alert_email` when actual cost passes 50% and when forecast cost passes 100%. The Athena workgroup cancels any query above 1 GiB. Log groups keep 14 days.
+Three guardrails catch mistakes. The budget `secform4strategy-monthly` is $5 per month, and it emails `alert_email` when actual cost passes 50% and when forecast cost passes 100%. The Athena workgroup cancels any query above 1 GiB. Log groups keep 14 days.
 
 ### 5.8 Observability and operations
 
-**Serves:** R10 operability, R5 failure handling.
+One person operates a multi-day run and a live path, with no operations team (R10). That person must learn of a lost message without watching a screen, and see the whole stack at a glance.
 
-#### D20. Alarms on dead letters, a free dashboard and one status command
+A DLQ is the one place a message ends up after every retry fails, so one alarm per DLQ covers every lost message (R5) (**D20**). Each alarm, `secform4strategy-<queue>-dead-letters`, goes into alarm when its DLQ holds at least one message, checked every 5 minutes. It publishes to the SNS topic `secform4strategy-queue-alerts`, which emails `alert_email`.
 
-- **Driven by:** R10. One person operates a multi-day run and a live path without an operations team.
-- **Decision:**
-  - **Dead-letter alarms.** Each DLQ has a CloudWatch alarm `secform4strategy-<queue>-dead-letters`. It goes into alarm when the DLQ holds at least one message, checked every 5 minutes, and publishes to the SNS topic `secform4strategy-queue-alerts`, which emails `alert_email`.
-  - **Dashboard.** The CloudWatch dashboard `secform4strategy` shows queue depths, messages processed per minute and the backlog ETA of `filings` and `transactions`; DLQ depths; `retrain` and `live-score` runs; the live Lambdas' invocations, errors and p90 duration; and `ERROR` log lines per 15 minutes. A dashboard with at most 50 metrics is free.
-  - **`make status`.** One read-only command prints the stack state in about 15 seconds: whether the NAT gateway exists and the schedules are enabled, each running `retrain` step and its attempt, per-queue depth, rate and ETA, the running ECS tasks, the `ERROR` log lines of the last hour, the `live-score` outcomes of the last 24 hours, and the promoted model folder.
-  - **Container Insights** on the ECS cluster shows each task's CPU and memory use.
-- **Alternative:** a third-party monitoring service, or X-Ray tracing.
-- **Why it won:** CloudWatch is already where the logs and metrics are, and the dashboard and alarms stay inside the free tier. A DLQ is the one place a message ends up after every retry fails, so one alarm per DLQ covers every lost message.
+The CloudWatch dashboard `secform4strategy` shows the queues, DLQs, state machine runs, live Lambdas and `ERROR` log lines on one screen. A dashboard with at most 50 metrics is free. Container Insights on the ECS cluster shows each task's CPU and memory use. In a terminal, the read-only command `make status` prints the switches, runs, queues, tasks, errors and promoted model in about 15 seconds. Appendix B.7 lists what the dashboard and `make status` show.
 
-Every service logs one line per batch, for example `10 of 10 filings -> 23 transactions` (scraper).
+The alternatives were a third-party monitoring service or X-Ray tracing. CloudWatch is already where the logs and metrics are, and the dashboard and alarms stay inside the free tier. Every service logs one line per batch, for example `10 of 10 filings -> 23 transactions` (scraper).
 
 ### 5.9 The study website
 
-**Serves:** R9 show the client, R8 security, R7 budget.
+The client must see what the system does with their money (R9). The same system holds the lakehouse and keys that can trade (R8), and the budget leaves nothing for a server (R7).
 
-The site is a password-protected study website with five pages:
+The site is a password-protected study website with five pages: Story, Live, Portfolio, Model and Explore (Appendix B.8). It is deployed. CloudFront serves it behind the password, and while the stack is switched on the publisher writes the data files every minute.
 
-| Page | Shows |
-| --- | --- |
-| Story | The idea, the data, the model and the results |
-| Live | The latest `live-score` runs, their filings, predictions and orders |
-| Portfolio | The Alpaca paper account: equity, positions and orders |
-| Model | The current model: parameters, validation folds, holdout results and feature importance |
-| Explore | The largest insider sales and the clusters of insider sales of the last 7 days |
+#### A publisher in place of an API
 
-The site is deployed (2026-11-22): CloudFront serves it behind the password, and the publisher writes the data files every minute.
+The site has no API (**D21**). The Lambda `secform4strategy-site-publisher` reads the lakehouse, the models, Step Functions, SQS, CloudWatch and Alpaca, and writes five JSON files under `data/` in the bucket `secform4strategy-site-<account>`. The browser fetches only static files and `/data/<name>.json` through CloudFront. Appendix B.8 lists when the publisher writes each file and what it holds.
+
+The alternative was a dynamic site with an API (API Gateway and a Lambda) that queries the system per request. An API accepts requests from the internet and runs code for each one, and each request could read the lakehouse or call Alpaca.
+
+Static files expose only what the publisher already wrote: no keys, no credentials and no write access. If the password leaks, the reader sees paper-account figures, tickers and model results, and gets no access to AWS. A static site also costs almost nothing while nobody visits it.
+
+Two triggers invoke the publisher asynchronously: the schedule `secform4strategy-site-publish` (`rate(1 minute)`, `{"mode": "all"}`, only while switched on) and the EventBridge rule `secform4strategy-site-live-score-finished` (`{"mode": "live"}`, when a `live-score` run ends). Lambda drops an event older than 60 seconds and retries no failed invocation, so a slow publish does not queue more behind it. The next minute's publish replaces a missed one.
+
+The publisher role `secform4strategy-live-site-publisher` can read run histories, queue attributes, metrics, schedules, the lakehouse and the models, read the two Alpaca key parameters, and write only `data/*` in the site bucket. It cannot start or stop runs, change queues or schedules, write tables, write models or write the static files.
+
+One weakness remains. The publisher uses the same Alpaca key pair as inference, which can place and cancel orders. The publisher calls only read endpoints, so that isolation relies on code, not on permissions.
 
 ![Site architecture](../diagrams/site-architecture.drawio.svg)
 
 *Figure 5: Site architecture (R9). CloudFront serves static files from a private S3 bucket after a CloudFront Function checks the password. A publisher Lambda runs every minute and after each `live-score` run. It reads the system's state and writes `data/*.json` into the bucket, so the browser never reaches the system itself (R8).*
 
-#### D21. A static site with a publisher, no public API
+#### The edge
 
-- **Driven by:** R9 and R8. A client must see live runs and the portfolio, and the internet must not reach the lakehouse or the trading keys.
-- **Decision:** the Lambda `secform4strategy-site-publisher` reads the lakehouse, the models, Step Functions, SQS, CloudWatch and Alpaca, and writes five JSON files under `data/` in the bucket `secform4strategy-site-<account>`. The browser fetches only static files and `/data/<name>.json` through CloudFront.
-- **Alternative:** a dynamic site with an API (API Gateway and a Lambda) that queries the system per request.
-- **Why it won:** an API accepts requests from the internet and runs code for each one, and each request could read the lakehouse or call Alpaca. Static files expose only what the publisher already wrote: no keys, no credentials and no write access. If the password leaks, the reader sees paper-account figures, tickers and model results, and gets no access to AWS. A static site also costs almost nothing while nobody visits it.
+The site bucket blocks all public access (**D22**). The CloudFront distribution reads it through an origin access control (OAC), and the bucket policy admits only this distribution.
 
-| File | Written | Contents |
-| --- | --- | --- |
-| `data/live.json` | After each `live-score` run, and every minute | The latest 50 runs, with steps, filings, predictions and orders |
-| `data/health.json` | Every minute | Switches, queue depths, Lambda metrics, run outcomes, the model version |
-| `data/portfolio.json` | Every minute | The paper account, equity history, positions and latest 100 orders |
-| `data/model.json` | When the model version changes | Parameters, folds, holdout metrics, cumulative return against SPY, feature importance |
-| `data/explore.json` | Every 15 minutes | The largest insider sales and the insider clusters of the last 7 days |
+S3 static website hosting with a public bucket was the alternative. It serves only HTTP and needs a public bucket (R8). CloudFront adds HTTPS, edge caching and a place to check the password. The site costs a few cents per month for S3 and stays inside the CloudFront free tier (R7).
 
-Two triggers invoke the publisher asynchronously: the schedule `secform4strategy-site-publish` (`rate(1 minute)`, `{"mode": "all"}`, only while switched on) and the EventBridge rule `secform4strategy-site-live-score-finished` (`{"mode": "live"}`, when a `live-score` run ends). Lambda drops an event older than 60 seconds and retries no failed invocation, so a slow publish does not queue more behind it. The next minute's publish replaces a missed one.
+The distribution redirects HTTP to HTTPS, caches `data/*` for at most 5 seconds and other files for at most 60 seconds, and adds the managed security headers (Appendix B.9).
 
-#### D22. CloudFront and a private bucket with origin access control
+The site is for the client and the course, and the public stays out (R9, R8). The CloudFront Function `secform4strategy-site-auth` runs on every request, before CloudFront reads its cache (**D23**). It computes the SHA-256 hash of the browser's `authorization` header. It compares the hash with the key `credential_sha256` in the CloudFront KeyValueStore `secform4strategy-site-auth`. On a mismatch it returns 401 with `www-authenticate: Basic realm="SecForm4Strategy"`. Terraform creates the store empty and never reads or writes its keys. `scripts/set_site_password.sh` writes only the hash. Until the key is set, the site refuses every request.
 
-- **Driven by:** R8 and R7.
-- **Decision:** the bucket blocks all public access. The CloudFront distribution reads it through an origin access control (OAC), and the bucket policy admits only this distribution.
-
-| Resource | Settings |
-| --- | --- |
-| Distribution | HTTPS on the default `*.cloudfront.net` certificate (HTTP redirects to HTTPS), `PriceClass_100`, gzip and brotli, `GET` and `HEAD` only |
-| Cache of `data/*` | At most 5 seconds (`secform4strategy-site-data`) |
-| Cache of other files | At most 60 seconds (`secform4strategy-site-static`) |
-| Response headers | `Managed-SecurityHeadersPolicy`: HSTS, `X-Frame-Options`, `nosniff`, referrer policy |
-
-- **Alternative:** S3 static website hosting with a public bucket.
-- **Why it won:** S3 website hosting serves only HTTP and needs a public bucket. CloudFront adds HTTPS, edge caching and a place to check the password. The site costs a few cents per month for S3 and stays inside the CloudFront free tier.
-
-#### D23. Basic auth at the edge with a hashed credential
-
-- **Driven by:** R9 (the site is for the client and the course, not the public) and R8.
-- **Decision:** the CloudFront Function `secform4strategy-site-auth` runs on every request, before CloudFront reads its cache. It computes the SHA-256 hash of the browser's `authorization` header and compares it with the key `credential_sha256` in the CloudFront KeyValueStore `secform4strategy-site-auth`. On a mismatch it returns 401 with `www-authenticate: Basic realm="SecForm4Strategy"`. Terraform creates the store empty and never reads or writes its keys. `scripts/set_site_password.sh` writes only the hash. Until the key is set, the site refuses every request.
-- **Alternative:** Amazon Cognito, or a password in Terraform.
-- **Why it won:** Basic auth at the edge needs no server and no user pool for one shared password. The hash stays out of the code and the Terraform state, and the plan role is denied `GetKey` and `ListKeys` on the store.
-
-The publisher role `secform4strategy-live-site-publisher` can read run histories, queue attributes, metrics, schedules, the lakehouse and the models, read the two Alpaca key parameters, and write only `data/*` in the site bucket. It cannot start or stop runs, change queues or schedules, write tables, write models or write the static files. It uses the same Alpaca key pair as inference, which can place and cancel orders. The publisher calls only read endpoints, so that isolation relies on code, not on permissions.
+Amazon Cognito, or a password in Terraform, were the alternatives. Basic auth at the edge needs no server and no user pool for one shared password. The hash stays out of the code and the Terraform state, and the plan role is denied `GetKey` and `ListKeys` on the store.
 
 ![Site security](../diagrams/site-security.drawio.svg)
 
@@ -606,7 +498,15 @@ The publisher role `secform4strategy-live-site-publisher` can read run histories
 
 The cause was a missing image. The run had pinned the revision `scraper:3` (D7), which named an image digest. The ECR lifecycle rule then kept only 2 images per repository, and newer scraper images had been pushed during the run, so ECR had already deleted that image. `skip_destroy` kept the revision active, but a revision without its image cannot start a task.
 
-The scraper's work was not lost. Its transactions were in `secform4strategy-transactions`, which keeps messages for 4 days, and every step is an upsert by key. The remaining steps run as ECS tasks started by hand, on the latest revisions: kafka-to-store (2 vCPU, 8 GB, `BUFFER_SIZE` raised to 30,000), yahoo-connect, target, and training with `PROMOTE=never`. The saved model is then promoted by hand with `scripts/promote_model.sh` (D11).
+The scraper's work was not lost. Its transactions were in `secform4strategy-transactions`, which keeps messages for 4 days, and every step is an upsert by key. The remaining steps ran as ECS tasks started by hand, on the latest revisions. The manual recovery is complete:
+
+| Step | Outcome |
+| --- | --- |
+| kafka-to-store | Done, with 2 vCPU, 8 GB and `BUFFER_SIZE` raised to 30,000. |
+| yahoo-connect | Done at 20:43 UTC on 2026-11-22: 160 batches in about 2 h 25 min. Batches slowed from about 35 s to about 80 s as the price table P grew to about 23 million rows, because each batch upserts into P. It was the slowest step. |
+| target | Done in about 2 minutes (revision 11, overridden to 8 vCPU and 60 GB). It read 265,525 disclosure rows across 7,994 tickers from BT4 and pushed 215,334 labelled rows to RT4. |
+| training | Done in about 10 minutes, 20:48 to 20:58 UTC (revision 11, overridden to 16 vCPU, 32 GB and `PROMOTE=never`). It saved model `20261122T205816Z`. This was the first `training` run on AWS Fargate. |
+| promote | Done by hand with `scripts/promote_model.sh 20261122T205816Z` (D11). The new model replaced `20261120T210617Z`. |
 
 ### 6.2 Measurements
 
@@ -615,9 +515,17 @@ The scraper's work was not lost. Its transactions were in `secform4strategy-tran
 | scraper rate, `SEC_MAX_RATE=8`, `FETCH_WORKERS=12` | 6 to 7.8 filings per second |
 | kafka-to-store, one 10,000-row batch at 0.5 vCPU / 2 vCPU | About 40 / 25 seconds |
 | kafka-to-store, one 30,000-row batch at 2 vCPU | About 75 seconds |
+| yahoo-connect, 160 batches into P | About 2 h 25 min; about 35 s per batch at the start, about 80 s at the end |
+| target, 5 years, 8 vCPU / 60 GB | About 2 minutes |
+| training, 5 years, 16 vCPU / 32 GB | About 10 minutes |
+| Peak use, from Container Insights | target about 1 vCPU and 3.7 GB; training all 16 vCPU and about 20 GB |
 | Size of the Iceberg warehouse | About 430 MB |
 
 Parallel SQS calls did not change the kafka-to-store rate much, so most of a batch is spent after SQS. Four times the CPU cut a 10,000-row batch from 40 to 25 seconds, because the task went from half a core to a full core. Three times the batch took three times as long, so the cost is per row, at about 400 rows per second: the pandas cleaning and pyiceberg's upsert merge, on one core. More tasks would not help either, because parallel Iceberg commits conflict (D10).
+
+The configured task sizes cover the weekly runs (Appendix B.1). The target override was unneeded headroom, and the training override only shortened the run.
+
+yahoo-connect now caps a full price download at 15 years (`PRICE_HISTORY_YEARS`). Rows already stored beyond 15 years stay in P and are not refreshed.
 
 ### 6.3 Lessons
 
@@ -629,27 +537,36 @@ Parallel SQS calls did not change the kafka-to-store rate much, so most of a bat
 
 ## 7. Results in brief
 
-The results show that the system works end to end. They do not yet settle the hypothesis.
+The results show that the system works end to end on five years of data. They do not support the hypothesis.
 
-### 7.1 Model on one year of data
+### 7.1 Model on one and five years of data
 
-The 1-year results come from a walk-forward run of the merged training code on 2026-11-21: 73,195 labelled rows, 53,747 development rows after purging, and 14,639 holdout rows from 2026-06-09. The 128 fits plus the refit used about 2,200 CPU-seconds.
+The 1-year results come from a local walk-forward run of the merged training code on 2026-11-21, on a 16-core laptop: 73,195 labelled rows, 53,747 development rows after purging, and 14,639 holdout rows from 2026-06-09. The 128 fits plus the refit used about 2,200 CPU-seconds.
+
+The 5-year results come from the `training` task on AWS on 2026-11-22: 215,334 labelled rows with 34 columns, 169,990 development rows after purging, and 43,067 holdout rows from 2025-10-24 18:24 UTC. The best parameters are `loss=absolute_error`, `learning_rate=0.03`, `max_leaf_nodes=15`, `min_samples_leaf=200` and `l2_regularization=0.0`. The two holdouts cover different periods, so their MAEs are not comparable. For the same reason, the promotion gate does not compare MAE (D11).
 
 | Predictor | Holdout MAE, 1-year | Holdout MAE, 5-year |
 | --- | --- | --- |
-| `model` | 0.1216 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| `zero` (no move) | 0.1193 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| `train_mean` | 0.1218 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| `ticker_history` | 0.1421 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
+| `model` | 0.1216 | 0.12653 |
+| `zero` (no move) | 0.1193 | 0.12646 |
+| `train_mean` | 0.1218 | 0.12657 |
+| `ticker_history` | 0.1421 | 0.13548 |
 
-| Threshold | Holdout shorts, 1-year | Mean return per short, 1-year | 5-year |
-| --- | --- | --- | --- |
-| 0 | 7,067 | +1.8% | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| -2% | 1,942 | +4.0% | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| -5% (traded) | 265 | +10.8% | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| -10% | 29 | Too few to read | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
+| Threshold | Holdout shorts, 1-year | Mean return per short, 1-year | Holdout shorts, 5-year | Mean return per short, 5-year |
+| --- | --- | --- | --- | --- |
+| 0 | 7,067 | +1.8% | 28,356 | -1.44% |
+| -2% | 1,942 | +4.0% | 6,602 | -3.24% |
+| -5% (traded) | 265 | +10.8% | 619 | +2.64% |
+| -10% | 29 | Too few to read | 51 | +5.04% |
 
-The model does not beat the zero baseline on MAE, on the holdout or on any of the four validation folds. Its most negative predictions still rank well: a positive mean return per short means the shorted stocks fell on average. The 265 trades at -5% come from one holdout window, and the figures exclude trading costs, borrow fees and overlapping positions. This is a signal worth testing, not a result.
+A positive mean return per short means the shorted stocks fell on average. The figures exclude borrow fees, slippage, commissions and overlapping positions.
+
+- **No MAE edge.** On both datasets the model does not beat the zero baseline on MAE, on the holdout or on any of the four validation folds. On five years the model's fold MAE is above zero's by 0.00023 (fold 4) to 0.00246 (fold 1).
+- **Profit only in the extreme tail.** On five years, the 619 shorts at -5% are 1.4% of the holdout, and only 51 rows fall below -10%.
+- **No monotonic pattern.** On five years, the shorts at -2% lose 3.24% while the shorts at -5% gain 2.64%. That pattern is consistent with noise.
+- **The naive baseline fails clearly.** `ticker_history` shorts 2,982 holdout rows at -5% and loses 6.42% per short. `zero` and `train_mean` short no rows.
+
+The 1-year ranking signal (+10.8% on 265 trades) does not hold on five years.
 
 ### 7.2 Live path verification
 
@@ -657,7 +574,7 @@ The live path ran end to end on real filings. Filings for AMZN, TGT, DGICA and I
 
 ### 7.3 Batch path verification
 
-No `retrain` run has finished all six steps on AWS. The 1-year runs were stopped by hand. The 5-year backfill scraped every filing, then ended `FAILED`, and its remaining steps run by hand (Chapter 6). The 5-year results are **[5-year results: to be filled after the Sunday 2026-11-22 run]**.
+No `retrain` run has finished all six steps on AWS in one state-machine run. The 1-year runs were stopped by hand. The 5-year backfill scraped every filing, then ended `FAILED`. Its remaining steps ran by hand on 2026-11-22, and every step of the batch path completed on five years of data (Chapter 6). The 5-year model `20261122T205816Z` is the promoted model.
 
 ---
 
@@ -672,7 +589,8 @@ The table collects the decisions of Chapter 5, with the requirement behind each.
 | Same images on Fargate and Lambda (D3) | R4 | A separate live scorer | One feature implementation, no training-serving skew |
 | ARM64 (Graviton) (D4) | R7 | x86_64 | About 20% cheaper |
 | Cold starts accepted (D5) | R1, R7 | Provisioned concurrency | About $10 per month per function; cold filings still scored in 1 to 2 minutes |
-| Retry after 600 s; `skip_destroy`; ECR keeps 5 images (D6, D7) | R10 | Immediate retry; deregistered revisions; 2 images | A retry must outlast the visibility timeout, and a pinned revision needs its image |
+| Retry after 600 s; `skip_destroy`; ECR keeps 5 images (D6, D7) | R2, R10 | Immediate retry; deregistered revisions; 2 images | A retry must outlast the visibility timeout, and a pinned revision needs its image |
+| Live chain: poll every minute, queues, Pipe, `live-score` (D8) | R1, R5 | One Lambda that polls, scrapes, stores and scores | Each queue absorbs bursts and retries only its own failures |
 | SQS standard queues, DLQs, partial batch failures (D9) | R5 | SQS FIFO; MSK | Upserts by key and `client_order_id` make duplicates harmless; MSK bills brokers around the clock |
 | Iceberg on S3 with the Glue catalog (D10) | R4, R5, R7 | RDS; a hosted feature store | Upserts on plain objects; only storage is billed while idle |
 | One Iceberg writer per table (Ch. 6) | R10 | Parallel kafka-to-store tasks | Parallel commits conflict and redo their upserts |
@@ -681,11 +599,12 @@ The table collects the decisions of Chapter 5, with the requirement behind each.
 | VPC only for Fargate (D12) | R7, R8 | Everything in the VPC | The Lambdas reach nothing inside the VPC and would depend on the NAT gateway |
 | Rate budget; live egress from Lambda addresses (D13) | R3, R7 | All SEC traffic through one NAT address | The SEC already sees one `User-Agent`; the budget keeps the sum under 10 |
 | S3 gateway endpoint plus a switched NAT gateway (D14) | R7 | Five interface endpoints | About $73 per month, and the tasks need the internet anyway |
-| Dormant by default; three switches (D19) | R7 | Always-on stack | An always-on NAT gateway costs about $32 per month |
-| Secrets in SSM, created outside Terraform (D16) | R8 | Terraform-managed secrets; Secrets Manager | Values Terraform reads enter the state; SSM standard parameters are free |
 | One role per service (D15) | R8 | One shared role | Only inference and the publisher can read the Alpaca keys |
+| Secrets in SSM, created outside Terraform (D16) | R8 | Terraform-managed secrets; Secrets Manager | Values Terraform reads enter the state; SSM standard parameters are free |
 | OIDC roles for CI (D17) | R8 | IAM user keys in GitHub | Temporary credentials, bound to one repository and trigger |
 | Two-stage deploy, encrypted saved plan (D18) | R8 | `apply -auto-approve`; a plain artifact | The reviewer approves what is applied; public artifacts expose nothing |
+| Dormant by default; three switches (D19) | R7 | Always-on stack | An always-on NAT gateway costs about $32 per month |
+| One alarm per DLQ; CloudWatch dashboard (D20) | R5, R10 | Third-party monitoring; X-Ray | Every lost message ends in a DLQ; dashboard and alarms stay in the free tier |
 | Static site with a publisher; CloudFront with OAC; edge Basic auth (D21 to D23) | R8, R9 | An API; a public bucket; Cognito | No code runs per internet request, and no server is needed |
 | `FARGATE` On-Demand | R2, R10 | Fargate Spot, about 70% cheaper | An interruption fails the step, and 3 retries may not cover a multi-day run |
 
@@ -709,7 +628,7 @@ The table collects the decisions of Chapter 5, with the requirement behind each.
 
 ### 9.2 Model
 
-The model does not beat the zero baseline on MAE, and the +10.8% at -5% rests on 265 trades in one window, without costs. Next: rerun on 5 years, add costs and a benchmark (SPY), and test several holdout windows.
+The model does not beat the zero baseline on MAE, on one year or on five years. On five years the +2.64% at -5% rests on 619 trades, 1.4% of the holdout, without costs, and the -2% threshold loses money. Next: add costs and a benchmark (SPY), and test several holdout windows.
 
 ---
 
@@ -719,7 +638,7 @@ SecForm4Strategy turns one business idea into a set of explicit cloud requiremen
 
 Security follows the same method: SSM secrets outside the state, one role per service, OIDC for CI, an encrypted plan applied only after approval, and a static website with no public API.
 
-The live path ran end to end on real filings. The 5-year backfill exercised the batch path at scale and taught two lessons: keep the images of pinned revisions, and measure before scaling. On one year of data the model does not beat a zero prediction on MAE; only its strongest calls look promising. The infrastructure is the deliverable: it can rerun the test on five years of data, add costs and a benchmark, and keep scoring live filings, so the hypothesis can be accepted or rejected on evidence.
+The live path ran end to end on real filings. The 5-year backfill exercised every step of the batch path at scale and taught two lessons: keep the images of pinned revisions, and measure before scaling. On one year and on five years of data the model does not beat a zero prediction on MAE. Its 5-year holdout profit sits only in the extreme tail and does not grow steadily with the threshold, so the evidence does not support the hypothesis. The infrastructure is the deliverable: it can add costs and a benchmark, test more holdout windows, and keep scoring live filings, so the hypothesis can be accepted or rejected on evidence.
 
 ---
 
@@ -742,7 +661,129 @@ The live path ran end to end on real filings. The 5-year backfill exercised the 
 | Cost | Budget `secform4strategy-monthly` ($5) |
 | Site | S3 bucket `secform4strategy-site-<account>`; CloudFront distribution; CloudFront Function and KeyValueStore `secform4strategy-site-auth`; cache policies `secform4strategy-site-static`, `secform4strategy-site-data` |
 
-## Appendix B: Glossary
+## Appendix B: Configuration reference
+
+Each table supports one section of Chapter 5.
+
+### B.1 Task and function sizes (Section 5.1)
+
+| Service | Batch task (Fargate) | Live function (Lambda) |
+| --- | --- | --- |
+| master-index | 0.5 vCPU, 1 GB | 512 MB, 60 s, every minute |
+| scraper | 0.5 vCPU, 1 GB, `FETCH_WORKERS=12` | 1024 MB, 120 s, batches of 10, at most 2 at a time |
+| kafka-to-store | 2 vCPU, 8 GB: at 0.5 vCPU a 10,000-row batch took about 40 s, at 2 vCPU about 25 s | 2048 MB, 240 s, batches of up to 100, at most 2 at a time |
+| yahoo-connect | 0.5 vCPU, 2 GB | 2048 MB, 180 s |
+| target | 2 vCPU, 16 GB: 4 GB ran out of memory on one year | 2048 MB, 180 s |
+| training | 4 vCPU, 16 GB for the parallel grid search | Not on the live path |
+| inference | 0.5 vCPU, 2 GB (not a `retrain` step) | 2048 MB, 180 s |
+
+These are the sizes in `infra/envs/demo/main.tf`, which the weekly runs use. The 5-year runs overrode them at run time: target to 8 vCPU and 60 GB, training to 16 vCPU and 32 GB. Container Insights shows that the configured sizes are enough:
+
+- target peaked at about 1 vCPU and 3.7 GB, because pandas runs mostly on one core, so its override was unneeded headroom;
+- training used all 16 vCPU at 100% and peaked at about 20 GB, because each `n_jobs` worker holds a copy of the data. The override cut the run from an expected 35 minutes at 4 vCPU to about 10 minutes.
+
+### B.2 SQS settings (Section 5.2)
+
+| Setting | Value |
+| --- | --- |
+| Queues | `secform4strategy-filings`, `-transactions`, `-live-filings`, `-live-transactions`, `-live-tickers` |
+| Dead-letter queues | The queue name plus `-dlq`, after 5 receives (`maxReceiveCount`) |
+| Visibility timeout | 300 seconds |
+| Retention | 4 days on the queues, 14 days on the DLQs |
+| Encryption | SSE with SQS-managed keys |
+
+### B.3 Data bucket prefixes (Section 5.3)
+
+| Prefix | Content |
+| --- | --- |
+| `warehouse/` | The Iceberg tables; the location of the Glue database `secform4strategy` |
+| `models/` | One folder per trained model, plus `latest.json`, which names the promoted model |
+| `athena-results/` | Athena query results, expired after 7 days |
+
+### B.4 Network resources (Section 5.4)
+
+| Resource | Value |
+| --- | --- |
+| VPC `secform4strategy` | `10.0.0.0/16`, DNS support and hostnames on |
+| Public subnets | `10.0.0.0/24`, `10.0.1.0/24`; they hold only the NAT gateway |
+| Private subnets | `10.0.10.0/24`, `10.0.11.0/24`, in `use1-az1` and `use1-az2` |
+| Private route table | S3 to the gateway endpoint; `0.0.0.0/0` to the NAT gateway only while switched on |
+| Security group `secform4strategy-tasks` | No inbound rules; all outbound allowed |
+| NAT gateway and Elastic IP | In `secform4strategy-public-0`, only while `switched_on = true` |
+
+### B.5 IAM capabilities (Section 5.5)
+
+| Capability | Grants |
+| --- | --- |
+| Send to a queue | `sqs:GetQueueUrl`, `sqs:SendMessage` on that queue |
+| Receive from a queue | `sqs:GetQueueUrl`, `sqs:GetQueueAttributes`, `sqs:ReceiveMessage`, `sqs:DeleteMessage` on that queue |
+| `lakehouse-read` | Glue reads on the database and its tables; `s3:GetObject` on `warehouse/*` |
+| `lakehouse-write` | `lakehouse-read` plus `glue:CreateTable`, `glue:UpdateTable` and `s3:PutObject` on `warehouse/*` |
+| `models-read` / `models-write` | `s3:GetObject` / `s3:PutObject` on `models/*` |
+| `seen-keys` | `dynamodb:BatchGetItem`, `dynamodb:BatchWriteItem` on `secform4strategy-seen` |
+| `read-secrets` | `ssm:GetParameters` on `/secform4strategy/*` |
+| `read-alpaca-keys` | `ssm:GetParameters` on the two Alpaca key parameters only |
+
+### B.6 CI/CD workflows and OIDC roles (Section 5.6)
+
+| Workflow | Trigger | Does |
+| --- | --- | --- |
+| `quality.yml` | Pull requests and pushes to master | `make quality-static`, and `make type-check` as a separate job |
+| `images.yml` | A successful `quality` run on a push to master | Builds a `linux/arm64` image for each service whose code changed, tags it with that code's last commit, and pushes it to ECR |
+| `terraform.yml` | Pull requests and pushes to master that change `infra/` or `site/` | `terraform plan` on pull requests; on master, a saved plan of the merged commit, then an apply of exactly that plan after approval |
+
+| Role | Trusted subject | Permissions |
+| --- | --- | --- |
+| `secform4strategy-github-images` | `repo:josemita87/SecForm4Strategy:ref:refs/heads/master` | ECR push and pull on `secform4strategy/*` |
+| `secform4strategy-github-plan` | `...:pull_request`, and `...:ref:refs/heads/master` for the plan of a master run | `ReadOnlyAccess`, plus write and delete on the state lock file only; `deny-site-keys` denies reading the site's key-value store |
+| `secform4strategy-github-apply` | `...:environment:aws` | `AdministratorAccess` |
+
+### B.7 Dashboard and `make status` (Section 5.8)
+
+The CloudWatch dashboard `secform4strategy` shows:
+
+- queue depths, messages processed per minute and the backlog ETA of `filings` and `transactions`;
+- DLQ depths;
+- `retrain` and `live-score` runs;
+- the live Lambdas' invocations, errors and p90 duration;
+- `ERROR` log lines per 15 minutes.
+
+The read-only command `make status` prints the stack state in about 15 seconds:
+
+- whether the NAT gateway exists and the schedules are enabled;
+- each running `retrain` step and its attempt;
+- per-queue depth, rate and ETA, and the running ECS tasks;
+- the `ERROR` log lines of the last hour and the `live-score` outcomes of the last 24 hours;
+- the promoted model folder.
+
+### B.8 Site pages and data files (Section 5.9)
+
+| Page | Shows |
+| --- | --- |
+| Story | The idea, the data, the model and the results |
+| Live | The latest `live-score` runs, their filings, predictions and orders |
+| Portfolio | The Alpaca paper account: equity, positions and orders |
+| Model | The current model: parameters, validation folds, holdout results and feature importance |
+| Explore | The largest insider sales and the clusters of insider sales of the last 7 days |
+
+| File | Written | Contents |
+| --- | --- | --- |
+| `data/live.json` | After each `live-score` run, and every minute | The latest 50 runs, with steps, filings, predictions and orders |
+| `data/health.json` | Every minute | Switches, queue depths, Lambda metrics, run outcomes, the model version |
+| `data/portfolio.json` | Every minute | The paper account, equity history, positions and latest 100 orders |
+| `data/model.json` | When the model version changes | Parameters, folds, holdout metrics, cumulative return against SPY, feature importance |
+| `data/explore.json` | Every 15 minutes | The largest insider sales and the insider clusters of the last 7 days |
+
+### B.9 CloudFront settings (Section 5.9)
+
+| Resource | Settings |
+| --- | --- |
+| Distribution | HTTPS on the default `*.cloudfront.net` certificate (HTTP redirects to HTTPS), `PriceClass_100`, gzip and brotli, `GET` and `HEAD` only |
+| Cache of `data/*` | At most 5 seconds (`secform4strategy-site-data`) |
+| Cache of other files | At most 60 seconds (`secform4strategy-site-static`) |
+| Response headers | `Managed-SecurityHeadersPolicy`: HSTS, `X-Frame-Options`, `nosniff`, referrer policy |
+
+## Appendix C: Glossary
 
 | Term | Meaning |
 | --- | --- |

@@ -1,5 +1,26 @@
-/* Overrides for submission.pdf: the conclusion and the glossary continue the previous page */
+/* Overrides for submission.pdf: these chapters continue the previous page */
+[id="9-limitations-and-future-work"],
 [id="10-conclusion"],
-#appendix-b-glossary {
+#appendix-a-resource-inventory {
   break-before: auto;
+}
+
+/* Short tables stay on one page */
+[id="62-measurements"] + table {
+  break-inside: avoid;
+}
+
+/* Names in the first column of a table stay on one line */
+td:first-child code {
+  white-space: nowrap;
+}
+
+/* B.7 and its lists start a page */
+#b7-dashboard-and-make-status-section-58 {
+  break-before: page;
+}
+
+/* The cost section's opening paragraph stays with its table */
+[id="57-cost-and-switches"] + p {
+  break-after: avoid;
 }

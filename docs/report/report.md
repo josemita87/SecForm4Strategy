@@ -11,7 +11,7 @@
 
 ## Abstract
 
-SecForm4Strategy reads the insider-trading disclosures (Form 4) that the US Securities and Exchange Commission (SEC) publishes on EDGAR. It joins each disclosure to the stock prices after the moment the filing became public, trains a gradient-boosted regression model to predict the 30-day return that follows, and places short orders on a paper-trading account at the broker Alpaca. The system runs on AWS in account `100118195151`, region `us-east-1`, and Terraform defines every resource. A batch path (Step Functions and ECS Fargate on ARM64) loads years of filings and retrains the model each week. A live path (EventBridge Scheduler, SQS, Lambda container images, an EventBridge Pipe and a second state machine) scores each new filing within minutes of publication. Both paths are serverless, and one Terraform switch takes the stack from about $0 per day when dormant to about $1.20 per day plus usage when switched on. A password-protected static website on CloudFront shows the live runs, the paper portfolio and the model. On one year of data, the model does not beat a constant zero prediction on mean absolute error (holdout MAE 0.1216 against 0.1193). Its most negative predictions still rank well: the 265 holdout rows predicted below -5% fell by 10.8% on average, before costs. The project therefore delivers cloud infrastructure that can test the insider-selling hypothesis rigorously, not a proven trading strategy.
+SecForm4Strategy reads the insider-trading disclosures (Form 4) that the US Securities and Exchange Commission (SEC) publishes on EDGAR. It joins each disclosure to the stock prices after the moment the filing became public, trains a gradient-boosted regression model to predict the 30-day return that follows, and places short orders on a paper-trading account at the broker Alpaca. The system runs on AWS in account `100118195151`, region `us-east-1`, and Terraform defines every resource. A batch path (Step Functions and ECS Fargate on ARM64) loads years of filings and retrains the model each week. A live path (EventBridge Scheduler, SQS, Lambda container images, an EventBridge Pipe and a second state machine) scores each new filing within minutes of publication. Both paths are serverless, and one Terraform switch takes the stack from about $0 per day when dormant to about $1.20 per day plus usage when switched on. A password-protected static website on CloudFront shows the live runs, the paper portfolio and the model. Every batch step ran on five years of filings. On one year and on five years of data, the model does not beat a constant zero prediction on mean absolute error. On five years its holdout MAE is 0.12653 against 0.12646 for zero, and it is worse than zero in all four validation folds. Its 619 holdout shorts below -5% returned +2.64% on average before costs, while the shorts below -2% lost 3.24%, a pattern consistent with noise. The project therefore delivers cloud infrastructure that can test the insider-selling hypothesis rigorously, not a proven trading strategy.
 
 ## Contents
 
@@ -104,7 +104,7 @@ yahoo-connect keeps the table `P` (one row per ticker and day) current for every
 - `open` and `close` are adjusted for later splits and dividends. Returns between any two days are therefore comparable.
 - `close_as_traded` is the close in that day's shares, with later splits undone. All USD values use it, because a Form 4 counts shares as of the trade.
 
-Each refresh starts 30 stored days back for each ticker (`REBASE_LOOKBACK_DAYS`). If the adjustment factors of those days changed, Yahoo has re-based the history after a split or dividend, and yahoo-connect downloads the ticker's full history again. yahoo-connect never stores a bar before its close has printed.
+Each refresh starts 30 stored days back for each ticker (`REBASE_LOOKBACK_DAYS`). If the adjustment factors of those days changed, Yahoo has re-based the history after a split or dividend, and yahoo-connect downloads the ticker's history again from `PRICE_HISTORY_YEARS` (15) years back. A ticker with no stored bars starts there too. yahoo-connect never stores a bar before its close has printed.
 
 target also joins static company data from files in its image: monthly market-cap snapshots (`mcaps.parquet`, 1992 to 2024-08) and company data by issuer CIK (`companies.json`: ticker, SIC code, SIC group, exchange).
 
@@ -296,6 +296,8 @@ Each step runs one Fargate ARM64 (Graviton) task in the cluster `secform4strateg
 
 Task sizes follow the work. Most tasks run with 0.5 vCPU and 1 GB or 2 GB. kafka-to-store runs with 2 vCPU and 8 GB, because each Iceberg upsert loads and merges table rows, and at 0.5 vCPU a 10,000-row batch took about 40 seconds. The cluster has Container Insights enabled, so CloudWatch shows each task's CPU and memory use. target reads every ticker's price history at once and runs with 2 vCPU and 16 GB, because 4 GB ran out of memory on one year of filings. training runs the 128 grid-search fits in parallel on 4 vCPU and 16 GB.
 
+These configured sizes serve the weekly runs. The 5-year runs overrode them at run time: target to 8 vCPU and 60 GB, training to 16 vCPU and 32 GB. Container Insights shows that the configured sizes are enough. target peaked at about 1 vCPU and 3.7 GB, because pandas runs mostly on one core, so its override was unneeded headroom. training used all 16 vCPU at 100% and peaked at about 20 GB, because each `n_jobs` worker holds a copy of the data. Its override only shortened the run, from an expected 35 minutes at 4 vCPU to about 10 minutes.
+
 EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC (`secform4strategy-weekly-retrain`). master-index then runs with `MODE=recent` and `DAYS_BACK=7` and publishes only the filings of the last 7 days. The training task runs with `PROMOTE=gated`, so a run's model replaces the promoted model only if it passes the promotion gate. The gate requires at least 50,000 development rows and at least 80% of the current model's, the same feature-group version and `features`, holdout rows, a finite holdout MAE and at least one short. It does not compare MAE with the current model, because each model is scored on a different holdout period. `scripts/promote_model.sh` lists the saved models and promotes one by hand, which is also the rollback.
 
 **Run input.** A run's input can override environment variables per step:
@@ -310,7 +312,7 @@ The first full load is the same state machine, started once by hand:
 {"overrides": {"master-index": {"MODE": "historical", "YEARS": "5"}, "scraper": {"SEC_MAX_RATE": "8"}, "kafka-to-store": {"BUFFER_SIZE": "10000"}}}
 ```
 
-**Throughput.** The scraper downloads up to 12 filings at once (`FETCH_WORKERS=12`) and runs at 6 to 7.8 filings per second. kafka-to-store upserts one batch of `BUFFER_SIZE` rows per Iceberg commit. A 10,000-row batch takes about 25 seconds at 2 vCPU, and a 30,000-row batch about 75 seconds: about 400 rows per second either way (Section 8.2). One year holds about 250,000 Form 4 filings. The 5-year backfill (`backfill-5y`, started 2026-11-20) covers about 1.06 million filings.
+**Throughput.** The scraper downloads up to 12 filings at once (`FETCH_WORKERS=12`) and runs at 6 to 7.8 filings per second. kafka-to-store upserts one batch of `BUFFER_SIZE` rows per Iceberg commit. A 10,000-row batch takes about 25 seconds at 2 vCPU, and a 30,000-row batch about 75 seconds: about 400 rows per second either way (Section 8.2). One year holds about 155,000 to 192,000 Form 4 filings with transactions. The 5-year backfill (`backfill-5y`, started 2026-11-20) covers about 1.06 million filings.
 
 **Revision pinning.** A `retrain` run names exact task-definition revisions, for example `secform4strategy-kafka-to-store:3`, and keeps them until it ends. A new image makes Terraform register a new revision. The task definitions set `skip_destroy = true`, so the old revision stays active and a multi-day run can still start tasks from it. ECR keeps only 5 images per repository, so a service must not get five newer images while a run still has to start it. During a multi-day run, the rule is to push at most four new images of a service whose step has not started. Section 8 describes the backfill failure that led to this rule.
 
@@ -385,7 +387,7 @@ Five SQS standard queues carry the work between services. Each has its own dead-
 | Site publisher Lambda | No | It reads only regional AWS services and internet APIs (Section 5) |
 | Step Functions, SQS, DynamoDB, S3, EventBridge, CloudFront | Not applicable | Regional or global services, reached through endpoints and controlled by IAM |
 
-The private subnets avoid `use1-az3`, because Fargate ARM64 is not available there. Nothing in the private subnets has a public IP address, and the security group accepts no inbound connections, so nothing on the internet can open a connection to the tasks. The Lambda functions accept no inbound connections either: only their triggers invoke them, through the Lambda API and IAM.
+The private subnets take the first two availability zones that AWS reports as available, `use1-az1` and `use1-az2` in this account. Fargate ARM64 is not available in `use1-az3`, and nothing in the network module excludes that zone. Nothing in the private subnets has a public IP address, and the security group accepts no inbound connections, so nothing on the internet can open a connection to the tasks. The Lambda functions accept no inbound connections either: only their triggers invoke them, through the Lambda API and IAM.
 
 The batch tasks reach S3 through the S3 gateway endpoint, and SQS, the ECR API, SSM, Glue, CloudWatch Logs, SEC EDGAR and Yahoo Finance through the NAT gateway. No batch task calls Alpaca. The live inference Lambda places the Alpaca orders directly, from outside the VPC, and the site publisher reads the Alpaca account the same way. The S3 gateway endpoint carries the Iceberg data, the models and the ECR image layers. It costs nothing, and its traffic adds no NAT data charges. While the stack is dormant, the private subnets reach only S3, and no task can run because it cannot pull its image or read its secrets.
 
@@ -428,7 +430,7 @@ The orchestrators have their own roles:
 
 ![AWS CI/CD](../diagrams/aws-ci-cd.drawio.svg)
 
-*Figure 6: CI/CD. Three GitHub Actions workflows authenticate to AWS through OIDC. Master pushes images; pull requests get read-only plans; the approval-gated environment `aws` applies. The figure shows the deploy before it became two-stage: the plan role now also plans each master push, and the apply applies that saved, encrypted plan (see the text below).*
+*Figure 6: CI/CD. Three GitHub Actions workflows authenticate to AWS through OIDC. Master pushes images; pull requests get read-only plans; the approval-gated environment `aws` applies.*
 
 | Workflow | Trigger | Does |
 | --- | --- | --- |
@@ -659,54 +661,75 @@ The pre-commit hook also checks file size, private keys, merge markers and YAML/
 
 | | 1-year data | 5-year data |
 | --- | --- | --- |
-| Filings | About 250,000 Form 4 filings per year | About 1.06 million filings (Section 8) |
-| Labelled rows (`RT4`) | 73,195 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| Development rows (after purging) | 53,747 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| Holdout rows | 14,639, from 2026-06-09 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| Best parameters | `loss=absolute_error`, `learning_rate=0.03`, `max_leaf_nodes=15`, `min_samples_leaf=50`, `l2_regularization=1.0` | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
+| Filings | About 155,000 to 192,000 Form 4 filings with transactions per year | About 1.05 million filings, January 2021 to November 2026 (Section 8) |
+| Labelled rows (`RT4`) | 73,195 | 215,334, from 265,525 disclosure rows across 7,994 tickers in `BT4` |
+| Development rows (after purging) | 53,747 | 169,990 |
+| Holdout rows | 14,639, from 2026-06-09 | 43,067, from 2025-10-24 18:24 UTC |
+| Best parameters | `loss=absolute_error`, `learning_rate=0.03`, `max_leaf_nodes=15`, `min_samples_leaf=50`, `l2_regularization=1.0` | `loss=absolute_error`, `learning_rate=0.03`, `max_leaf_nodes=15`, `min_samples_leaf=200`, `l2_regularization=0.0` |
 
 The 1-year results come from a local walk-forward run of the merged training code on Saturday 2026-11-21. On the 1-year data, the 128 fits plus the refit used about 2,200 CPU-seconds: 3 minutes on a 16-core laptop.
+
+The 5-year results come from the first `training` run on AWS Fargate, on Sunday 2026-11-22: an ECS task overridden to 16 vCPU and 32 GB and `PROMOTE=never`, from 20:48 to 20:58 UTC (Section 8). The training data has 215,334 rows and 34 columns. The run saved model `20261122T205816Z`, which was then promoted by hand.
 
 ### 7.2 Holdout MAE against baselines
 
 | Predictor | Holdout MAE, 1-year | Holdout MAE, 5-year |
 | --- | --- | --- |
-| `model` | 0.1216 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| `zero` | 0.1193 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| `train_mean` | 0.1218 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| `ticker_history` | 0.1421 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
+| `model` | 0.1216 | 0.12653 |
+| `zero` | 0.1193 | 0.12646 |
+| `train_mean` | 0.1218 | 0.12657 |
+| `ticker_history` | 0.1421 | 0.13548 |
 
 The model does not beat the zero baseline on MAE. Predicting "no move" for every row has a lower mean absolute error than the model (0.1193 against 0.1216). The model is level with `train_mean` and clearly better than `ticker_history`. A 30-day return is mostly noise, and an MAE loss pulls predictions towards the median, so a constant is a hard baseline on this metric.
 
+The 5-year data gives the same result. The model's holdout MAE (0.12653) is above zero's (0.12646) and level with `train_mean` (0.12657). `ticker_history` is clearly worse (0.13548). The 1-year and 5-year MAEs are not comparable, because each model holds out a different period. For the same reason, the promotion gate does not compare MAE (Section 4.3).
+
 ### 7.3 Validation folds
 
-| Fold | Model MAE | Zero MAE |
+| Fold | Model MAE, 1-year | Zero MAE, 1-year |
 | --- | --- | --- |
 | 1 | 0.152 | 0.114 |
 | 2 | 0.117 | 0.114 |
 | 3 | 0.135 | 0.135 |
 | 4 | 0.132 | 0.131 |
 
-The folds show the same result. The model is worse than zero on fold 1, which has the least training data, and close to zero on folds 2 to 4. It never beats zero on a fold. The 5-year folds are **[5-year results: to be filled after the Sunday 2026-11-22 run]**.
+The folds show the same result. The model is worse than zero on fold 1, which has the least training data, and close to zero on folds 2 to 4. It never beats zero on a fold.
+
+On the 5-year data, each fold validates on 33,998 rows. The model is worse than zero in every fold:
+
+| Fold | Training rows | Validation period | Model MAE | Zero MAE |
+| --- | --- | --- | --- | --- |
+| 1 | 30,472 | 2021-11-22 to 2022-12-21 | 0.11050 | 0.10804 |
+| 2 | 64,675 | 2022-12-21 to 2023-12-19 | 0.11192 | 0.11030 |
+| 3 | 97,893 | 2023-12-19 to 2024-11-14 | 0.10011 | 0.09908 |
+| 4 | 133,002 | 2024-11-14 to 2025-09-23 | 0.11330 | 0.11307 |
 
 ### 7.4 Short return by threshold
 
 MAE scores every row. The trading rule acts only on the most negative predictions, so the ranking of those rows matters more than the average error.
 
-| Threshold | Holdout shorts, 1-year | Mean return per short, 1-year | 5-year |
-| --- | --- | --- | --- |
-| 0 | 7,067 | +1.8% | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| -2% | 1,942 | +4.0% | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| -5% (traded) | 265 | +10.8% | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
-| -10% | 29 | Too few to read | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
+| Threshold | Holdout shorts, 1-year | Mean return per short, 1-year | Holdout shorts, 5-year | Mean return per short, 5-year |
+| --- | --- | --- | --- | --- |
+| 0 | 7,067 | +1.8% | 28,356 | -1.44% |
+| -2% | 1,942 | +4.0% | 6,602 | -3.24% |
+| -5% (traded) | 265 | +10.8% | 619 | +2.64% |
+| -10% | 29 | Too few to read | 51 | +5.04% |
 
 A positive mean return per short means the shorted stocks fell on average. The return grows as the threshold tightens: +1.8% at 0, +4.0% at -2% and +10.8% at -5%. The model therefore ranks the rows it is most negative about better than the MAE suggests. This is a signal worth testing, not a result. The 265 trades at -5% come from one holdout window that starts on 2026-06-09. The figures exclude trading costs, borrow fees, short availability and overlapping positions, and the report has no market benchmark for the same window.
+
+The 5-year holdout does not confirm the 1-year pattern:
+
+- **Profit only in the extreme tail.** The 619 shorts at -5% are 1.4% of the 43,067 holdout rows. Only 51 rows fall below -10%.
+- **No monotonic pattern.** The shorts at 0 lose 1.44% and the shorts at -2% lose 3.24%, while the shorts at -5% gain 2.64%. That pattern is consistent with noise.
+- **The naive baseline fails clearly.** At -5%, `ticker_history` shorts 2,982 holdout rows and loses 6.42% per short. `zero` and `train_mean` short no rows.
+
+The 5-year returns also exclude borrow fees, slippage and commissions.
 
 ### 7.5 Live path verification
 
 The live path ran end to end on real filings. Filings for AMZN, TGT, DGICA and IMTX went from the SEC feed through the poller, scraper and kafka-to-store to the `live-score` state machine, and inference scored them. AWS records seven successful `live-score` runs. Alpaca paper orders were placed and then cancelled, to verify three things: the broker wiring, the `client_order_id` idempotency and the IAM path to the Alpaca keys. The measured cold starts in Section 4.4 come from these runs.
 
-On the batch path, no `retrain` run has finished all six steps on AWS. The 1-year runs were stopped by hand. The 5-year backfill (`backfill-5y`) scraped every filing, then ended `FAILED`, and its remaining steps run by hand (Section 8).
+On the batch path, no `retrain` run has finished all six steps on AWS in one state-machine run. The 1-year runs were stopped by hand. The 5-year backfill (`backfill-5y`) scraped every filing, then ended `FAILED`. Its remaining steps ran by hand on 2026-11-22, so every batch step has run on five years of data (Section 8).
 
 ---
 
@@ -725,15 +748,17 @@ On the batch path, no `retrain` run has finished all six steps on AWS. The 1-yea
 
 The cause was a missing image. The run had pinned the task-definition revision `scraper:3` when it started (Section 4.3). That revision named an image digest. The ECR lifecycle rule then kept only 2 images per repository, and newer scraper images had been pushed during the run, so ECR had already deleted that image. `skip_destroy` kept the revision active, but a revision without its image cannot start a task.
 
-The work the scraper had done was not lost. Its transactions were in `secform4strategy-transactions`, which keeps messages for 4 days, and every task is incremental. The remaining steps run as ECS tasks started by hand, on the latest revisions:
+The work the scraper had done was not lost. Its transactions were in `secform4strategy-transactions`, which keeps messages for 4 days, and every task is incremental. The remaining steps ran as ECS tasks started by hand, on the latest revisions. The manual recovery is complete:
 
-1. kafka-to-store, with 2 vCPU, 8 GB and `BUFFER_SIZE` raised to 30,000.
-2. yahoo-connect.
-3. target.
-4. training, with `PROMOTE=never`, so that the model is saved and not promoted.
-5. A manual promotion of the saved model with `scripts/promote_model.sh`.
+| Step | Outcome |
+| --- | --- |
+| kafka-to-store | Done, with 2 vCPU, 8 GB and `BUFFER_SIZE` raised to 30,000. |
+| yahoo-connect | Done at 20:43 UTC on 2026-11-22: 160 batches in about 2 h 25 min. Batches slowed from about 35 s to about 80 s as the price table `P` grew to about 23 million rows. It was the slowest step, because each batch upserts into the large `P` table. |
+| target | Done in about 2 minutes, as revision 11, overridden to 8 vCPU and 60 GB. It read 265,525 disclosure rows across 7,994 tickers from `BT4` and pushed 215,334 labelled rows to `RT4`. |
+| training | Done in about 10 minutes, from 20:48 to 20:58 UTC, as revision 11, overridden to 16 vCPU, 32 GB and `PROMOTE=never`. It saved model `20261122T205816Z`. This was the first `training` run on AWS Fargate. |
+| promote | Done by hand with `scripts/promote_model.sh 20261122T205816Z`. The new model replaced `20261120T210617Z`. |
 
-The 5-year results in Section 7 are **[5-year results: to be filled after the Sunday 2026-11-22 run]**.
+Section 7 gives the 5-year results.
 
 ### 8.2 Measurements
 
@@ -742,6 +767,9 @@ The 5-year results in Section 7 are **[5-year results: to be filled after the Su
 | kafka-to-store, one 10,000-row batch at 0.5 vCPU | About 40 seconds |
 | kafka-to-store, one 10,000-row batch at 2 vCPU | About 25 seconds |
 | kafka-to-store, one 30,000-row batch at 2 vCPU | About 75 seconds |
+| yahoo-connect, 160 batches into `P` | About 2 h 25 min; about 35 s per batch at the start, about 80 s at the end |
+| target, 5 years, 8 vCPU / 60 GB | About 2 minutes |
+| training, 5 years, 16 vCPU / 32 GB | About 10 minutes |
 | Size of the Iceberg warehouse | About 430 MB |
 
 Most of a kafka-to-store batch is spent after SQS: parallel receive and delete calls did not change the rate much. Four times the CPU cut a 10,000-row batch from about 40 to about 25 seconds, because the task went from half a core to a full core. Three times the batch took three times as long, so the cost is per row: the pandas cleaning in `store()` and the merge inside pyiceberg's upsert, which run on one core. Which of the two dominates is not yet measured.
@@ -793,11 +821,11 @@ Section 10.2 lists the follow-ups: an append-then-deduplicate write for full loa
 
 ### 10.1 Model
 
-- **No MAE gain.** The model does not beat the zero baseline on MAE, on the holdout or on any validation fold.
-- **A narrow ranking signal.** The +10.8% mean return at -5% rests on 265 trades. At -10% the 29 trades are too few to read.
+- **No MAE gain.** On one year and on five years, the model does not beat the zero baseline on MAE, on the holdout or on any validation fold.
+- **No reliable ranking signal.** On one year, the +10.8% mean return at -5% rests on 265 trades. On five years, the +2.64% at -5% rests on 619 trades, 1.4% of the holdout, and the shorts at -2% lose 3.24%.
 - **Costs not modelled.** The short return excludes commissions, the bid-ask spread, borrow fees and whether a stock could be borrowed at the time. Only current borrow availability is known.
-- **Overlap not modelled.** Rows of the same ticker within 30 days produce overlapping positions, so the 265 trades are not 265 independent bets.
-- **One holdout window.** The holdout covers one period from 2026-06-09. Another period can give a different result.
+- **Overlap not modelled.** Rows of the same ticker within 30 days produce overlapping positions, so the 265 or 619 trades are not independent bets.
+- **One holdout window per dataset.** The 1-year holdout starts on 2026-06-09 and the 5-year holdout on 2025-10-24. Another period can give a different result.
 - **Data gaps.**
   - Market-cap snapshots end in 2024-08.
   - Session times assume a 16:00 close, which is wrong on the few half-days.
@@ -805,9 +833,8 @@ Section 10.2 lists the follow-ups: an append-then-deduplicate write for full loa
   - Early stopping holds out random rows, not the latest rows.
 
 The next research steps:
-1. Rerun the evaluation on the 5-year data.
-2. Score the strategy walk-forward with costs and a market benchmark (SPY).
-3. Report how the result varies across several holdout windows.
+1. Score the strategy walk-forward with costs and a market benchmark (SPY).
+2. Report how the result varies across several holdout windows.
 
 ### 10.2 Engineering
 
@@ -835,7 +862,7 @@ On AWS, the system has two paths:
 
 Terraform defines every resource. CI deploys through OIDC and applies only an encrypted, reviewed plan after approval. A promotion gate keeps a bad model away from inference. Roles grant only what each service uses, secrets stay out of the state, and one switch takes the stack to about $0 per day.
 
-On one year of data, the result is negative on MAE and promising only in the tail. The model does not beat a zero prediction. Its 265 most negative holdout calls fell by 10.8% on average before costs. The infrastructure is the deliverable. It can rerun the test on five years of data, add costs and a benchmark, and keep scoring live filings. The hypothesis can then be accepted or rejected on evidence.
+Every batch step ran on five years of data. On one year and on five years, the model does not beat a zero prediction on MAE. On five years, its holdout profit sits only in the extreme tail, before costs, and it does not grow steadily with the threshold. The evidence does not support the hypothesis. The infrastructure is the deliverable. It can add costs and a benchmark, test more holdout windows, and keep scoring live filings. The hypothesis can then be accepted or rejected on evidence.
 
 ---
 
