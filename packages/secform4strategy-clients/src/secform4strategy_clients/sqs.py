@@ -129,23 +129,24 @@ class SqsQueue:
         Returns:
             The messages received, possibly none.
         """
-        messages = self._parse(
-            queue, self._receive_once(queue, min(MAX_BATCH, max_messages), int(min(wait_seconds, 20)))
-        )
-        while messages and (missing := max_messages - len(messages)) > 0:
-            # Once a batch has started, waiting for more would only delay the messages already received
-            sizes = [
-                min(MAX_BATCH, missing - MAX_BATCH * i)
-                for i in range(min(self._workers, math.ceil(missing / MAX_BATCH)))
+        if max_messages < 1:
+            return ()
+        received = self._receive_once(queue, min(MAX_BATCH, max_messages), int(min(wait_seconds, 20)))
+        messages = self._parse(queue, received)
+        # Records that were not JSON still count as a non-empty round, so a bad first batch does not end the receive
+        while received and (missing := max_messages - len(messages)) > 0:
+            received = [
+                record
+                for batch in self._pool.map(
+                    # Once a batch has started, waiting for more would only delay the messages already received
+                    lambda size: self._receive_once(queue, size, 0),
+                    (
+                        min(MAX_BATCH, missing - MAX_BATCH * i)
+                        for i in range(min(self._workers, math.ceil(missing / MAX_BATCH)))
+                    ),
+                )
+                for record in batch
             ]
-            if not (
-                received := [
-                    record
-                    for batch in self._pool.map(lambda size: self._receive_once(queue, size, 0), sizes)
-                    for record in batch
-                ]
-            ):
-                break
             messages.extend(self._parse(queue, received))
         return tuple(messages)
 
