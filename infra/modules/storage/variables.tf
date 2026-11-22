@@ -11,7 +11,7 @@ variable "services" {
 variable "images_kept" {
   description = "Images kept per repository; older ones expire"
   type        = number
-  default     = 2
+  default     = 5
 }
 
 variable "monthly_budget_usd" {
