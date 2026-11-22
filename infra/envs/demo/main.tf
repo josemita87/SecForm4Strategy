@@ -116,9 +116,7 @@ locals {
     MODEL_STORE__REGION  = local.region
     MODEL_STORE__BUCKET  = module.storage.data_bucket
   }
-  # Training evaluates at the threshold inference trades at, so both read this one value
-  prediction_threshold = "-0.05"
-  training_run         = { SYSTEM_TRAINING = "true", FILTER_KEY = "acquired_disposed", ACQUIRED_DISPOSED = "D" }
+  training_run = { SYSTEM_TRAINING = "true", FILTER_KEY = "acquired_disposed", ACQUIRED_DISPOSED = "D" }
 }
 
 module "tasks" {
@@ -167,7 +165,7 @@ module "tasks" {
       cpu           = 4096
       memory        = 16384
       environment = merge(local.lakehouse, local.models, {
-        HOLDOUT_RATIO = "0.2", N_FOLDS = "4", PREDICTION_THRESHOLD = local.prediction_threshold
+        HOLDOUT_RATIO = "0.2", N_FOLDS = "4"
         RANDOM_STATE  = "42", TARGET_FEATURE = "pct_change"
         # Scheduled runs promote through the gate; an ad-hoc run overrides PROMOTE to "never" (docs/training.md#promotion)
         PROMOTE = "gated", MIN_TRAIN_ROWS = "50000", MIN_ROWS_RATIO = "0.8"
@@ -177,7 +175,7 @@ module "tasks" {
       task_role_arn = local.roles.inference
       memory        = 2048
       environment = merge(local.lakehouse, local.models, {
-        ALPACA_BASE_URL = "https://paper-api.alpaca.markets", QTY = "1", PREDICTION_THRESHOLD = local.prediction_threshold
+        ALPACA_BASE_URL = "https://paper-api.alpaca.markets", QTY = "1"
       })
       secrets = { ALPACA_API_KEY = "alpaca-api-key", ALPACA_API_SECRET = "alpaca-api-secret" }
     }
@@ -277,7 +275,7 @@ module "live" {
       memory    = 2048
       timeout   = 180
       environment = merge(local.lakehouse, local.models, {
-        ALPACA_BASE_URL = "https://paper-api.alpaca.markets", QTY = "1", PREDICTION_THRESHOLD = local.prediction_threshold
+        ALPACA_BASE_URL = "https://paper-api.alpaca.markets", QTY = "1"
         SSM_PARAMETERS  = local.alpaca_secrets
       })
     }
@@ -321,7 +319,7 @@ module "site" {
   retrain_schedule_name        = module.retrain.schedule_name
   queue_arns                   = concat([for queue in module.queues.queues : queue.arn], values(module.queues.dead_letter_queues))
   publisher_environment = merge(local.lakehouse, local.models, {
-    ALPACA_BASE_URL = "https://paper-api.alpaca.markets", PREDICTION_THRESHOLD = local.prediction_threshold
+    ALPACA_BASE_URL = "https://paper-api.alpaca.markets"
     SSM_PARAMETERS  = local.alpaca_secrets
   })
 }

@@ -82,8 +82,6 @@ class Config(SsmSettings):
     retrain_state_machine_arn: str
     poller_schedule_name: str
     retrain_schedule_name: str
-    # The threshold inference trades at, shown in live.json; model.json's for models saved without one
-    prediction_threshold: float = Field(le=0)
 
     # Alpaca API credentials; the Lambda reads them from SSM (SSM_PARAMETERS)
     alpaca_api_key: SecretStr

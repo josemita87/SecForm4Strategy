@@ -52,15 +52,19 @@ Current formats:
 
 - `columns_to_drop`: removed before the model sees the frame.
 - `identification_features`: kept for traceability, excluded from the model inputs. `accepted_at` (acceptance) and `label_known_at` (exit close), both UTC timestamps, drive the holdout split and the walk-forward folds: the holdout is the latest `HOLDOUT_RATIO` of filings, and each training set keeps only labels known before its validation or holdout period starts ([training.md](training.md)).
-- `model_params`: fixed keyword arguments for `HistGradientBoostingRegressor` (`random_state` comes from `RANDOM_STATE`).
+- `short_return` (-0.05): the label. A row is a short winner when its `pct_change` is below this value.
+- `model_params`: fixed keyword arguments for `HistGradientBoostingClassifier` (`random_state` comes from `RANDOM_STATE`).
 - `param_grid`: the values the grid search tries on top of `model_params`.
-- `report_thresholds`: the prediction thresholds at which training logs the holdout short return. Training saves them in the model metadata.
+- `cutoff_grid`: the probability cutoffs that training scores on the development folds. Training also reports the holdout shorts at each of them.
+- `min_fold_shorts` (100): a cutoff qualifies only when it shorts at least this many rows in every fold.
+- `fallback_cutoff` (0.5): the cutoff that training saves when no cutoff qualifies.
 
-Inference has only its catalog: the model's input columns and their order come from the trained model's metadata (`features`).
+Inference has only its catalog: the model's input columns, their order and the probability cutoff come from the trained model's metadata (`features`, `probability_cutoff`). The optional `PROBABILITY_CUTOFF` variable replaces the saved cutoff.
 
 **target**
 
 - `cluster_window_days` (30): how far back each disclosure row counts its ticker's distinct insiders, officers and filings (`insiders_recent`, `officers_recent`, `filings_recent`), ending at the row's acceptance.
+- `max_label_return` (3.0): the largest plausible label. `compute_target` leaves `pct_change` missing above it, and also when the entry or exit adjusted price is not positive. Training drops such rows as unlabelled.
 
 Target collapses transactions into one row per ticker and *next market print* (the first 09:30 open or 16:00 close after acceptance): everything disclosed before a tradable price, with stock and derivative quantities apart, code and role flags, filing and insider counts and the filing lag (`aggregate_disclosures` in target `main.py`). One row per trading opportunity keeps every filing timed at its own window and gives each label once.
 
@@ -86,4 +90,4 @@ Paths default to these files and can be overridden with `MARKET_CAPS_PATH` and `
 
 ## Model artifacts
 
-Training saves the fitted pipeline as `model.joblib` and its metadata beside it as `model.meta.json`: training time, git SHA (`GIT_SHA`, else `git rev-parse HEAD`), scikit-learn version, feature-group version, target, ordered `features`, model parameters, row counts, holdout start, the `Scores` of the model and its baselines on the holdout, the per-fold validation MAE of the model and the zero baseline, the prediction threshold, and the report thresholds, as the `ModelMetadata` record (`secform4strategy_clients.records`). The pipeline addresses columns by position, so inputs must follow `features`. Inference refuses a model saved under another scikit-learn version. Each save writes a new version folder named after the training time. Inference loads only the promoted version, and `PROMOTE` decides whether training promotes its model ([training.md](training.md#promotion)).
+Training saves the fitted pipeline as `model.joblib` and its metadata beside it as `model.meta.json`: training time, git SHA (`GIT_SHA`, else `git rev-parse HEAD`), scikit-learn version, feature-group version, target, ordered `features`, model parameters, row counts, holdout start, the `Scores` of the model and its baselines on the holdout, the probability cutoff, the label return, the holdout base rate, the per-fold validation average precision and base rate, and the holdout shorts at each cutoff of `cutoff_grid`, as the `ModelMetadata` record (`secform4strategy_clients.records`). The pipeline addresses columns by position, so inputs must follow `features`. Inference refuses a model saved under another scikit-learn version, and a model without `probability_cutoff`. Each save writes a new version folder named after the training time. Inference loads only the promoted version, and `PROMOTE` decides whether training promotes its model ([training.md](training.md#promotion)).

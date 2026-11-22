@@ -47,7 +47,7 @@
     <div>
       <p class="eyebrow">Live trading desk &middot; paper account</p>
       <h1 id="live-title">Insider sales in, <span class="grad">short decisions out</span>.</h1>
-      <p class="lede">Every Form 4 sale that SEC accepts is parsed, priced, turned into features and scored by the model. A predicted fall below the threshold places a short order on Alpaca.</p>
+      <p class="lede">Every Form 4 sale that SEC accepts is parsed, priced, turned into features and scored by the model. When the model's probability of a fall of more than 5% in 30 days reaches the cutoff, a short order goes to Alpaca.</p>
     </div>
     <button id="replay-toggle" class="btn replay-btn" type="button" aria-pressed="false" title="Replay the runs in live.json, one every 3 seconds">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/></svg><span>Replay</span>
@@ -67,7 +67,7 @@
       <div><div class="tile-k">Model version</div><div class="tile-v mono" id="st-model">&mdash;</div></div>
     </div>
     <div class="tile">
-      <div><div class="tile-k">Short threshold</div><div class="tile-v" id="st-threshold">&mdash;</div></div>
+      <div><div class="tile-k">Short cutoff</div><div class="tile-v" id="st-threshold">&mdash;</div></div>
     </div>
     <div class="tile">
       <div><div class="tile-k">Last update</div><div class="tile-v fresh" id="st-fresh">&mdash;</div></div>
@@ -168,7 +168,7 @@
     <div class="updated"><span id="md-delayed" class="delayed" hidden>Data delayed</span></div>
   </div>
   <div class="callout">
-    <p><b>How to read this page.</b> Walk-forward folds choose the hyper-parameters. The model is then scored once on a time-ordered holdout: the latest filings, which the selection never saw. Every number below comes from that holdout.</p>
+    <p><b>How to read this page.</b> The model gives each filing a probability that the stock falls by more than 5% in 30 days (a short winner). Walk-forward folds choose the hyper-parameters and the probability cutoff. The model is then scored once on a time-ordered holdout: the latest filings, which the selection never saw. Every number below comes from that holdout.</p>
     <p id="md-verdict" class="verdict-line"></p>
   </div>
   <div class="model-top">
@@ -180,20 +180,20 @@
     <div class="card">
       <div class="card-head"><h2>Holdout metrics</h2></div>
       <div class="table-wrap"><table class="table">
-        <thead><tr><th scope="col">Predictor</th><th scope="col" class="num">MAE</th><th scope="col" class="num">Mean short return</th><th scope="col" class="num">Shorts</th></tr></thead>
+        <thead><tr><th scope="col">Predictor</th><th scope="col" class="num">AP</th><th scope="col" class="num">ROC-AUC</th><th scope="col" class="num">Median short return</th><th scope="col" class="num">Shorts</th></tr></thead>
         <tbody id="md-metrics"></tbody>
       </table></div>
-      <p class="note">MAE is the mean absolute error of the predicted return to the next print. A short return is the negated actual return, so a positive value is a profit.</p>
+      <p class="note">AP is the average precision of the ranking of short winners; the base rate baseline predicts one constant probability and scores the holdout's share of short winners. Ticker history predicts the ticker's past share of short winners. Shorts are the rows at or above the probability cutoff. A short return is the negated actual return, so a positive value is a profit.</p>
     </div>
   </div>
   <div class="charts">
     <div class="card chart-card" id="md-folds-card">
-      <div class="card-head"><h2>Walk-forward validation</h2><span class="muted">MAE per fold, then the holdout</span></div>
-      <div id="md-folds" class="chart tall" role="img" aria-label="Model and zero-baseline MAE per walk-forward fold and on the holdout"></div>
+      <div class="card-head"><h2>Walk-forward validation</h2><span class="muted">average precision per fold, then the holdout</span></div>
+      <div id="md-folds" class="chart tall" role="img" aria-label="Model average precision and the base rate per walk-forward fold and on the holdout"></div>
     </div>
     <div class="card chart-card" id="md-thr-card">
-      <div class="card-head"><h2>Threshold trade-off</h2><span class="muted">holdout; the active threshold is highlighted</span></div>
-      <div id="md-thr" class="chart tall" role="img" aria-label="Number of shorts and mean short return for each threshold"></div>
+      <div class="card-head"><h2>Cutoff trade-off</h2><span class="muted">holdout; the active cutoff is highlighted</span></div>
+      <div id="md-thr" class="chart tall" role="img" aria-label="Number of shorts and median and mean short return for each probability cutoff"></div>
     </div>
     <div class="card chart-card" id="md-cum-card">
       <div class="card-head"><h2>Shorts vs shorting SPY</h2><span class="muted">holdout; each short adds its 30-day return once; SPY shorted over the same windows</span></div>

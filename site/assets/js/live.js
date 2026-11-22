@@ -5,7 +5,6 @@ import {
 } from './util.js';
 
 const REPLAY_EVERY_MS = 3000;
-const GAUGE_RANGE = 0.2;
 const FAILED = new Set(['FAILED', 'TIMED_OUT', 'ABORTED']);
 const STEP = { priced: 'yahoo-connect', labelled: 'target', scored: 'inference' };
 
@@ -20,14 +19,17 @@ function filingTimes(run, f) {
 
 const latencyS = (run, f) => (stepStop(run, STEP.scored) - t(f.accepted_at)) / 1000;
 
-function gauge(pred, threshold) {
-  const pos = (x) => ((Math.max(-GAUGE_RANGE, Math.min(GAUGE_RANGE, x)) + GAUGE_RANGE) / (2 * GAUGE_RANGE)) * 100;
-  const thr = isNum(threshold) ? pos(threshold) : null;
-  return `<div class="gauge" role="img" aria-label="Predicted return ${esc(pct(pred))}${isNum(threshold) ? `, threshold ${esc(pct(threshold))}` : ''}">
-    ${thr !== null ? `<span class="gauge-zone" style="width:${thr}%"></span><span class="gauge-thr" style="left:${thr}%"><i>${esc(pct(threshold, 0))}</i></span>` : ''}
+const prob = (x, digits = 1) => pct(x, digits, false);
+
+// Probability of a short winner on a 0-100% scale; the shaded zone at and above the cutoff is shorted
+function gauge(p, cutoff) {
+  const pos = (x) => Math.max(0, Math.min(1, x)) * 100;
+  const cut = isNum(cutoff) ? pos(cutoff) : null;
+  return `<div class="gauge" role="img" aria-label="Probability ${esc(prob(p))}${isNum(cutoff) ? `, cutoff ${esc(prob(cutoff, 0))}` : ''}">
+    ${cut !== null ? `<span class="gauge-zone upper" style="left:${cut}%"></span><span class="gauge-thr" style="left:${cut}%"><i>${esc(prob(cutoff, 0))}</i></span>` : ''}
     <span class="gauge-zero"></span>
-    ${isNum(pred) ? `<span class="gauge-dot" style="left:${pos(pred)}%"></span>` : ''}
-  </div><div class="gauge-scale"><span>${esc(pct(-GAUGE_RANGE, 0))}</span><span>0%</span><span>${esc(pct(GAUGE_RANGE, 0))}</span></div>`;
+    ${isNum(p) ? `<span class="gauge-dot" style="left:${pos(p)}%"></span>` : ''}
+  </div><div class="gauge-scale"><span>0%</span><span>50%</span><span>100%</span></div>`;
 }
 
 function orderChip(f) {
@@ -41,18 +43,18 @@ function orderChip(f) {
   return f.shorted ? '<span class="chip warn"><b>Alpaca</b> order not reported yet</span>' : '<span class="chip muted">No order</span>';
 }
 
-function verdictText(f, threshold) {
+function verdictText(f, cutoff) {
   if (f.shorted) return 'Shorted';
-  if (isNum(f.prediction) && isNum(threshold) && f.prediction > threshold) return 'Skipped';
+  if (isNum(f.probability) && isNum(cutoff) && f.probability < cutoff) return 'Skipped';
   return 'Not traded';
 }
 
-function filingCard(run, f, threshold) {
+function filingCard(run, f, cutoff) {
   const times = filingTimes(run, f);
   const lat = latencyS(run, f);
-  const verdict = verdictText(f, threshold);
-  const reason = f.shorted ? `predicted ${pct(f.prediction)} is below ${pct(threshold)}`
-    : verdict === 'Skipped' ? `predicted ${pct(f.prediction)} is above ${pct(threshold)}` : isNum(f.prediction) ? 'no short order was placed' : 'no prediction recorded';
+  const verdict = verdictText(f, cutoff);
+  const reason = f.shorted ? `probability ${prob(f.probability)} reaches the ${prob(cutoff, 0)} cutoff`
+    : verdict === 'Skipped' ? `probability ${prob(f.probability)} is below the ${prob(cutoff, 0)} cutoff` : isNum(f.probability) ? 'no short order was placed' : 'no probability recorded';
   const stages = [
     ['accepted', 'SEC accepted'], ['stored', 'Parsed & stored'], ['priced', 'Priced'], ['labelled', 'Features built'], ['scored', 'Scored'], ['decided', verdict],
   ];
@@ -71,9 +73,9 @@ function filingCard(run, f, threshold) {
     </div>
     <div class="filing-body">
       <div class="pred">
-        <div class="label">Predicted return to next print</div>
-        <div class="pred-value ${isNum(f.prediction) && f.prediction < 0 ? 'neg' : ''}">${esc(pct(f.prediction))}</div>
-        ${gauge(f.prediction, threshold)}
+        <div class="label">Probability of a fall of more than 5% in 30 days</div>
+        <div class="pred-value">${esc(prob(f.probability))}</div>
+        ${gauge(f.probability, cutoff)}
         <div class="reason">${esc(reason)}</div>
       </div>
       <div class="latency">
@@ -112,7 +114,8 @@ function lineItem(run, tone, text) {
   </div>`;
 }
 
-function itemsFor(run, threshold) {
+function itemsFor(run, fallbackCutoff) {
+  const cutoff = isNum(run.probability_cutoff) ? run.probability_cutoff : fallbackCutoff;
   const status = run.status ?? 'UNKNOWN';
   const filings = [...(run.filings ?? [])].filter(Boolean).sort((a, b) => (t(b.accepted_at) || 0) - (t(a.accepted_at) || 0));
   const items = [];
@@ -123,7 +126,7 @@ function itemsFor(run, threshold) {
     items.push({ id: `${run.id}|fail`, sig: JSON.stringify([status, run.error, run.steps]), markup: () => lineItem(run, 'fail', text) });
   }
   for (const f of filings) {
-    items.push({ id: `${run.id}|${f.key}`, sig: JSON.stringify([f, threshold, run.steps, run.started_at]), markup: () => filingCard(run, f, threshold), card: true });
+    items.push({ id: `${run.id}|${f.key}`, sig: JSON.stringify([f, cutoff, run.steps, run.started_at]), markup: () => filingCard(run, f, cutoff), card: true });
   }
   if (!filings.length && !FAILED.has(status) && status !== 'RUNNING') {
     const text = status === 'SUCCEEDED' ? 'no fresh rows to score' : `run ${esc(status.toLowerCase())}`;
@@ -186,7 +189,7 @@ export function createLive(root) {
     $('#feed-empty').hidden = items.length > 0;
   }
 
-  const itemsForRuns = (runs) => runs.flatMap((r) => (r ? itemsFor(r, live?.prediction_threshold) : []));
+  const itemsForRuns = (runs) => runs.flatMap((r) => (r ? itemsFor(r, live?.probability_cutoff) : []));
 
   function renderLive() {
     if (!live || replay) return;
@@ -223,7 +226,7 @@ export function createLive(root) {
     const poller = $('#st-poller');
     poller.dataset.state = enabled === true ? 'on' : enabled === false ? 'off' : 'unknown';
     $('#st-poller-text').textContent = enabled === true ? 'Polling SEC every minute' : enabled === false ? 'Poller switched off' : 'Poller state unknown';
-    $('#st-threshold').textContent = pct(live?.prediction_threshold);
+    $('#st-threshold').textContent = isNum(live?.probability_cutoff) ? `p \u2265 ${prob(live.probability_cutoff, 0)}` : DASH;
     const model = health?.model;
     $('#st-model').textContent = model?.version ?? DASH;
     $('#st-model').title = model ? `Trained ${versionStamp(model.version)}, git ${model.git_sha ?? DASH}` : '';

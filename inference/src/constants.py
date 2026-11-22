@@ -19,5 +19,4 @@ class Col(StrEnum):
     KEY = 'key'
     TICKER = 'ticker'
     ACCEPTED_AT = 'accepted_at'
-    PREDICTIONS = 'predictions'
-    PREDICTION = 'prediction'
+    PROBABILITY = 'probability'

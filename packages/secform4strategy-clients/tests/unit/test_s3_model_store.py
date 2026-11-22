@@ -29,7 +29,7 @@ METADATA_RECORD = ModelMetadata(
     train_rows=100,
     test_rows=20,
     test_start=datetime(2026, 10, 1, tzinfo=UTC),
-    metrics={'model': Scores(mae=0.1, short_return=0.02, n_shorts=5)},
+    metrics={'model': Scores(short_return=0.02, n_shorts=5, average_precision=0.3)},
 )
 
 

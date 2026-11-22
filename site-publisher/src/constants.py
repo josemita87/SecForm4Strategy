@@ -26,7 +26,7 @@ class Col(StrEnum):
     SHARES = 'shares'
     PRICE = 'price'
     VALUE = 'value'
-    PREDICTED = 'predicted'
+    PROBABILITY = 'probability'
     ACTUAL = 'actual'
     DATE = 'date'
     CLOSE = 'close'

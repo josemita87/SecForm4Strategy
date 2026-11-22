@@ -118,21 +118,39 @@ class EquityPoint(NamedTuple):
 
 @dataclass(frozen=True, slots=True)
 class Scores:
-    """How a predictor did on the test set: error, and the mean return captured per short (positive is a profit)."""
+    """How a predictor did on the holdout: how well it ranks short winners, and the shorts it takes at the cutoff.
 
-    mae: float
+    A captured return is minus the actual return, so positive is a profit; ``short_return`` is their mean, 0.0
+    without shorts. A None score is undefined on the holdout (no shorts, or one class) or predates the field.
+    """
+
     short_return: float
     n_shorts: int
+    average_precision: float | None = None
+    roc_auc: float | None = None
+    precision: float | None = None
+    median_return: float | None = None
+    trimmed_return: float | None = None
+
+
+class CutoffShorts(NamedTuple):
+    """The holdout shorts at one probability cutoff: their count, and mean and median captured return (None if none)."""
+
+    cutoff: float
+    n_shorts: int
+    mean_return: float | None
+    median_return: float | None
 
 
 @dataclass(frozen=True, slots=True)
 class ModelMetadata:
     """The facts saved with a trained model to reproduce, audit and score with it.
 
-    ``features`` is the column order the model's input arrays follow; ``metrics`` holds the
-    model and its baselines by name, scored on the holdout. The defaulted fields record the
-    walk-forward validation, per fold, the threshold the shorts were scored at, and the thresholds
-    the holdout is reported at.
+    ``features`` is the column order the model's input arrays follow; ``metrics`` holds the model and its
+    baselines by name, scored on the holdout. The defaulted fields are None or empty in models saved before
+    them: the probability cutoff inference shorts at, the return a short winner falls below, the holdout's
+    share of short winners, the per-fold validation average precision and share of short winners, and the
+    holdout shorts at each cutoff of the grid.
     """
 
     trained_at: datetime
@@ -141,12 +159,14 @@ class ModelMetadata:
     feature_group_version: int
     target: str
     features: tuple[str, ...]
-    model_params: Mapping[str, bool | int | float | str]
+    model_params: Mapping[str, bool | int | float | str | None]
     train_rows: int
     test_rows: int
     test_start: datetime
     metrics: Mapping[str, Scores]
-    prediction_threshold: float | None = None
-    validation_mae: tuple[float, ...] = ()
-    validation_zero_mae: tuple[float, ...] = ()
-    report_thresholds: tuple[float, ...] = ()
+    probability_cutoff: float | None = None
+    label_return: float | None = None
+    base_rate: float | None = None
+    validation_ap: tuple[float, ...] = ()
+    validation_base_rate: tuple[float, ...] = ()
+    cutoff_sweep: tuple[CutoffShorts, ...] = ()

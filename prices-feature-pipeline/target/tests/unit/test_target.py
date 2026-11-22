@@ -14,6 +14,8 @@ from tests.factories import daily_bars, ny
 DAYS = pd.bdate_range('2024-03-01', '2024-05-31')
 #: Every day opens at 100 + i and closes at 100.5 + i, so each price names its day and side
 BARS = daily_bars(DAYS, opens=[100.0 + i for i in range(len(DAYS))], closes=[100.5 + i for i in range(len(DAYS))])
+#: The largest plausible label, as spec.yaml sets it
+MAX_RETURN = 3.0
 
 
 def price(day: str, side: str) -> float:
@@ -32,7 +34,7 @@ def row(accepted: str) -> pd.DataFrame:
 
 def label(accepted: str, bars: pd.DataFrame = BARS, period: int = 30) -> pd.Series:
     """The label of one row of ticker AAA accepted at ``accepted`` (New York time)."""
-    return compute_target(row(accepted), bars, period).iloc[0]
+    return compute_target(row(accepted), bars, period, MAX_RETURN).iloc[0]
 
 
 class TestEntry:
@@ -74,7 +76,7 @@ class TestUnlabelled:
 
     def test_an_exit_after_the_tickers_last_bar_is_not_labelled(self) -> None:
         stale = BARS[BARS['date'] <= '2024-03-29']
-        assert compute_target(row('2024-03-05 18:00'), stale, 30).empty
+        assert compute_target(row('2024-03-05 18:00'), stale, 30, MAX_RETURN).empty
 
     @pytest.mark.parametrize(
         ('missing', 'why'),
@@ -85,4 +87,31 @@ class TestUnlabelled:
     )
     def test_a_long_gap_in_the_bars_leaves_the_label_missing(self, missing: tuple[str, str], why: str) -> None:
         gappy = BARS[(BARS['date'] < missing[0]) | (BARS['date'] > missing[1])]
-        assert compute_target(row('2024-03-05 18:00'), gappy, 30).dropna(subset=['label_known_at']).empty, why
+        assert compute_target(row('2024-03-05 18:00'), gappy, 30, MAX_RETURN).dropna(subset=['label_known_at']).empty, (
+            why
+        )
+
+    @pytest.mark.parametrize(
+        ('day', 'side', 'adjusted'),
+        [
+            ('2024-03-06', 'open', 0.0),
+            ('2024-03-06', 'open', -2.0),
+            ('2024-04-05', 'close', -0.5),
+        ],
+    )
+    def test_a_non_positive_entry_or_exit_price_gives_no_label(self, day: str, side: str, adjusted: float) -> None:
+        # A large dividend adjustment can push adjusted prices to zero or below
+        bars = BARS.copy()
+        bars.loc[bars['date'] == day, side] = adjusted
+        assert pd.isna(label('2024-03-05 18:00', bars)['pct_change'])
+
+    @pytest.mark.parametrize(
+        ('exit_close', 'kept'),
+        [(413.0, False), (412.0, True)],
+        ids=['above the bound', 'at the bound'],
+    )
+    def test_a_return_above_the_bound_gives_no_label(self, exit_close: float, kept: bool) -> None:
+        # Entry at the 103.0 open of 2024-03-06; an exit close of 412.0 is exactly +300%
+        bars = BARS.copy()
+        bars.loc[bars['date'] == '2024-04-05', 'close'] = exit_close
+        assert pd.notna(label('2024-03-05 18:00', bars)['pct_change']) == kept

@@ -42,7 +42,7 @@ if __name__ == '__main__':
         broker=AlpacaClient(config.alpaca_api_key, config.alpaca_api_secret, config.alpaca_base_url),
         model_store=model_store,
     )
-    model, features = pipeline.load_model()
+    loaded = pipeline.load_model(config.probability_cutoff)
 
     # The CSV source stands in for the feature store when it is disabled
     rows = (
@@ -54,11 +54,11 @@ if __name__ == '__main__':
         if config.use_feature_store
         else pd.read_csv(config.csv_path)
     )
-    predictions = score(model, features, rows)
+    predictions = score(loaded.pipeline, loaded.features, rows)
     # A non-zero exit has the scheduler rerun inference; client order ids keep placed orders from repeating
     if retry_later := pipeline.execute_trades(
         predictions,
-        config.prediction_threshold,
+        loaded.probability_cutoff,
         OrderSpec(config.qty, config.side, config.order_type, config.time_in_force),
     ):
         sys.exit(f'Orders left for a rerun: {retry_later}')

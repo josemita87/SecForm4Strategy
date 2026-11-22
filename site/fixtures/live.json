@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-11-23T15:02:11Z",
-  "prediction_threshold": -0.05,
+  "probability_cutoff": 0.55,
   "poller_enabled": true,
   "runs": [
     {
@@ -26,6 +26,7 @@
         }
       ],
       "error": null,
+      "probability_cutoff": null,
       "filings": []
     },
     {
@@ -58,12 +59,13 @@
         }
       ],
       "error": null,
+      "probability_cutoff": 0.55,
       "filings": [
         {
           "key": "DBX@2026-11-23T14:57Z",
           "ticker": "DBX",
           "accepted_at": "2026-11-23T14:57:31Z",
-          "prediction": -0.0712,
+          "probability": 0.614,
           "shorted": true,
           "order": {
             "id": "6f1c2a9e-0d1b-4c55-9a51-1b7f3e2a8c10",
@@ -75,7 +77,7 @@
           "key": "TGT@2026-11-23T14:57Z",
           "ticker": "TGT",
           "accepted_at": "2026-11-23T14:57:02Z",
-          "prediction": -0.0118,
+          "probability": 0.435,
           "shorted": false,
           "order": null
         }
@@ -110,6 +112,7 @@
         }
       ],
       "error": null,
+      "probability_cutoff": null,
       "filings": []
     },
     {
@@ -129,6 +132,7 @@
         }
       ],
       "error": "yahoo-connect: YFRateLimitError: Too Many Requests. Rate limited. Try after a while.",
+      "probability_cutoff": null,
       "filings": []
     },
     {
@@ -160,12 +164,13 @@
         }
       ],
       "error": null,
+      "probability_cutoff": 0.55,
       "filings": [
         {
           "key": "CRWD@2026-11-23T13:50Z",
           "ticker": "CRWD",
           "accepted_at": "2026-11-23T13:50:49Z",
-          "prediction": -0.0634,
+          "probability": 0.59,
           "shorted": true,
           "order": {
             "id": "2b9e4f10-7a3c-4f0e-8d2a-55c1e0b7a941",
@@ -205,12 +210,13 @@
         }
       ],
       "error": null,
+      "probability_cutoff": 0.55,
       "filings": [
         {
           "key": "ABNB@2026-11-23T13:29Z",
           "ticker": "ABNB",
           "accepted_at": "2026-11-23T13:29:12Z",
-          "prediction": 0.0183,
+          "probability": 0.345,
           "shorted": false,
           "order": null
         },
@@ -218,7 +224,7 @@
           "key": "MDB@2026-11-23T13:28Z",
           "ticker": "MDB",
           "accepted_at": "2026-11-23T13:28:40Z",
-          "prediction": -0.0341,
+          "probability": 0.502,
           "shorted": false,
           "order": null
         }
@@ -253,6 +259,7 @@
         }
       ],
       "error": null,
+      "probability_cutoff": null,
       "filings": []
     },
     {
@@ -284,12 +291,13 @@
         }
       ],
       "error": null,
+      "probability_cutoff": 0.55,
       "filings": [
         {
           "key": "DDOG@2026-11-23T11:14Z",
           "ticker": "DDOG",
           "accepted_at": "2026-11-23T11:14:20Z",
-          "prediction": -0.0527,
+          "probability": 0.558,
           "shorted": true,
           "order": {
             "id": "9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f",

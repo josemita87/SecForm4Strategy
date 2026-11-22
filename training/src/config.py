@@ -18,7 +18,7 @@ load_dotenv('.credentials.env')
 
 @lru_cache
 def _specs() -> dict[str, Any]:
-    """Load the static spec (column lists, model parameters, report thresholds) from spec.yaml."""
+    """Load the static spec (column lists, label, model parameters, cutoff grid) from spec.yaml."""
     return dict(yaml.safe_load(SPEC_PATH.read_text()))
 
 
@@ -61,18 +61,21 @@ class Config(BaseSettings):
     holdout_ratio: float = Field(gt=0, lt=1)
     n_folds: int = Field(ge=1)
     random_state: int
-    # Short when the predicted return is below this, as inference trades
-    prediction_threshold: float = Field(le=0)
 
     # Feature Selection (column lists loaded from spec.yaml)
     target_feature: str
     columns_to_drop: tuple[str, ...] = Field(default_factory=lambda: _specs()['columns_to_drop'])
     identification_features: tuple[str, ...] = Field(default_factory=lambda: _specs()['identification_features'])
 
-    # Model hyperparameters, fixed and searched, and the thresholds reported (loaded from spec.yaml)
+    # The label, model hyperparameters fixed and searched, and the cutoff choice (loaded from spec.yaml)
+    short_return: float = Field(default_factory=lambda: _specs()['short_return'], lt=0)
     model_params: dict[str, bool | int | float | str] = Field(default_factory=lambda: _specs()['model_params'])
-    param_grid: dict[str, tuple[bool | int | float | str, ...]] = Field(default_factory=lambda: _specs()['param_grid'])
-    report_thresholds: tuple[float, ...] = Field(default_factory=lambda: _specs()['report_thresholds'])
+    param_grid: dict[str, tuple[bool | int | float | str | None, ...]] = Field(
+        default_factory=lambda: _specs()['param_grid']
+    )
+    cutoff_grid: tuple[float, ...] = Field(default_factory=lambda: _specs()['cutoff_grid'])
+    min_fold_shorts: int = Field(default_factory=lambda: _specs()['min_fold_shorts'], ge=1)
+    fallback_cutoff: float = Field(default_factory=lambda: _specs()['fallback_cutoff'], gt=0, lt=1)
 
     # Commit recorded in the model metadata (set in CI/Docker; falls back to `git rev-parse`)
     git_sha: str | None = None
