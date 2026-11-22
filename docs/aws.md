@@ -31,7 +31,7 @@ The bucket blocks all public access and encrypts objects with SSE-S3. Incomplete
 
 The Athena workgroup writes results to `athena-results/` and cancels any query that scans more than 1 GiB.
 
-Each service has an ECR repository `secform4strategy/<service>`: `master-index`, `scraper`, `kafka-to-store`, `yahoo-connect`, `target`, `training` and `inference`. Tags are immutable, ECR scans each image on push, and each repository keeps its 2 newest images.
+Each service has an ECR repository `secform4strategy/<service>`: `master-index`, `scraper`, `kafka-to-store`, `yahoo-connect`, `target`, `training` and `inference`. Tags are immutable, ECR scans each image on push, and each repository keeps its 5 newest images.
 
 The budget `secform4strategy-monthly` is $5 per month. It sends an email when actual cost passes 50% of the budget, and when forecast cost passes 100%. The recipient is `alert_email` in the git-ignored `infra/envs/demo/terraform.tfvars`.
 
@@ -116,7 +116,7 @@ The ECS task definitions read the secrets (the Alpaca keys and `SEC_USER_AGENT`)
 
 A `retrain` run names exact task-definition revisions, for example `secform4strategy-kafka-to-store:3`, and keeps them until it ends. A new image or a changed environment makes Terraform register a new revision. The task definitions set `skip_destroy = true`, so Terraform leaves the old revision active, and a running run can still start tasks from it. ECS cannot start a task from an `INACTIVE` revision.
 
-The images have a second limit. Each ECR repository keeps only its 2 newest images. If a service gets two newer images while a run still has to start it, ECR deletes the image the run's revision names, and that step fails. During a multi-day run, do not change the code of a service whose step has not started.
+The images have a second limit. Each ECR repository keeps only its 5 newest images. If a service gets five newer images while a run still has to start it, ECR deletes the image the run's revision names, and that step fails. During a multi-day run, push at most four new images of a service whose step has not started.
 
 ### Live path
 
