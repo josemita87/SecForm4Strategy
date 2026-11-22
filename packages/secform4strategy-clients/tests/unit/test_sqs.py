@@ -76,7 +76,7 @@ class TestSend:
 
 
 class TestReceive:
-    """Calls long-poll for up to 10 messages until enough arrive or a call comes back empty."""
+    """The first call long-polls; then rounds of parallel calls run until enough arrive or a round comes back empty."""
 
     def test_calls_repeat_until_a_call_is_empty(self, queue: tuple[SqsQueue, Stubber]) -> None:
         sqs, stubber = queue[0], looked_up(queue[1])
@@ -99,6 +99,17 @@ class TestReceive:
             {'QueueUrl': URL, 'Entries': [{'Id': '0', 'ReceiptHandle': 'h0'}]},
         )
         assert [m.body for m in sqs.receive('tmi', max_messages=1, wait_seconds=1)] == [{'a': 1}]
+
+    def test_a_first_batch_that_is_all_bad_does_not_end_the_receive(self, queue: tuple[SqsQueue, Stubber]) -> None:
+        sqs, stubber = queue[0], looked_up(queue[1])
+        stubber.add_response('receive_message', received('not json'))
+        stubber.add_response('delete_message_batch', {'Successful': [{'Id': '0'}], 'Failed': []})
+        stubber.add_response('receive_message', received('{"a": 1}'))
+        stubber.add_response('receive_message', {})
+        assert [m.body for m in sqs.receive('tmi', max_messages=2, wait_seconds=1)] == [{'a': 1}]
+
+    def test_no_capacity_makes_no_call(self, queue: tuple[SqsQueue, Stubber]) -> None:
+        assert queue[0].receive('tmi', max_messages=0, wait_seconds=1) == ()
 
     def test_throttling_is_retryable(self, queue: tuple[SqsQueue, Stubber]) -> None:
         sqs, stubber = queue[0], looked_up(queue[1])
