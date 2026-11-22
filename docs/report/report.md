@@ -6,8 +6,8 @@
 | --- | --- |
 | Course | Cloud Solutions |
 | Project | SecForm4Strategy |
-| Date | 2026-11-23 |
-| Repository | `prod_inside_out` (branch `feat/site` at the time of writing) |
+| Date | 2026-11-22 |
+| Repository | [https://github.com/josemita87/SecForm4Strategy](https://github.com/josemita87/SecForm4Strategy), branch `master` |
 
 ## Abstract
 
@@ -22,12 +22,13 @@ SecForm4Strategy reads the insider-trading disclosures (Form 4) that the US Secu
 5. [Study website](#5-study-website)
 6. [Software engineering quality](#6-software-engineering-quality)
 7. [Results](#7-results)
-8. [Design decisions and trade-offs](#8-design-decisions-and-trade-offs)
-9. [Limitations and future work](#9-limitations-and-future-work)
-10. [Conclusion](#10-conclusion)
-11. [Appendix A: Resource inventory](#appendix-a-resource-inventory)
-12. [Appendix B: Repository map](#appendix-b-repository-map)
-13. [Appendix C: Glossary](#appendix-c-glossary)
+8. [Operations: the 5-year backfill](#8-operations-the-5-year-backfill)
+9. [Design decisions and trade-offs](#9-design-decisions-and-trade-offs)
+10. [Limitations and future work](#10-limitations-and-future-work)
+11. [Conclusion](#11-conclusion)
+12. [Appendix A: Resource inventory](#appendix-a-resource-inventory)
+13. [Appendix B: Repository map](#appendix-b-repository-map)
+14. [Appendix C: Glossary](#appendix-c-glossary)
 
 ---
 
@@ -60,7 +61,7 @@ Seven services do the work. Each service is a separate Python 3.14 program with 
 | 3 | kafka-to-store | Validates the transactions and upserts them into the feature-store table `BT4` (training) or `BI4` (inference). |
 | 4 | yahoo-connect | Downloads daily prices from Yahoo Finance for every ticker in the transactions and upserts them into `P`. |
 | 5 | target | Joins transactions with prices into one row per trading opportunity, adds features and, for training, the label. It writes `RT4` (labelled) or `BIR4` (to score). |
-| 6 | training | Fits a scikit-learn model on `RT4`, compares it with baselines and saves it with its metadata. |
+| 6 | training | Fits a scikit-learn model on `RT4`, compares it with baselines, saves it with its metadata as a new version, and promotes it only through a gate. |
 | 7 | inference | Loads the model, scores `BIR4` rows and places a short order for each row predicted below the threshold. |
 
 The name kafka-to-store comes from the local stack, which uses Redpanda (a Kafka-compatible broker). On AWS the same service reads from SQS. A shared package, `secform4strategy-clients`, holds every connection to an outside system behind a typed interface. The same service code therefore runs on a laptop with Docker Compose and on AWS (Section 6).
@@ -293,7 +294,7 @@ The Step Functions state machine `secform4strategy-retrain` runs six ECS tasks i
 
 Each step runs one Fargate ARM64 (Graviton) task in the cluster `secform4strategy`, in the private subnets, and waits for it to stop. The tasks use the `FARGATE` launch type (On-Demand). Fargate Spot runs ARM64 tasks too, but a Spot interruption fails the step, and the retry policy allows only 3 attempts, which a multi-day backfill could use up. A failed step is retried after 600 seconds, at most 3 times. The wait is deliberately longer than the 300-second SQS visibility timeout. A rerun that started earlier would find the unfinished messages still hidden, stop at once and leave the work undone. Each task logs to `/secform4strategy/<service>`, kept 14 days.
 
-Task sizes follow the work. Most tasks run with 0.5 vCPU and 1 GB or 2 GB. kafka-to-store runs with 2 vCPU and 8 GB, because each Iceberg upsert loads and merges table rows, and at 0.5 vCPU a 10,000-row batch took about 40 seconds. target reads every ticker's price history at once and runs with 2 vCPU and 16 GB, because 4 GB ran out of memory on one year of filings. training runs the 128 grid-search fits in parallel on 4 vCPU and 16 GB.
+Task sizes follow the work. Most tasks run with 0.5 vCPU and 1 GB or 2 GB. kafka-to-store runs with 2 vCPU and 8 GB, because each Iceberg upsert loads and merges table rows, and at 0.5 vCPU a 10,000-row batch took about 40 seconds. The cluster has Container Insights enabled, so CloudWatch shows each task's CPU and memory use. target reads every ticker's price history at once and runs with 2 vCPU and 16 GB, because 4 GB ran out of memory on one year of filings. training runs the 128 grid-search fits in parallel on 4 vCPU and 16 GB.
 
 EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC (`secform4strategy-weekly-retrain`). master-index then runs with `MODE=recent` and `DAYS_BACK=7` and publishes only the filings of the last 7 days. The training task runs with `PROMOTE=gated`, so a run's model replaces the promoted model only if it passes the promotion gate. The gate requires at least 50,000 development rows and at least 80% of the current model's, the same feature-group version and `features`, holdout rows, a finite holdout MAE and at least one short. It does not compare MAE with the current model, because each model is scored on a different holdout period. `scripts/promote_model.sh` lists the saved models and promotes one by hand, which is also the rollback.
 
@@ -309,9 +310,9 @@ The first full load is the same state machine, started once by hand:
 {"overrides": {"master-index": {"MODE": "historical", "YEARS": "5"}, "scraper": {"SEC_MAX_RATE": "8"}, "kafka-to-store": {"BUFFER_SIZE": "10000"}}}
 ```
 
-**Throughput.** The scraper downloads up to 12 filings at once (`FETCH_WORKERS=12`) and runs at 6 to 7.8 filings per second. kafka-to-store commits 10,000 rows per Iceberg commit, about 7 seconds each, and stores about 185 transactions per second. One year holds about 250,000 Form 4 filings. The 5-year backfill (`backfill-5y`, started 2026-11-20) covers about 1.06 million filings.
+**Throughput.** The scraper downloads up to 12 filings at once (`FETCH_WORKERS=12`) and runs at 6 to 7.8 filings per second. kafka-to-store upserts one batch of `BUFFER_SIZE` rows per Iceberg commit. A 10,000-row batch takes about 25 seconds at 2 vCPU, and a 30,000-row batch about 75 seconds: about 400 rows per second either way (Section 8.2). One year holds about 250,000 Form 4 filings. The 5-year backfill (`backfill-5y`, started 2026-11-20) covers about 1.06 million filings.
 
-**Revision pinning.** A `retrain` run names exact task-definition revisions, for example `secform4strategy-kafka-to-store:3`, and keeps them until it ends. A new image makes Terraform register a new revision. The task definitions set `skip_destroy = true`, so the old revision stays active and a multi-day run can still start tasks from it. ECR keeps only 5 images per repository, so a service must not get five newer images while a run still has to start it.
+**Revision pinning.** A `retrain` run names exact task-definition revisions, for example `secform4strategy-kafka-to-store:3`, and keeps them until it ends. A new image makes Terraform register a new revision. The task definitions set `skip_destroy = true`, so the old revision stays active and a multi-day run can still start tasks from it. ECR keeps only 5 images per repository, so a service must not get five newer images while a run still has to start it. During a multi-day run, the rule is to push at most four new images of a service whose step has not started. Section 8 describes the backfill failure that led to this rule.
 
 **Batch consumers.** The scraper runs with `EXIT_WHEN_EMPTY=true`: it stops at the first receive that waits its full poll timeout without a message. If it left a message unacknowledged for retry, it exits non-zero, and Step Functions reruns it.
 
@@ -335,6 +336,8 @@ The live path runs the batch services as Lambda functions, on the same container
 | target | `live-score` | 2048 MB, 180 s |
 | inference | `live-score` | 2048 MB, 180 s; `QTY=1`, `PREDICTION_THRESHOLD=-0.05` |
 
+The account allows 10 concurrent Lambda executions in total, shared by the live functions and the site publisher. Section 10.2 describes the risk and the fix.
+
 **Same images, two runtimes.** Each function runs `<service directory>/.venv/bin/python -m awslambdaric`. `awslambdaric` is the Lambda runtime interface client: it receives events from the Lambda service and calls the handler. Each handler sits beside the service's `main.py` and calls the same functions as the batch loop. Training and live scoring therefore share one feature implementation, so the features cannot drift apart between them. The functions set `HOME=/tmp`, because the image's file system is read-only.
 
 **Partial batch failures.** The SQS triggers report partial batch failures. A handler returns the messages it did not finish in `batchItemFailures`, and SQS delivers only those again after the visibility timeout.
@@ -356,7 +359,7 @@ Five SQS standard queues carry the work between services. Each has its own dead-
 | Retention | 4 days on the queues, 14 days on the DLQs |
 | Encryption | SSE with SQS-managed keys |
 
-`SqsQueue` sends and receives JSON bodies, 10 messages per call. A received message stays hidden for the visibility timeout. If the consumer does not delete it in that time, SQS delivers it again. After 5 receives without a delete, SQS moves it to the DLQ. Section 6.4 maps the error contract onto these settings.
+`SqsQueue` sends and receives JSON bodies, 10 messages per call. A large receive or delete runs in parallel rounds of up to 10 calls, so a batch of 10,000 messages takes about 100 rounds instead of 1,000 calls in a row. A received message stays hidden for the visibility timeout. If the consumer does not delete it in that time, SQS delivers it again. After 5 receives without a delete, SQS moves it to the DLQ. Section 6.4 maps the error contract onto these settings.
 
 ### 4.6 Network
 
@@ -425,7 +428,7 @@ The orchestrators have their own roles:
 
 ![AWS CI/CD](../diagrams/aws-ci-cd.drawio.svg)
 
-*Figure 6: CI/CD. Three GitHub Actions workflows authenticate to AWS through OIDC. Each IAM role trusts one exact GitHub subject: master for image pushes, pull requests for read-only plans, and the approval-gated environment `aws` for applies.*
+*Figure 6: CI/CD. Three GitHub Actions workflows authenticate to AWS through OIDC. Master pushes images; pull requests get read-only plans; the approval-gated environment `aws` applies. The figure shows the deploy before it became two-stage: the plan role now also plans each master push, and the apply applies that saved, encrypted plan (see the text below).*
 
 | Workflow | Trigger | Does |
 | --- | --- | --- |
@@ -439,11 +442,18 @@ GitHub Actions authenticates with OIDC (OpenID Connect). A workflow requests a t
 
 | Role | Trusted subject | Permissions |
 | --- | --- | --- |
-| `secform4strategy-github-images` | `repo:<owner>/SecForm4Strategy:ref:refs/heads/master` | ECR push and pull on `secform4strategy/*` |
-| `secform4strategy-github-plan` | `repo:<owner>/SecForm4Strategy:pull_request`, and `ref:refs/heads/master` for the plan of a master run | `ReadOnlyAccess`, plus write and delete on the state lock file only; `deny-site-keys` denies reading the site's key-value store |
-| `secform4strategy-github-apply` | `repo:<owner>/SecForm4Strategy:environment:aws` | `AdministratorAccess` |
+| `secform4strategy-github-images` | `repo:josemita87/SecForm4Strategy:ref:refs/heads/master` | ECR push and pull on `secform4strategy/*` |
+| `secform4strategy-github-plan` | `repo:josemita87/SecForm4Strategy:pull_request`, and `ref:refs/heads/master` for the plan of a master run | `ReadOnlyAccess`, plus write and delete on the state lock file only; `deny-site-keys` denies reading the site's key-value store |
+| `secform4strategy-github-apply` | `repo:josemita87/SecForm4Strategy:environment:aws` | `AdministratorAccess` |
 
-A pull request therefore cannot change any resource. Only a job in the GitHub environment `aws` can assume the apply role. That environment admits only master and requires a reviewer's approval. The branch rules of master require a pull request whose `quality-static` check passes, and they block force pushes and deletion.
+A merge to master that changes `infra/` or `site/` runs `terraform.yml` in two stages:
+
+1. The `plan` job runs `terraform plan -out=tfplan` on the merged commit with the read-only plan role, and shows the plan on the run's summary page. The saved plan holds sensitive values in plain text. The repository is public, and so are its workflow artifacts. The job therefore encrypts the plan (AES-256 with PBKDF2, key in the repository secret `TFPLAN_KEY`) and uploads only the encrypted file, kept for one day.
+2. The `apply` job waits for a reviewer's approval in the GitHub environment `aws`, decrypts the plan and runs `terraform apply tfplan`. It applies exactly the plan the reviewer read. If the state changed after the plan, Terraform refuses the saved plan and the run fails.
+
+A plan with no changes skips the `apply` job.
+
+A pull request cannot change any resource. Only a job in the GitHub environment `aws` can assume the apply role. That environment admits only master and requires a reviewer's approval. The branch rules of master require a pull request whose `quality-static` check passes, and they block force pushes and deletion.
 
 ### 4.9 Cost and the switches
 
@@ -460,7 +470,7 @@ A pull request therefore cannot change any resource. Only a job in the GitHub en
 | `weekly_retrain_enabled` | `true` | The Saturday `retrain` schedule is enabled, if `switched_on` is `true` |
 | `live_enabled` | `true` | The live poller schedule is enabled, if `switched_on` is `true` |
 
-`make switch-on` and `make switch-off` set `switched_on` on master, then commit and push the change. The change takes effect after a reviewer approves the Terraform apply. At the time of writing the stack is switched on for the 5-year backfill, with `weekly_retrain_enabled` and `live_enabled` off. The live path is off during a full load because the batch scraper at 8 requests per second plus the live path's 4.5 would exceed the SEC's 10.
+`make switch-on` and `make switch-off` set `switched_on` on master, then commit and push the change. The change takes effect after a reviewer approves the Terraform apply. During a full load, `live_enabled` is off, because the batch scraper at 8 requests per second plus the live path's 4.5 would exceed the SEC's 10. `weekly_retrain_enabled` is also off, because the weekly run would use the same batch queues.
 
 The budget `secform4strategy-monthly` is $5 per month. It emails `alert_email` when actual cost passes 50% and when forecast cost passes 100%.
 
@@ -649,7 +659,7 @@ The pre-commit hook also checks file size, private keys, merge markers and YAML/
 
 | | 1-year data | 5-year data |
 | --- | --- | --- |
-| Filings | About 250,000 Form 4 filings per year | About 1.06 million filings (backfill running) |
+| Filings | About 250,000 Form 4 filings per year | About 1.06 million filings (Section 8) |
 | Labelled rows (`RT4`) | 73,195 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
 | Development rows (after purging) | 53,747 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
 | Holdout rows | 14,639, from 2026-06-09 | **[5-year results: to be filled after the Sunday 2026-11-22 run]** |
@@ -696,11 +706,60 @@ A positive mean return per short means the shorted stocks fell on average. The r
 
 The live path ran end to end on real filings. Filings for AMZN, TGT, DGICA and IMTX went from the SEC feed through the poller, scraper and kafka-to-store to the `live-score` state machine, and inference scored them. AWS records seven successful `live-score` runs. Alpaca paper orders were placed and then cancelled, to verify three things: the broker wiring, the `client_order_id` idempotency and the IAM path to the Alpaca keys. The measured cold starts in Section 4.4 come from these runs.
 
-On the batch path, no `retrain` run has finished all six steps on AWS at the time of writing. The 1-year runs were stopped by hand, and the 5-year backfill (`backfill-5y`) is running.
+On the batch path, no `retrain` run has finished all six steps on AWS. The 1-year runs were stopped by hand. The 5-year backfill (`backfill-5y`) scraped every filing, then ended `FAILED`, and its remaining steps run by hand (Section 8).
 
 ---
 
-## 8. Design decisions and trade-offs
+## 8. Operations: the 5-year backfill
+
+### 8.1 The run
+
+`backfill-5y` is the first full load of five years of filings. It is a run of the `retrain` state machine with the full-load input of Section 4.3, started by hand on 2026-11-20 at 18:11 UTC.
+
+| Step | Outcome |
+| --- | --- |
+| master-index | Finished. It published the filings of the five years to `secform4strategy-filings`. |
+| scraper | Processed every filing. At the end, the `filings` queue and its DLQ were empty. The task exited non-zero, as designed, because it had left filings for a retry (Section 6.4). |
+| scraper retries | Each Step Functions retry failed with `CannotPullContainerError`. |
+| The run | Ended `FAILED` after its retries. kafka-to-store, yahoo-connect, target and training did not start. |
+
+The cause was a missing image. The run had pinned the task-definition revision `scraper:3` when it started (Section 4.3). That revision named an image digest. The ECR lifecycle rule then kept only 2 images per repository, and newer scraper images had been pushed during the run, so ECR had already deleted that image. `skip_destroy` kept the revision active, but a revision without its image cannot start a task.
+
+The work the scraper had done was not lost. Its transactions were in `secform4strategy-transactions`, which keeps messages for 4 days, and every task is incremental. The remaining steps run as ECS tasks started by hand, on the latest revisions:
+
+1. kafka-to-store, with 2 vCPU, 8 GB and `BUFFER_SIZE` raised to 30,000.
+2. yahoo-connect.
+3. target.
+4. training, with `PROMOTE=never`, so that the model is saved and not promoted.
+5. A manual promotion of the saved model with `scripts/promote_model.sh`.
+
+The 5-year results in Section 7 are **[5-year results: to be filled after the Sunday 2026-11-22 run]**.
+
+### 8.2 Measurements
+
+| Measurement | Value |
+| --- | --- |
+| kafka-to-store, one 10,000-row batch at 0.5 vCPU | About 40 seconds |
+| kafka-to-store, one 10,000-row batch at 2 vCPU | About 25 seconds |
+| kafka-to-store, one 30,000-row batch at 2 vCPU | About 75 seconds |
+| Size of the Iceberg warehouse | About 430 MB |
+
+Most of a kafka-to-store batch is spent after SQS: parallel receive and delete calls did not change the rate much. Four times the CPU cut a 10,000-row batch from about 40 to about 25 seconds, because the task went from half a core to a full core. Three times the batch took three times as long, so the cost is per row: the pandas cleaning in `store()` and the merge inside pyiceberg's upsert, which run on one core. Which of the two dominates is not yet measured.
+
+More kafka-to-store tasks would not help either. Two writers to one Iceberg table conflict at commit: pyiceberg uses optimistic concurrency, so the second commit fails and redoes its whole upsert against the new snapshot. Bigger batches do not help, because the cost is per row. The next step is to profile one batch, then make the per-row work cheaper, for example with an append-then-deduplicate write for full loads.
+
+### 8.3 Lessons
+
+1. **A pinned revision depends on its image.** `skip_destroy` keeps old task-definition revisions active, but ECR can still delete their images. Each ECR repository now keeps 5 images. During a multi-day run, push at most four new images of a service whose step has not started.
+2. **A retry needs the same image as the first attempt.** The scraper's non-zero exit and the Step Functions retry worked as designed. The retry failed for a reason outside the code: a missing image.
+3. **Incremental steps make a failed run recoverable.** Upserts by deterministic key let the remaining steps run by hand, with no work repeated and no duplicate rows.
+4. **Measure before scaling.** The batch times showed that kafka-to-store was CPU-bound at 0.5 vCPU and that the upsert, not SQS, took most of the time. They showed that one full core helps, while more tasks, more cores and bigger batches do not, and that the next step is profiling, not more guesses. The cluster now has Container Insights, so CloudWatch shows each task's CPU and memory use.
+
+Section 10.2 lists the follow-ups: an append-then-deduplicate write for full loads, Iceberg maintenance, and a Spot design with an On-Demand fallback.
+
+---
+
+## 9. Design decisions and trade-offs
 
 | Decision | Rejected alternative | Reason |
 | --- | --- | --- |
@@ -717,16 +776,22 @@ On the batch path, no `retrain` run has finished all six steps on AWS at the tim
 | Live trades at once | Wait for the next market print, which the label uses | The label uses the next print because historical execution times are not available. Trading earlier keeps the speed from disclosure. |
 | Lambda secrets read by `SsmSettings` at cold start | Terraform reads them into environment variables | The values would enter the Terraform state. |
 | `skip_destroy` on task definitions | Terraform deregisters replaced revisions | A running `retrain` run could no longer start tasks from a deregistered revision. |
-| `FARGATE` launch type (On-Demand) | Fargate Spot (`FARGATE_SPOT`, about 70% cheaper, ARM64 supported) | A Spot interruption fails the step, and 3 retries may not cover a multi-day backfill. The saving is a few dollars per week. |
+| `FARGATE` launch type (On-Demand) | Fargate Spot (`FARGATE_SPOT`, about 70% cheaper, ARM64 supported) | A Spot interruption fails the step, and 3 retries may not cover a multi-day backfill. The saving is a few dollars per week. A Spot design with an On-Demand fallback is planned (Section 10.2). |
+| ECR keeps 5 images per repository | Keep 2 images, to save storage | A pinned revision of a running run needs its image. With 2 images, the 5-year backfill lost the scraper's image and failed (Section 8). |
+| Promotion gate; training saves every model, and only `promote` changes the live model | Each training run replaces the live model | A truncated dataset or a changed feature contract would otherwise reach inference at once. The gate checks rows, the feature contract and a sane holdout. `scripts/promote_model.sh` promotes or rolls back by hand. |
+| No MAE comparison in the gate | Promote only a model with a lower holdout MAE | Each model holds out the latest 20% of its own rows, so two models are scored on different periods. |
+| One kafka-to-store task with one full core | Several kafka-to-store tasks in parallel | Parallel writers to one Iceberg table conflict at commit. The cost is per row on one core, so bigger batches do not help either (Section 8.2). |
 | OIDC roles for CI | An IAM user with keys stored in GitHub | A stored key lives until rotated. OIDC credentials are temporary and bound to one repository and trigger. |
+| Two-stage deploy: a saved plan, then an approved apply of exactly that plan | `terraform apply -auto-approve` after the plan | The reviewer approves the changes that are applied, not a fresh plan made after the approval. |
+| Saved plan encrypted with `TFPLAN_KEY` before upload | Upload the plan file as it is | The plan holds sensitive values in plain text, and the artifacts of a public repository are public. |
 | Publisher outside the VPC | Publisher in the private subnets | It reads nothing inside the VPC, and outside it does not depend on the NAT gateway. |
 | Live Lambdas outside the VPC | Live Lambdas in the private subnets behind the NAT gateway | They reach nothing inside the VPC. Outside it the live path does not depend on the NAT gateway. The cost is that SEC no longer sees one fixed address for all of the project's traffic. |
 
 ---
 
-## 9. Limitations and future work
+## 10. Limitations and future work
 
-### 9.1 Model
+### 10.1 Model
 
 - **No MAE gain.** The model does not beat the zero baseline on MAE, on the holdout or on any validation fold.
 - **A narrow ranking signal.** The +10.8% mean return at -5% rests on 265 trades. At -10% the 29 trades are too few to read.
@@ -744,11 +809,15 @@ The next research steps:
 2. Score the strategy walk-forward with costs and a market benchmark (SPY).
 3. Report how the result varies across several holdout windows.
 
-### 9.2 Engineering
+### 10.2 Engineering
 
 | Follow-up | Benefit |
 | --- | --- |
-| Make the Terraform apply wait for the `images` workflow | An apply approved before the build ends deploys the previous image today. |
+| Append-then-deduplicate write for full loads | kafka-to-store appends each batch without matching keys against the whole `BT4` table, and one pass removes duplicate keys at the end. A full load then no longer slows as the table grows. |
+| Iceberg maintenance: expire snapshots, compact data files | Every commit adds a snapshot and small files. Athena `OPTIMIZE` and `VACUUM` fit under the 1 GiB scan limit, because the warehouse is about 430 MB. |
+| Fargate Spot for scraper and kafka-to-store, with an On-Demand fallback in a `Catch` | About 70% cheaper tasks for the two longest steps. An interruption falls back to an On-Demand task instead of using up the retries. |
+| A Lambda concurrency quota above 1,000 | The account allows 10 concurrent Lambda executions, shared by the live functions and the publisher, so a burst of filings can throttle a `live-score` step. A quota request must ask for more than 1,000. Reserved concurrency for the scoring steps then becomes possible. |
+| Make the Terraform apply wait for the `images` workflow | A plan made before the build ends deploys the previous image. |
 | Smaller images for the live Lambdas | The about 1 GB images cause cold starts of up to 45 seconds. |
 | AWS WAF rate-based rule on the site | Limits password guessing; about $6 per month. |
 | Custom domain with an ACM certificate | Names the project and allows HSTS preload; about $15 per year. |
@@ -756,7 +825,7 @@ The next research steps:
 
 ---
 
-## 10. Conclusion
+## 11. Conclusion
 
 SecForm4Strategy is a complete cloud system for one research question: do insider sales come before underperformance once the filing is public? It reads SEC filings at their acceptance time, builds features and labels with no look-ahead, and validates the model with purged walk-forward folds and a single holdout.
 
@@ -764,7 +833,7 @@ On AWS, the system has two paths:
 - A batch path on Step Functions and Fargate loads the filings and retrains the model.
 - A live path on Lambda, SQS, an EventBridge Pipe and Step Functions scores each new filing within minutes and places idempotent paper orders.
 
-Terraform defines every resource, and CI deploys through OIDC with an approval gate. Roles grant only what each service uses, secrets stay out of the state, and one switch takes the stack to about $0 per day.
+Terraform defines every resource. CI deploys through OIDC and applies only an encrypted, reviewed plan after approval. A promotion gate keeps a bad model away from inference. Roles grant only what each service uses, secrets stay out of the state, and one switch takes the stack to about $0 per day.
 
 On one year of data, the result is negative on MAE and promising only in the tail. The model does not beat a zero prediction. Its 265 most negative holdout calls fell by 10.8% on average before costs. The infrastructure is the deliverable. It can rerun the test on five years of data, add costs and a benchmark, and keep scoring live filings. The hypothesis can then be accepted or rejected on evidence.
 
@@ -810,7 +879,7 @@ On one year of data, the result is negative on MAE and promising only in the tai
 ## Appendix B: Repository map
 
 ```
-.
+SecForm4Strategy/
 ├── sec-feature-pipeline/                # master-index, scraper, kafka-to-store
 ├── prices-feature-pipeline/             # yahoo_connect (prices), target (rows and labels)
 ├── training/                            # walk-forward grid search, holdout, model metadata
@@ -821,11 +890,11 @@ On one year of data, the result is negative on MAE and promising only in the tai
 ├── infra/
 │   ├── bootstrap/                       # Terraform state bucket
 │   ├── envs/demo/                       # root module, switches, per-service settings
-│   └── modules/                         # storage, network, queues, iam, ci, tasks, retrain, live, dashboard, site
+│   └── modules/                         # the ten modules of Section 4.1
 ├── .github/workflows/                   # quality.yml, images.yml, terraform.yml
 ├── docker-compose/                      # local Redpanda and service stacks
-├── scripts/                             # lakehouse summary, set_site_password.sh
-├── docs/                                # aws, site, training, configuration, development, parsing, errors, diagrams
+├── scripts/                             # status, lakehouse summary, promotion, site password
+├── docs/                                # design notes, this report, diagrams
 ├── Makefile                             # quality gate, tests, local stacks, status, switches
 └── pyproject.toml                       # repository-wide ruff, mypy, pydoclint and bandit settings
 ```
@@ -845,6 +914,7 @@ On one year of data, the result is negative on MAE and promising only in the tai
 | Purging | Removing training rows whose label ends inside the validated or holdout period |
 | Walk-forward validation | Validation on consecutive time blocks, each fold training only on earlier rows |
 | Holdout | The latest 20% of rows, scored once |
+| Promotion | Making a saved model version the one inference loads, by writing `latest.json` |
 | MAE | Mean absolute error |
 | Short | Selling borrowed shares, to profit when the price falls |
 | Paper trading | Trading with simulated money on a broker's test account |
@@ -855,6 +925,7 @@ On one year of data, the result is negative on MAE and promising only in the tai
 | Composition root | Each service's `main.py` (or `handler.py` on Lambda), the only place that reads configuration and builds adapters |
 | Fake | A typed in-memory implementation of a port, used in tests |
 | Fargate | ECS mode in which AWS runs containers without servers to manage |
+| Fargate Spot | Fargate capacity at a discount, which AWS can interrupt at short notice |
 | Step Functions | AWS service that runs state machines: ordered steps with retries |
 | EventBridge Pipe | A managed link from a source (here an SQS queue) to a target (here a state machine) |
 | Visibility timeout | How long SQS hides a received message before it delivers it again |
