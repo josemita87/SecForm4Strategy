@@ -54,7 +54,6 @@ exclude = [
   "dist",
   "\\.venv",
   "\\.env",
-  "lab",
 ]
 
 [tool.pydantic-mypy]
@@ -67,7 +66,6 @@ unsafe-fixes = false
 preview = false
 show-fixes = true
 target-version = "py314"
-exclude = ["lab"]
 
 [tool.ruff.lint]
 select = [
@@ -134,7 +132,7 @@ docstring-code-format = true
 
 [tool.pydoclint]
 style = "google"
-exclude = "\\.git|\\.venv|build|dist|lab"
+exclude = "\\.git|\\.venv|build|dist"
 check-arg-order = true
 check-return-types = false  # types live in the signatures, not repeated in docstrings
 arg-type-hints-in-docstring = false
@@ -151,5 +149,5 @@ check-style-mismatch = true
 check-arg-defaults = true
 
 [tool.bandit]
-exclude_dirs = ["build", "dist", "lab", ".venv"]
+exclude_dirs = ["build", "dist", ".venv"]
 skips = ["B101", "B601"]

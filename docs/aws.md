@@ -347,6 +347,8 @@ Four workflows run in `.github/workflows/`:
 | `images.yml` | A successful `quality` run on a push to master | Builds a `linux/arm64` image for each service whose code changed, tags it with that code's last commit, and pushes it to ECR |
 | `terraform.yml` | Pull requests and pushes to master that change `infra/` or `site/`, or a manual run | `terraform plan` on pull requests; on master, a plan of the merged commit, then an apply of exactly that plan after approval |
 
+`infra/scripts/push-images.sh` builds and pushes the same tags from a developer machine; Docker must be running and the service folders must have no uncommitted changes. CI then skips those images, because the tags already exist.
+
 A merge to master therefore runs `quality`, then `images`, and a `terraform` run with two jobs:
 
 1. `plan` runs `terraform plan -out=tfplan` on the merged commit with the read-only plan role. The plan appears on the run's summary page. The saved plan holds sensitive values in plain text, and the artifacts of a public repository can be downloaded by any signed-in GitHub user, so the job encrypts it (AES-256 with PBKDF2, key in the repository secret `TFPLAN_KEY`) and keeps the encrypted artifact for one day. The apply job decrypts it with the same secret.

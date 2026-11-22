@@ -1,59 +1,44 @@
 # TODO
 
-Long-running work, in the order chosen. Check items off as they land; keep the notes short.
+Open work, in priority order. Check items off as they land; keep the notes short. Shipped work is in git history and `docs/`.
 
-## 1. Disclosure-time pipeline
+## 1. Cloud (after the 2026-11-23 presentation)
 
-The edge is speed from disclosure, so disclosure time is the one timestamp everywhere.
+- [ ] Fargate Spot for scraper and kafka-to-store: `CapacityProviderStrategy` FARGATE_SPOT, 2 retries, then a `Catch` to an On-Demand copy of the step; `stopTimeout` 120 s; test with `aws ecs stop-task`
+- [ ] kafka-to-store throughput: profile one batch (pandas cleaning vs pyiceberg upsert); then an append-then-deduplicate write for full loads (measured: about 400 rows/s at one core, cost per row)
+- [ ] Iceberg maintenance: expire snapshots and compact files (Athena `OPTIMIZE` / `VACUUM`, or pyiceberg), on a schedule
+- [ ] Deploy waits for images: `terraform.yml` runs after `images` succeeds, so an apply never plans old image digests
+- [ ] Redraw `docs/diagrams/aws-ci-cd.drawio.svg` for the two-stage, encrypted-plan deploy
+- [ ] Smaller live images to cut cold starts (kafka-to-store about 45 s, yahoo-connect about 39 s)
+- [ ] Lambda concurrency quota: request above the 1,000 default (`L-B99A9384`), then reserve concurrency for the scoring steps
+- [ ] Site: a Content-Security-Policy, and optionally a custom domain and WAF
+- [ ] Delete the local AWS access key; CI already uses OIDC
 
-- [x] Live discovery: EDGAR current-filings Atom feed (`action=getcurrent&type=4&owner=only&output=atom`, de-duplicated by accession, exact form match) replaces the Selenium scraper; verified live
-- [x] Retire Selenium: remove `EdgarClient.fetch_live_links` / `_configure_driver`, the `edgar-live` extra (selenium, beautifulsoup4) and the Chromium layer of the master-index image; update the `Filings` port
-- [x] Single timestamp: the scraper parses `ACCEPTANCE-DATETIME` from each filing header and stamps every transaction with it, in backfill and live mode alike
-- [x] master-index: drop `received_now`; discovery (quarterly master index or Atom feed) only selects which filings to fetch
-- [x] Scraper age filter compares filing publication times (was a no-op in live mode)
-- [x] Look-ahead bias: `compute_target` enters at the first price after acceptance (same-day close in session, next open otherwise), not at the trade date; `compute_RT4` only averages labels whose exit close printed before acceptance; every label changes, so BT4/RT4 are rebuilt
-- [x] Backfill de-duplication: the master index lists a filing once per filer; master-index keeps one row per accession, and transaction keys use the accession (not the filer-dependent link), so backfill and live discovery agree
-- [ ] Backfill throughput: `EdgarClient` caps requests (8/s by default, SEC allows 10 per IP) and waits only the remainder of the gap; a sequential scrape ran at ~8.5 filings/s at the 10/s cap (was ~2/s with fixed sleeps), about 8-10 h for a year of ~250k unique Form 4s. Concurrency adds little beyond the cap; on AWS shard by quarter with a shared rate budget; add progress logging; start with 2-3 years of history
-- [ ] SEC errors and rate limits: a 403/429/503 reads as a filing without XML, so the scraper skips it and still commits its offset (the filing is lost); retry with backoff on non-200 and stop before the commit when retries run out. Needed by the concurrent backfill. Observed: a full 1,117-filing scrape at 10 requests/s lost 5 filings (53 transactions) this way; all parsed fine when retried
-- [ ] Auction execution (decided: daily granularity): live orders go to the auction the backtest enters at, market-on-open (`opg`) for filings accepted outside the session, market-on-close (`cls`) for in-session ones; replaces today's `market`/`gtc` on run; verify Alpaca's submission windows for `opg`/`cls` before relying on them; lands with the live scorer
-- [ ] AWS: monthly market-cap refresh as a scheduled job (EventBridge -> Lambda on the `MarketData` port, snapshot stamped at fetch time) writing the reference table on S3/Iceberg; market-cap snapshots end 2024-08 until then, so every 2026 row carries a two-year-old market cap and ~19% have none (Q3 2026 sample)
-- [ ] AWS plan: event-driven live path (EventBridge poll -> dedupe -> SQS + DLQ -> scorer Lambda -> Alpaca) beside the batch path (backfill, RT4 labelling, training)
+## 2. Research: does the signal survive honest evaluation?
 
-## 2. Research: does the signal survive honest evaluation? (after the data backfill)
-
-- [ ] Walk-forward evaluation: retrain over rolling time windows, collect out-of-sample predictions, report returns after per-trade costs and hedged against a size-matched benchmark, next to the naive baselines; the Q3 2026 sample flipped sign between SPY (-2.1% excess) and IWM (+1.5%), so SPY alone mistakes the size effect for a signal
+- [ ] 5-year results: fill the report, the deck and `docs/training.md` after the 2026-11-22 run
+- [ ] Walk-forward evaluation: retrain over rolling time windows, collect out-of-sample predictions, report returns after per-trade costs, hedged against a size-matched benchmark
 - [ ] Long side: insider purchases (where the literature finds the effect); `ACQUIRED_DISPOSED` filter, relaxed sell-only check, buy orders in inference
 - [ ] Informative events, one feature at a time: non-10b5-1 trades, several insiders in a window, share of holding traded, first trade in years
 - [ ] Shortability: skip names Alpaca won't short (`shortable` / `easy_to_borrow`); only current borrow status is available, a stated backtest limitation
 - [ ] Paper trading on Alpaca for several months before any real money
 
-## 3. Backlog (active)
+## 3. Backlog
 
-- [x] Training: chronological, purged train/test split (test = latest filings; train keeps labels known before it)
-- [x] api-enricher retired: market cap (latest monthly snapshot before acceptance), exchange, SIC and SIC group added in target (`add_company_context`) from `mcaps.parquet` and `companies.json`
 - [ ] SIC straight from the filing header (`STANDARD INDUSTRIAL CLASSIFICATION`) for companies missing from `companies.json`
-- [x] CI: GitHub Actions running `make quality-static` (blocking) and `type-check` (non-blocking); unverified until pushed
-- [x] mypy clean in every project: the Kafka client now implements the `MessageQueue` port
 - [ ] `type-check` joins the pre-commit hook (`quality-static`)
-- [ ] Scraper records: `parse_filing` returns `Trade` models, dumped to JSON at the send (no `dict[str, object]`, no `str(record['key'])`)
+- [ ] Scraper records: `parse_filing` returns `Trade` models, dumped to JSON at the send (no `dict[str, object]`)
 - [ ] Market data: yfinance reports outages as empty downloads, so a transient failure is classed permanent; a source that raises would allow `RetryableError`
-- [x] Unit tests per project (81): Form 4 parsing on real fixtures (10b5-1, joint filings, holdings, keys, tickers), filing messages both ways, price refresh and rebasing, next print, disclosure aggregation and clusters, valuation, labels and their safeguards, known-label mean; shared typed fakes with mypy conformance; `make test-unit` in the gate
-- [ ] Tests still to write: kafka-to-store cleaning, training (split, evaluate, model save/load), inference (scoring, order placement); integration tier against a temporary Iceberg catalog
-- [ ] Inference coverage: inference drops BIR4 rows with any missing value (local sample: 205 of 431 scored; `price_to_close` is missing when no price was reported, `avg_target_expanding` before a ticker's first known label), although the model handles missing values natively; decide which columns a scored row must have
-- [ ] Feature store on AWS: BT4/BI4/P/RT4/BIR4 rebuilt from scratch on Iceberg in S3 + Glue (the local store is a SQLite catalog in `.lakehouse/`)
-- [ ] alpaca-py: smoke-test the broker adapter against the paper account (replaced alpaca-trade-api for Python 3.14)
-- [x] Scraper holdings: direct and indirect holdings are kept whichever of them a filing lists (were zeroed unless both were); target adds them to the remaining shares as `total_held`
-- [x] Transaction key = accession + table + position (the old accession + remaining shares + derivative key collided, ~1.5% of transactions overwritten); share and holding columns float64 (were int32/int64: truncated fractional shares, could overflow)
-- [ ] Market half days: entry and exit assume a 16:00 ET close, but NYSE closes at 13:00 on a few days a year, so a filing accepted between 13:00 and 16:00 on such a day enters at a close that printed before it (look-ahead); take session times from an exchange calendar (`exchange_calendars`); the same calendar should drive `next_print`, which treats exchange holidays as trading days: a filing keyed to a holiday's open and one keyed to the next real open both enter at that open, so one trading opportunity yields two rows with the same label
-- [x] Price adjustments on incremental refresh: yahoo_connect fetches the last 30 stored days again and refetches a ticker's full history when their adjustment factors moved or a split/dividend follows them; never stores a bar before its close has printed
-- [ ] `total_held` across filings: traded and untraded accounts are disjoint within one filing, not across them; when an insider files twice before one print, an account traded in one filing and listed as a holding in the other is counted twice (holdings are summed per D/I, not per account, so they cannot be matched)
-- [ ] AWS migration: under way on `feat/aws-migration`, from `master` at 0.4
+- [ ] Tests still to write: kafka-to-store cleaning, inference (scoring, order placement); an integration tier
+- [ ] Inference coverage: inference drops BIR4 rows with any missing value; impute or relax where it is safe
+- [ ] Market half days: entry and exit assume a 16:00 ET close; NYSE closes at 13:00 on a few days a year
+- [ ] `total_held` across filings: accounts are disjoint within one filing, not across them
 
 ## 4. Python 3.15 (blocked)
 
-3.14 is done everywhere. 3.15 waits on Lambda GA (preview only) and on cp315 wheels: confluent-kafka and quixstreams -> rocksdict (gone with the move to SQS).
+3.14 is done everywhere. 3.15 waits on Lambda GA (preview only).
 
-- [ ] Kafka-free services (incl. the live path) to 3.15 after Lambda GA
+- [ ] Services, including the live path, to 3.15 after Lambda GA
 - [ ] `frozendict` (PEP 814) for module constants; comprehension unpacking (PEP 798); Tachyon profiler (PEP 799) on the live path
 
 ## Done
