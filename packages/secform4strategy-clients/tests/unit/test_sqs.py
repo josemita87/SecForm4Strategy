@@ -112,6 +112,16 @@ class TestReceive:
         with pytest.raises(RetryableError, match='500'):
             sqs.receive('tmi', max_messages=1, wait_seconds=1)
 
+    def test_rounds_run_parallel_calls_until_a_round_is_empty(self, queue: tuple[SqsQueue, Stubber]) -> None:
+        sqs, stubber = queue[0], looked_up(queue[1])
+        stubber.add_response('receive_message', received(*(f'{{"a": {i}}}' for i in range(10))))
+        # 25 missing: one round of three calls (10, 10, 5) runs at once, then an empty round ends the receive
+        for response in (received(*(f'{{"b": {i}}}' for i in range(10))), received('{"c": 0}'), {}, {}, {}):
+            stubber.add_response('receive_message', response)
+        messages = sqs.receive('tmi', max_messages=35, wait_seconds=1)
+        assert len(messages) == 21
+        assert sorted(next(iter(m.body)) for m in messages) == ['a'] * 10 + ['b'] * 10 + ['c']
+
 
 class TestAck:
     """Finished messages are deleted, 10 per call; anything else is the caller's mistake."""
@@ -124,6 +134,12 @@ class TestAck:
             {'QueueUrl': URL, 'Entries': [{'Id': '0', 'ReceiptHandle': 'h0'}, {'Id': '1', 'ReceiptHandle': 'h1'}]},
         )
         sqs.ack('tmi', [Message({}, SqsReceipt('h0')), Message({}, SqsReceipt('h1'))])
+
+    def test_many_messages_are_deleted_in_parallel_batches_of_ten(self, queue: tuple[SqsQueue, Stubber]) -> None:
+        sqs, stubber = queue[0], looked_up(queue[1])
+        for _ in range(3):
+            stubber.add_response('delete_message_batch', {'Successful': [], 'Failed': []})
+        sqs.ack('tmi', [Message({}, SqsReceipt(f'h{i}')) for i in range(25)])
 
     def test_no_messages_makes_no_call(self, queue: tuple[SqsQueue, Stubber]) -> None:
         queue[0].ack('tmi', ())

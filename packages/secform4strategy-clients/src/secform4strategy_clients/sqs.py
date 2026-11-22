@@ -5,16 +5,20 @@ message's receipt handle. SQS hides a received message for the queue's visibilit
 delivers it again unless ``ack`` deletes it; after the queue's maximum receives, its redrive
 policy moves it to the dead-letter queue. A message that is not JSON is logged and deleted at
 once. botocore retries throttling and server errors itself, so the client only classifies the
-failures left over with ``aws.classified`` (docs/error-handling.md).
+failures left over with ``aws.classified`` (docs/error-handling.md). SQS returns and deletes at
+most 10 messages per call, so a large receive or ack runs its calls on a thread pool.
 """
 
 import json
 import logging
+import math
 from collections.abc import Iterable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from itertools import batched
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import boto3
+from botocore.config import Config
 
 from secform4strategy_clients.aws import RETRIES, classified
 from secform4strategy_clients.ports import PermanentError, RetryableError
@@ -22,7 +26,7 @@ from secform4strategy_clients.records import Message, QueueDepth
 
 if TYPE_CHECKING:
     from mypy_boto3_sqs import SQSClient
-    from mypy_boto3_sqs.type_defs import BatchResultErrorEntryTypeDef
+    from mypy_boto3_sqs.type_defs import BatchResultErrorEntryTypeDef, MessageTypeDef
 
 logger = logging.getLogger(__name__)
 
@@ -62,15 +66,23 @@ class SqsQueue:
         sqs: The SQS client, retrying throttling and server errors in botocore's standard mode.
     """
 
-    def __init__(self, region: str, endpoint_url: str | None = None) -> None:
+    def __init__(self, region: str, endpoint_url: str | None = None, workers: int = 10) -> None:
         """Open an SQS client; credentials come from the environment, as for any AWS SDK.
 
         Args:
             region: AWS region of the queues.
             endpoint_url: Alternative endpoint, e.g. a local SQS emulator; None uses AWS.
+            workers: Receive and delete calls run at once; 1 makes them sequential.
         """
-        self.sqs: SQSClient = boto3.client('sqs', region_name=region, endpoint_url=endpoint_url, config=RETRIES)
+        self.sqs: SQSClient = boto3.client(
+            'sqs',
+            region_name=region,
+            endpoint_url=endpoint_url,
+            config=RETRIES.merge(Config(max_pool_connections=workers)),
+        )
         self._urls: dict[str, str] = {}
+        self._workers = workers
+        self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix='sqs')
 
     def _url(self, queue: str) -> str:
         """Return a queue's URL, looked up once by name."""
@@ -81,7 +93,8 @@ class SqsQueue:
         return url
 
     def close(self) -> None:
-        """Close the client's connections."""
+        """Stop the thread pool and close the client's connections."""
+        self._pool.shutdown()
         self.sqs.close()
 
     def send(self, queue: str, messages: Iterable[tuple[str, Mapping[str, Any]]]) -> None:
@@ -105,6 +118,9 @@ class SqsQueue:
     def receive(self, queue: str, max_messages: int, wait_seconds: float) -> tuple[Message, ...]:
         """Return up to ``max_messages`` messages, long-polling only for the first; then return what is already there.
 
+        After the first call, each round runs up to ``workers`` calls at once, and the receive ends when a round
+        returns nothing.
+
         Args:
             queue: Name of the queue.
             max_messages: Most messages to return.
@@ -113,24 +129,46 @@ class SqsQueue:
         Returns:
             The messages received, possibly none.
         """
-        messages: list[Message] = []
-        while len(messages) < max_messages and (
-            received := classified(
-                f'Receive from {queue}',
-                self.sqs.receive_message,
-                QueueUrl=self._url(queue),
-                MaxNumberOfMessages=min(MAX_BATCH, max_messages - len(messages)),
-                # Once a batch has started, waiting for more would only delay the messages already received
-                WaitTimeSeconds=0 if messages else int(min(wait_seconds, 20)),
-            ).get('Messages', [])
-        ):
-            for record in received:
-                try:
-                    messages.append(Message(json.loads(record['Body']), SqsReceipt(record['ReceiptHandle'])))
-                except ValueError:
-                    logger.error(f'Deleting a message of {queue} that is not JSON: {record["Body"]!r:.200}')
-                    self._delete(queue, [record['ReceiptHandle']])
+        messages = self._parse(
+            queue, self._receive_once(queue, min(MAX_BATCH, max_messages), int(min(wait_seconds, 20)))
+        )
+        while messages and (missing := max_messages - len(messages)) > 0:
+            # Once a batch has started, waiting for more would only delay the messages already received
+            sizes = [
+                min(MAX_BATCH, missing - MAX_BATCH * i)
+                for i in range(min(self._workers, math.ceil(missing / MAX_BATCH)))
+            ]
+            if not (
+                received := [
+                    record
+                    for batch in self._pool.map(lambda size: self._receive_once(queue, size, 0), sizes)
+                    for record in batch
+                ]
+            ):
+                break
+            messages.extend(self._parse(queue, received))
         return tuple(messages)
+
+    def _receive_once(self, queue: str, size: int, wait: int) -> list[MessageTypeDef]:
+        """Return the raw records of one receive call."""
+        return classified(
+            f'Receive from {queue}',
+            self.sqs.receive_message,
+            QueueUrl=self._url(queue),
+            MaxNumberOfMessages=size,
+            WaitTimeSeconds=wait,
+        ).get('Messages', [])
+
+    def _parse(self, queue: str, records: Iterable[MessageTypeDef]) -> list[Message]:
+        """Return the JSON records as messages; a record that is not JSON is logged and deleted."""
+        messages = []
+        for record in records:
+            try:
+                messages.append(Message(json.loads(record['Body']), SqsReceipt(record['ReceiptHandle'])))
+            except ValueError:
+                logger.error(f'Deleting a message of {queue} that is not JSON: {record["Body"]!r:.200}')
+                self._delete(queue, [record['ReceiptHandle']])
+        return messages
 
     def ack(self, queue: str, messages: Iterable[Message]) -> None:
         """Delete the finished messages, 10 per call; the others come back after the visibility timeout.
@@ -180,13 +218,16 @@ class SqsQueue:
             queue: Name of the queue.
             handles: Receipt handles of the messages.
         """
-        for batch in batched(handles, MAX_BATCH, strict=False):
-            raise_failed(
-                classified(
-                    f'Delete from {queue}',
-                    self.sqs.delete_message_batch,
-                    QueueUrl=self._url(queue),
-                    Entries=[{'Id': str(i), 'ReceiptHandle': handle} for i, handle in enumerate(batch)],
-                ).get('Failed', []),
+        if not handles:
+            return
+        url = self._url(queue)
+        for failed in self._pool.map(
+            lambda batch: classified(
                 f'Delete from {queue}',
-            )
+                self.sqs.delete_message_batch,
+                QueueUrl=url,
+                Entries=[{'Id': str(i), 'ReceiptHandle': handle} for i, handle in enumerate(batch)],
+            ).get('Failed', []),
+            batched(handles, MAX_BATCH, strict=False),
+        ):
+            raise_failed(failed, f'Delete from {queue}')
