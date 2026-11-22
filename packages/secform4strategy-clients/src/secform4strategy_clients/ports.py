@@ -61,8 +61,8 @@ def is_many(value: object) -> TypeGuard[Iterable[object]]:
 class FeatureStore(Protocol):
     """Versioned tables of features, read and upserted by reference."""
 
-    def read(self, reference: str, where: Filters | None = None) -> pd.DataFrame:
-        """Read the referenced table, optionally filtered."""
+    def read(self, reference: str, where: Filters | None = None, columns: Iterable[str] | None = None) -> pd.DataFrame:
+        """Read the referenced table, optionally filtered and with only ``columns``."""
         ...
 
     def push(self, reference: str, data: pd.DataFrame) -> object:

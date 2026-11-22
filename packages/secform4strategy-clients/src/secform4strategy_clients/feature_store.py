@@ -60,12 +60,16 @@ class IcebergFeatureStore:
         """Return the table identifier ``<namespace>.<name>_v<version>`` of a reference."""
         return f'{self.namespace}.{(spec := self._specs[reference]).name}_v{spec.version}'
 
-    def read(self, reference: str, where: Filters | None = None) -> pd.DataFrame:
-        """Read the referenced feature group, optionally filtered.
+    def read(self, reference: str, where: Filters | None = None, columns: Iterable[str] | None = None) -> pd.DataFrame:
+        """Read the referenced feature group, optionally filtered and with only some columns.
+
+        Iceberg skips the data files the filters exclude and the columns not selected, so a narrow read
+        holds only what the caller needs in memory.
 
         Args:
             reference: A key into the catalog given at construction.
             where: Column -> value equality filters; an iterable value matches any of its items.
+            columns: The columns to read; None reads every column.
 
         Returns:
             The (optionally filtered) rows; a missing table raises ``NoSuchTableError``.
@@ -75,7 +79,9 @@ class IcebergFeatureStore:
         ]
         row_filter = functools.reduce(And, conditions) if conditions else AlwaysTrue()
         data: pd.DataFrame = (
-            self.catalog.load_table(self._identifier(reference)).scan(row_filter=row_filter).to_pandas()
+            self.catalog.load_table(self._identifier(reference))
+            .scan(row_filter=row_filter, selected_fields=('*',) if columns is None else tuple(columns))
+            .to_pandas()
         )
         return data
 

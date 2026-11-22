@@ -140,3 +140,31 @@ class ReferenceData:
             ).sort_values(Col.SNAPSHOT),
             companies=pd.DataFrame(json.loads(companies_path.read_text(encoding='utf-8'))),
         )
+
+
+#: Transaction columns target uses; the long strings link, insider_name and key stay unread
+TRANSACTION_COLUMNS = (
+    Col.ACCEPTED_AT,
+    Col.ACCESSION,
+    Col.POSITION,
+    Col.DERIVATIVE,
+    Col.COMPANY_CIK,
+    Col.TICKER,
+    Col.INSIDER_CIK,
+    Col.RULE_10B5_1,
+    Col.SHARES,
+    Col.ACQUIRED_DISPOSED,
+    Col.PRICE,
+    Col.DATE,
+    Col.REMAINING_SHARES,
+    Col.OWNERSHIP,
+    Col.CODING,
+    Col.EQUITY_SWAP,
+    Col.DIRECT_HOLDING,
+    Col.INDIRECT_HOLDING,
+    Col.OWNER_CODE,
+)
+#: Price columns target uses; split, dividend and the key string stay unread
+PRICE_COLUMNS = (Col.TICKER, Col.DATE, Col.OPEN, Col.CLOSE, Col.CLOSE_AS_TRADED)
+#: Label columns the expanding mean of known labels uses
+LABEL_COLUMNS = (Col.TICKER, Col.ACCEPTED_AT, Col.LABEL_KNOWN_AT, Col.PCT_CHANGE, Col.AVG_TARGET_EXPANDING)
