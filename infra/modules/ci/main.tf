@@ -8,10 +8,11 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 locals {
+  # The plan role also plans each push to master, for the apply job to apply that exact plan
   subjects = {
-    images = "repo:${var.github_repository}:ref:refs/heads/master"
-    plan   = "repo:${var.github_repository}:pull_request"
-    apply  = "repo:${var.github_repository}:environment:aws"
+    images = ["repo:${var.github_repository}:ref:refs/heads/master"]
+    plan   = ["repo:${var.github_repository}:pull_request", "repo:${var.github_repository}:ref:refs/heads/master"]
+    apply  = ["repo:${var.github_repository}:environment:aws"]
   }
 }
 
@@ -31,7 +32,7 @@ data "aws_iam_policy_document" "github_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = [each.value]
+      values   = each.value
     }
   }
 }
