@@ -47,7 +47,7 @@ The services choose their adapters from environment variables, as [configuration
 | `MODEL_STORE__BACKEND` | `local` | `s3`, served by `S3ModelStore` |
 | `PYICEBERG_CATALOG__DEFAULT__TYPE` | `sql` (SQLite) | `glue` |
 
-`SqsQueue` sends and receives JSON bodies on SQS standard queues, 10 messages per call. `ack` deletes the finished messages.
+`SqsQueue` sends and receives JSON bodies on SQS standard queues, 10 messages per call. `ack` deletes the finished messages. A large receive or ack runs up to 10 calls at once on a thread pool (`workers`), so a batch of 10,000 messages takes 1,000 calls in about 100 rounds instead of 1,000 in a row.
 
 `S3ModelStore` saves each model in a folder named after its training time, as `model.joblib` plus `model.meta.json`. It then writes `latest.json`, which names that folder. `load` reads `latest.json` first, so a load never pairs a new model with old metadata. Earlier models stay in the bucket.
 
@@ -106,7 +106,7 @@ The first full load is the same state machine, started once by hand with `MODE=h
 | Step | Measured rate | Setting that sets it |
 | --- | --- | --- |
 | scraper | 6 to 7.8 filings per second | `SEC_MAX_RATE`, `FETCH_WORKERS=12`, `BUFFER_SIZE=200`, `RETRY_PAUSE=5` |
-| kafka-to-store | About 185 transactions per second | `BUFFER_SIZE=10000` (one Iceberg commit per batch; a commit takes about 7 seconds) |
+| kafka-to-store | About 185 transactions per second with sequential SQS calls; the parallel receive and ack remove most of the SQS wait (not yet measured) | `BUFFER_SIZE=10000` (one Iceberg commit per batch; a commit takes about 7 seconds) |
 
 The scraper downloads up to `FETCH_WORKERS` filings at once. SEC answers each request in about 0.5 seconds, so several requests in flight keep the rate near the cap. `EdgarClient` spaces request starts at least `1 / SEC_MAX_RATE` seconds apart across all threads.
 
