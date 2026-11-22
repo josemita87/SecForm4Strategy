@@ -261,7 +261,7 @@ The system has two paths. Both use serverless compute, so nothing runs and nothi
 | | Batch path | Live path |
 | --- | --- | --- |
 | Work | The first full load of years of filings, then a weekly retrain | One filing at a time, as the SEC publishes it |
-| Compute | ECS tasks on Fargate ARM64 | Lambda functions on the same images |
+| Compute | ECS tasks on Fargate ARM64, Spot first with an On-Demand fallback | Lambda functions on the same images |
 | Trigger | EventBridge Scheduler starts Step Functions | EventBridge Scheduler, then SQS, then an EventBridge Pipe |
 | Reason | Fargate has no run-time limit; Lambda stops a run after 15 minutes | Lambda runs as soon as an event arrives and bills per invocation |
 
@@ -292,7 +292,19 @@ The Step Functions state machine `secform4strategy-retrain` runs six ECS tasks i
 5. target builds the labelled rows in `RT4`.
 6. training saves a new model to `models/`, and promotes it if it passes the gate.
 
-Each step runs one Fargate ARM64 (Graviton) task in the cluster `secform4strategy`, in the private subnets, and waits for it to stop. The tasks use the `FARGATE` launch type (On-Demand). Fargate Spot runs ARM64 tasks too, but a Spot interruption fails the step, and the retry policy allows only 3 attempts, which a multi-day backfill could use up. A failed step is retried after 600 seconds, at most 3 times. The wait is deliberately longer than the 300-second SQS visibility timeout. A rerun that started earlier would find the unfinished messages still hidden, stop at once and leave the work undone. Each task logs to `/secform4strategy/<service>`, kept 14 days.
+Each step runs one Fargate ARM64 (Graviton) task in the cluster `secform4strategy`, in the private subnets, and waits for it to stop. Each task logs to `/secform4strategy/<service>`, kept 14 days.
+
+**Fargate Spot with an On-Demand fallback.** Fargate Spot costs about 70% less than On-Demand Fargate and runs ARM64 tasks. AWS can reclaim a Spot task at short notice. The Terraform variable `spot_steps` lists the steps that run on Spot first, and the demo environment lists all six. Each listed step has three states, so the state machine has 18:
+
+1. `<step>` runs the task with the capacity provider `FARGATE_SPOT`. A failed task is retried on `States.TaskFailed` after 600 seconds, at most 2 times, so Spot gets 3 attempts.
+2. If the last Spot attempt fails, a `Catch` on `States.ALL` moves to `<step>-wait`, a Wait state of 600 seconds.
+3. `<step>-on-demand` runs the task with the launch type `FARGATE` (On-Demand). A failed task is retried once after 600 seconds.
+
+The `Catch` takes every error, because a RunTask failure, such as no Spot capacity at launch, arrives as `AmazonECS.Unknown`, not as `States.TaskFailed`. A step left out of `spot_steps` runs On-Demand only, retried after 600 seconds at most 3 times.
+
+Every wait is 600 seconds, longer than the 300-second SQS visibility timeout, on purpose. A rerun that started earlier would find the unfinished messages still hidden. It would find an empty queue, exit with code 0 and leave the work undone.
+
+Every step is idempotent, so a reclaimed task loses only its in-flight batch. Iceberg commits are atomic, writes are upserts by key, and SQS delivers unacknowledged messages again. The services do not handle SIGTERM, so Python exits at once when ECS stops a task. A longer `stopTimeout` would not help, so the task definitions set none. The fallback has a cost: a real code failure runs 5 times instead of 4 before the run fails, and its retries take about 40 minutes instead of 30. The live Lambdas are not affected.
 
 Task sizes follow the work. Most tasks run with 0.5 vCPU and 1 GB or 2 GB. kafka-to-store runs with 2 vCPU and 8 GB, because each Iceberg upsert loads and merges table rows, and at 0.5 vCPU a 10,000-row batch took about 40 seconds. The cluster has Container Insights enabled, so CloudWatch shows each task's CPU and memory use. target reads every ticker's price history at once and runs with 2 vCPU and 16 GB, because 4 GB ran out of memory on one year of filings. training runs the 128 grid-search fits in parallel on 4 vCPU and 16 GB.
 
@@ -463,6 +475,8 @@ A pull request cannot change any resource. Only a job in the GitHub environment 
 | --- | --- | --- |
 | Dormant (`switched_on = false`) | About $0 per day | S3 and ECR storage. The VPC, subnets, gateway endpoint, IAM, Glue, idle queues, idle Lambdas, the on-demand DynamoDB table and the state machines cost nothing. |
 | Switched on | About $1.20 per day, plus usage | The NAT gateway (about $1.08 per day) and its Elastic IP (about $0.12 per day). Usage: Fargate, Lambda, Step Functions, SQS and DynamoDB requests, NAT data processing, Athena scans. |
+
+The batch tasks run on Fargate Spot first, which costs about 70% less than On-Demand (Section 4.3).
 
 `infra/envs/demo/switch.auto.tfvars` holds the switches:
 
@@ -783,7 +797,7 @@ More kafka-to-store tasks would not help either. Two writers to one Iceberg tabl
 3. **Incremental steps make a failed run recoverable.** Upserts by deterministic key let the remaining steps run by hand, with no work repeated and no duplicate rows.
 4. **Measure before scaling.** The batch times showed that kafka-to-store was CPU-bound at 0.5 vCPU and that the upsert, not SQS, took most of the time. They showed that one full core helps, while more tasks, more cores and bigger batches do not, and that the next step is profiling, not more guesses. The cluster now has Container Insights, so CloudWatch shows each task's CPU and memory use.
 
-Section 10.2 lists the follow-ups: an append-then-deduplicate write for full loads, Iceberg maintenance, and a Spot design with an On-Demand fallback.
+Section 10.2 lists the follow-ups, among them an append-then-deduplicate write for full loads and Iceberg maintenance.
 
 ---
 
@@ -804,7 +818,7 @@ Section 10.2 lists the follow-ups: an append-then-deduplicate write for full loa
 | Live trades at once | Wait for the next market print, which the label uses | The label uses the next print because historical execution times are not available. Trading earlier keeps the speed from disclosure. |
 | Lambda secrets read by `SsmSettings` at cold start | Terraform reads them into environment variables | The values would enter the Terraform state. |
 | `skip_destroy` on task definitions | Terraform deregisters replaced revisions | A running `retrain` run could no longer start tasks from a deregistered revision. |
-| `FARGATE` launch type (On-Demand) | Fargate Spot (`FARGATE_SPOT`, about 70% cheaper, ARM64 supported) | A Spot interruption fails the step, and 3 retries may not cover a multi-day backfill. The saving is a few dollars per week. A Spot design with an On-Demand fallback is planned (Section 10.2). |
+| Fargate Spot first, On-Demand fallback after 3 Spot attempts | On-Demand only (`FARGATE`) | Spot (`FARGATE_SPOT`, ARM64 supported) is about 70% cheaper. After 2 Spot retries, a `Catch` waits 600 seconds and runs the step On-Demand, so repeated Spot interruptions end in an On-Demand task, not a failed run. Every step is idempotent, so a reclaimed task repeats only its batch. |
 | ECR keeps 5 images per repository | Keep 2 images, to save storage | A pinned revision of a running run needs its image. With 2 images, the 5-year backfill lost the scraper's image and failed (Section 8). |
 | Promotion gate; training saves every model, and only `promote` changes the live model | Each training run replaces the live model | A truncated dataset or a changed feature contract would otherwise reach inference at once. The gate checks rows, the feature contract and a sane holdout. `scripts/promote_model.sh` promotes or rolls back by hand. |
 | No MAE comparison in the gate | Promote only a model with a lower holdout MAE | Each model holds out the latest 20% of its own rows, so two models are scored on different periods. |
@@ -842,7 +856,6 @@ The next research steps:
 | --- | --- |
 | Append-then-deduplicate write for full loads | kafka-to-store appends each batch without matching keys against the whole `BT4` table, and one pass removes duplicate keys at the end. A full load then no longer slows as the table grows. |
 | Iceberg maintenance: expire snapshots, compact data files | Every commit adds a snapshot and small files. Athena `OPTIMIZE` and `VACUUM` fit under the 1 GiB scan limit, because the warehouse is about 430 MB. |
-| Fargate Spot for scraper and kafka-to-store, with an On-Demand fallback in a `Catch` | About 70% cheaper tasks for the two longest steps. An interruption falls back to an On-Demand task instead of using up the retries. |
 | A Lambda concurrency quota above 1,000 | The account allows 10 concurrent Lambda executions, shared by the live functions and the publisher, so a burst of filings can throttle a `live-score` step. A quota request must ask for more than 1,000. Reserved concurrency for the scoring steps then becomes possible. |
 | Make the Terraform apply wait for the `images` workflow | A plan made before the build ends deploys the previous image. |
 | Smaller images for the live Lambdas | The about 1 GB images cause cold starts of up to 45 seconds. |

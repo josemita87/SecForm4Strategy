@@ -9,7 +9,7 @@
 | Date | 2026-11-23 |
 | Repository | [https://github.com/josemita87/SecForm4Strategy](https://github.com/josemita87/SecForm4Strategy), branch `master` |
 
-## Executive summary
+## 1. Executive summary
 
 **The question.** Corporate insiders must report their trades to the US Securities and Exchange Commission (SEC) on a Form 4. The project tests one hypothesis: insider sales come before the stock underperforms, and the market has not priced that in when the filing becomes public. If the hypothesis holds, the edge goes to the system that reacts first after publication.
 
@@ -28,7 +28,7 @@ Both paths share the same container images and one Apache Iceberg lakehouse on S
 
 ## Contents
 
-1. [Executive summary](#executive-summary)
+1. [Executive summary](#1-executive-summary)
 2. [The business problem and requirements](#2-the-business-problem-and-requirements)
 3. [Data, model and engineering in brief](#3-data-model-and-engineering-in-brief)
 4. [Architecture overview](#4-architecture-overview)
@@ -38,9 +38,12 @@ Both paths share the same container images and one Apache Iceberg lakehouse on S
 8. [Design decisions and trade-offs](#8-design-decisions-and-trade-offs)
 9. [Limitations and future work](#9-limitations-and-future-work)
 10. [Conclusion](#10-conclusion)
-11. [Appendix A: Resource inventory](#appendix-a-resource-inventory)
-12. [Appendix B: Configuration reference](#appendix-b-configuration-reference)
-13. [Appendix C: Glossary](#appendix-c-glossary)
+
+Appendices:
+
+- [Appendix A: Resource inventory](#appendix-a-resource-inventory)
+- [Appendix B: Configuration reference](#appendix-b-configuration-reference)
+- [Appendix C: Glossary](#appendix-c-glossary)
 
 ---
 
@@ -150,7 +153,7 @@ The five tables are Iceberg tables with deterministic keys. A transaction's key 
 | Requirement | Source | AWS decision | Section |
 | --- | --- | --- | --- |
 | R1 Speed from disclosure | Business | Separate live path: Scheduler polls every minute, SQS, Lambda, EventBridge Pipe, `live-score`; cold starts accepted | 5.1, 5.2 |
-| R2 Years of history, long jobs | Data, ML | Fargate ARM64 tasks under Step Functions `runTask.sync`; retries of 600 s; pinned revisions | 5.1, 5.2 |
+| R2 Years of history, long jobs | Data, ML | Fargate ARM64 tasks under Step Functions `runTask.sync`; Fargate Spot with an On-Demand fallback; waits of 600 s; pinned revisions | 5.1, 5.2 |
 | R3 SEC fair access | Constraint | Rate budget split between batch and live; batch egress through the NAT gateway; live Lambdas outside the VPC | 5.1, 5.4 |
 | R4 No look-ahead, one feature implementation | ML | Same images on Fargate and Lambda; one Iceberg feature store | 5.1, 5.3 |
 | R5 Upserts, reprocessing, at-least-once | Data | Iceberg on S3 with the Glue catalog; deterministic keys; SQS standard queues with DLQs and partial batch failures; `client_order_id` | 5.2, 5.3 |
@@ -191,10 +194,12 @@ The system has two workloads with opposite shapes. No single compute service ser
 | --- | --- | --- |
 | Shape | A few filings per minute in market hours, in bursts; most minutes bring none | The 5-year load ran for days; a 10,000-row Iceberg upsert takes about 25 seconds; training runs 128 fits in parallel |
 | Need | Score each filing within minutes of `accepted_at` | Run for hours with no time limit |
-| Choice | Six Lambda functions, one per service step, triggered by a schedule, SQS and Step Functions (**D1**) | One ECS task per step on Fargate, started and awaited by Step Functions (**D2**) |
+| Choice | Six Lambda functions, one per service step, triggered by a schedule, SQS and Step Functions (**D1**) | One ECS task per step on Fargate Spot with an On-Demand fallback, started and awaited by Step Functions (**D2**) |
 | Rejected | A long-running container (an ECS service) that polls and scores | Lambda for everything, or EC2 instances |
 
 Lambda starts per event and bills per invocation, so an idle minute costs nothing. An always-on Fargate service would bill around the clock. Lambda cannot run the batch steps at all. It stops a run after 15 minutes and offers at most 10 GB of memory. EC2 would add instances to patch and stop. Fargate has no run-time limit, sizes each task separately, and bills only while the task runs.
+
+Each batch task runs on Fargate Spot first, and falls back to On-Demand Fargate (**D2**). Spot capacity costs about 70% less than On-Demand, and ARM64 tasks can use it. AWS can reclaim a Spot task at short notice. Every batch step is idempotent, so a reclaimed task loses only its in-flight batch. Iceberg commits are atomic, writes are upserts by key, and SQS delivers unacknowledged messages again. The alternative, On-Demand only, costs more for no gain in correctness. Section 5.2 describes the fallback. The live Lambdas do not use Fargate and are not affected.
 
 Both paths run on ARM64 (Graviton) for R7 (**D4**). CI builds `linux/arm64` images, the task definitions set `cpu_architecture = "ARM64"`, and the Lambdas set `architectures = ["arm64"]`. AWS prices Fargate and Lambda on Graviton about 20% below x86_64 for the same vCPU and memory, and the Python stack needs no x86-only binaries. The private subnets take the first two availability zones that AWS reports as available, `use1-az1` and `use1-az2` in this account. Fargate ARM64 is not available in `use1-az3`, and nothing in the network module excludes that zone.
 
@@ -221,11 +226,19 @@ Both paths chain several steps, and any step can fail halfway. The batch path mu
 
 #### The batch path
 
-The state machine `secform4strategy-retrain` runs the six batch steps in order (**D6**). Each step uses `arn:aws:states:::ecs:runTask.sync`, which starts a Fargate task and waits for it to stop. A failed step is retried after 600 seconds, at most 3 times (`IntervalSeconds = 600`, `MaxAttempts = 3`, `BackoffRate = 1`).
+The state machine `secform4strategy-retrain` runs the six batch steps in order (**D6**). Each step uses `arn:aws:states:::ecs:runTask.sync`, which starts a Fargate task and waits for it to stop. The Terraform variable `spot_steps` lists the steps that run on Spot first, and the demo environment lists all six. Each listed step has three states, so the state machine has 18:
+
+1. `<step>` runs the task with the capacity provider `FARGATE_SPOT`. A failed task is retried on `States.TaskFailed` after 600 seconds, at most 2 times (`MaxAttempts = 2`), so Spot gets 3 attempts.
+2. If the last Spot attempt fails, a `Catch` on `States.ALL` moves to `<step>-wait`, a Wait state of 600 seconds.
+3. `<step>-on-demand` runs the task with the launch type `FARGATE` (On-Demand). A failed task is retried once after 600 seconds.
+
+The `Catch` takes every error, because a RunTask failure, such as no Spot capacity at launch, arrives as `AmazonECS.Unknown`, not as `States.TaskFailed`. A step left out of `spot_steps` runs On-Demand only, retried after 600 seconds at most 3 times.
 
 Apache Airflow on Amazon MWAA was the alternative. MWAA runs an environment around the clock, far above $5 per month (R7). Step Functions bills per state transition and costs nothing idle. It gives waits and retries without a scheduler server.
 
-The retry interval is longer than the 300-second SQS visibility timeout on purpose. A rerun that started earlier would find the unfinished messages still hidden, stop at once and leave the work undone.
+Every wait is 600 seconds, longer than the 300-second SQS visibility timeout, on purpose. A rerun that started earlier would find the unfinished messages still hidden. It would find an empty queue, exit with code 0 and leave the work undone.
+
+The fallback has a cost. A real code failure now runs 5 times instead of 4 before the run fails, and its retries take about 40 minutes instead of 30. The services do not handle SIGTERM, so Python exits at once when ECS stops a task. A longer `stopTimeout` would not help, so the task definitions set none.
 
 EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC (`cron(0 6 ? * SAT *)`). master-index then publishes only the filings of the last 7 days. A run's input can override environment variables per step, so the first full load is the same state machine with a different input:
 
@@ -256,7 +269,7 @@ DynamoDB on demand holds the seen keys, in place of an ElastiCache server. It bi
 
 Five SQS standard queues, each with a dead-letter queue (DLQ), connect the stages of both paths (**D9**). SQS FIFO queues would give exactly-once processing. Amazon MSK would match the managed Kafka of the local stack. Neither earns its cost. Every write is an upsert by key and every order carries `client_order_id`, so duplicates are harmless and FIFO ordering buys nothing. Standard queues cost less per request. MSK bills brokers around the clock.
 
-A message moves to its DLQ after 5 receives, and the visibility timeout is 300 seconds. Appendix B.2 lists the queue names, retention and encryption.
+A message moves to its DLQ after 5 receives, and the visibility timeout is 300 seconds. Appendix B.2 lists the queue names, retention, encryption and the retry settings of `retrain`.
 
 The SQS triggers report partial batch failures. A handler returns the messages it did not finish in `batchItemFailures`, and SQS delivers only those again. The error contract of Section 3.3 maps onto these settings:
 
@@ -418,7 +431,7 @@ The budget is $5 per month (R7). A stack with a NAT gateway, Fargate, Lambda and
 
 The stack is dormant by default (**D19**). It runs for the presentation and the backfill, and sleeps otherwise. The alternative, an always-on stack, fails on the NAT gateway alone: about $32 per month, more than six times the budget.
 
-Every other component is serverless and bills nothing idle, so one switch on the NAT gateway and the schedules covers almost all fixed cost. `infra/envs/demo/switch.auto.tfvars` holds three switches:
+Every other component is serverless and bills nothing idle, so one switch on the NAT gateway and the schedules covers almost all fixed cost. The batch tasks run on Fargate Spot first, which costs about 70% less than On-Demand (Section 5.1). `infra/envs/demo/switch.auto.tfvars` holds three switches:
 
 | Switch | Default | On master, 2026-11-22 | While `true` |
 | --- | --- | --- | --- |
@@ -586,10 +599,11 @@ The table collects the decisions of Chapter 5, with the requirement behind each.
 | --- | --- | --- | --- |
 | Live path on Lambda (D1) | R1, R7 | An always-on container | Starts per event, bills per invocation |
 | Batch path on Fargate under Step Functions (D2, D6) | R2, R7 | Lambda only; Airflow on MWAA | Lambda stops after 15 minutes; MWAA bills around the clock |
+| Fargate Spot first, On-Demand fallback after 3 Spot attempts (D2) | R2, R7, R10 | On-Demand only | About 70% cheaper; idempotent steps repeat only the reclaimed batch; the fallback keeps interruptions from failing a multi-day run |
 | Same images on Fargate and Lambda (D3) | R4 | A separate live scorer | One feature implementation, no training-serving skew |
 | ARM64 (Graviton) (D4) | R7 | x86_64 | About 20% cheaper |
 | Cold starts accepted (D5) | R1, R7 | Provisioned concurrency | About $10 per month per function; cold filings still scored in 1 to 2 minutes |
-| Retry after 600 s; `skip_destroy`; ECR keeps 5 images (D6, D7) | R2, R10 | Immediate retry; deregistered revisions; 2 images | A retry must outlast the visibility timeout, and a pinned revision needs its image |
+| Waits of 600 s; `skip_destroy`; ECR keeps 5 images (D6, D7) | R2, R10 | Immediate retry; deregistered revisions; 2 images | A rerun must outlast the visibility timeout, and a pinned revision needs its image |
 | Live chain: poll every minute, queues, Pipe, `live-score` (D8) | R1, R5 | One Lambda that polls, scrapes, stores and scores | Each queue absorbs bursts and retries only its own failures |
 | SQS standard queues, DLQs, partial batch failures (D9) | R5 | SQS FIFO; MSK | Upserts by key and `client_order_id` make duplicates harmless; MSK bills brokers around the clock |
 | Iceberg on S3 with the Glue catalog (D10) | R4, R5, R7 | RDS; a hosted feature store | Upserts on plain objects; only storage is billed while idle |
@@ -606,7 +620,6 @@ The table collects the decisions of Chapter 5, with the requirement behind each.
 | Dormant by default; three switches (D19) | R7 | Always-on stack | An always-on NAT gateway costs about $32 per month |
 | One alarm per DLQ; CloudWatch dashboard (D20) | R5, R10 | Third-party monitoring; X-Ray | Every lost message ends in a DLQ; dashboard and alarms stay in the free tier |
 | Static site with a publisher; CloudFront with OAC; edge Basic auth (D21 to D23) | R8, R9 | An API; a public bucket; Cognito | No code runs per internet request, and no server is needed |
-| `FARGATE` On-Demand | R2, R10 | Fargate Spot, about 70% cheaper | An interruption fails the step, and 3 retries may not cover a multi-day run |
 
 ---
 
@@ -616,7 +629,6 @@ The table collects the decisions of Chapter 5, with the requirement behind each.
 
 | Follow-up | Benefit |
 | --- | --- |
-| Fargate Spot for scraper and kafka-to-store, with an On-Demand fallback in a Step Functions `Catch` | About 70% cheaper tasks for the two longest steps. An interruption falls back to an On-Demand task instead of using up the retries. |
 | Iceberg maintenance: expire snapshots, compact data files | Every commit adds a snapshot and small files. Athena `OPTIMIZE` and `VACUUM` fit under the 1 GiB scan limit, because the warehouse is about 430 MB. |
 | Append-then-deduplicate write for full loads | kafka-to-store appends each batch without matching keys against the whole table, and one pass removes duplicates at the end. A full load then no longer slows as the table grows. |
 | Make the Terraform apply wait for the `images` workflow | A plan made before the build ends deploys the previous image. |
@@ -682,7 +694,7 @@ These are the sizes in `infra/envs/demo/main.tf`, which the weekly runs use. The
 - target peaked at about 1 vCPU and 3.7 GB, because pandas runs mostly on one core, so its override was unneeded headroom;
 - training used all 16 vCPU at 100% and peaked at about 20 GB, because each `n_jobs` worker holds a copy of the data. The override cut the run from an expected 35 minutes at 4 vCPU to about 10 minutes.
 
-### B.2 SQS settings (Section 5.2)
+### B.2 SQS and retry settings (Section 5.2)
 
 | Setting | Value |
 | --- | --- |
@@ -691,6 +703,10 @@ These are the sizes in `infra/envs/demo/main.tf`, which the weekly runs use. The
 | Visibility timeout | 300 seconds |
 | Retention | 4 days on the queues, 14 days on the DLQs |
 | Encryption | SSE with SQS-managed keys |
+| Spot steps | `spot_steps` in `infra/envs/demo/main.tf`: all six `retrain` steps |
+| Spot state | Capacity provider `FARGATE_SPOT`; retried on `States.TaskFailed` after 600 seconds, at most 2 times |
+| Fallback | `Catch` on `States.ALL`, then `<step>-wait` (600 seconds), then `<step>-on-demand` with launch type `FARGATE`, retried once after 600 seconds |
+| Steps not in `spot_steps` | Launch type `FARGATE` only; retried after 600 seconds, at most 3 times |
 
 ### B.3 Data bucket prefixes (Section 5.3)
 
