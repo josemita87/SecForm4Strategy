@@ -310,7 +310,7 @@ The first full load is the same state machine, started once by hand:
 {"overrides": {"master-index": {"MODE": "historical", "YEARS": "5"}, "scraper": {"SEC_MAX_RATE": "8"}, "kafka-to-store": {"BUFFER_SIZE": "10000"}}}
 ```
 
-**Throughput.** The scraper downloads up to 12 filings at once (`FETCH_WORKERS=12`) and runs at 6 to 7.8 filings per second. kafka-to-store upserts one batch of `BUFFER_SIZE` rows per Iceberg commit. A 10,000-row batch takes about 25 seconds at 2 vCPU, most of it in the upsert (Section 8.2). One year holds about 250,000 Form 4 filings. The 5-year backfill (`backfill-5y`, started 2026-11-20) covers about 1.06 million filings.
+**Throughput.** The scraper downloads up to 12 filings at once (`FETCH_WORKERS=12`) and runs at 6 to 7.8 filings per second. kafka-to-store upserts one batch of `BUFFER_SIZE` rows per Iceberg commit. A 10,000-row batch takes about 25 seconds at 2 vCPU, and a 30,000-row batch about 75 seconds: about 400 rows per second either way (Section 8.2). One year holds about 250,000 Form 4 filings. The 5-year backfill (`backfill-5y`, started 2026-11-20) covers about 1.06 million filings.
 
 **Revision pinning.** A `retrain` run names exact task-definition revisions, for example `secform4strategy-kafka-to-store:3`, and keeps them until it ends. A new image makes Terraform register a new revision. The task definitions set `skip_destroy = true`, so the old revision stays active and a multi-day run can still start tasks from it. ECR keeps only 5 images per repository, so a service must not get five newer images while a run still has to start it. During a multi-day run, the rule is to push at most four new images of a service whose step has not started. Section 8 describes the backfill failure that led to this rule.
 
@@ -428,7 +428,7 @@ The orchestrators have their own roles:
 
 ![AWS CI/CD](../diagrams/aws-ci-cd.drawio.svg)
 
-*Figure 6: CI/CD. Three GitHub Actions workflows authenticate to AWS through OIDC. Each IAM role trusts one exact GitHub subject: master for image pushes, pull requests for read-only plans, and the approval-gated environment `aws` for applies.*
+*Figure 6: CI/CD. Three GitHub Actions workflows authenticate to AWS through OIDC. Master pushes images; pull requests get read-only plans; the approval-gated environment `aws` applies. The figure shows the deploy before it became two-stage: the plan role now also plans each master push, and the apply applies that saved, encrypted plan (see the text below).*
 
 | Workflow | Trigger | Does |
 | --- | --- | --- |
@@ -741,18 +741,19 @@ The 5-year results in Section 7 are **[5-year results: to be filled after the Su
 | --- | --- |
 | kafka-to-store, one 10,000-row batch at 0.5 vCPU | About 40 seconds |
 | kafka-to-store, one 10,000-row batch at 2 vCPU | About 25 seconds |
+| kafka-to-store, one 30,000-row batch at 2 vCPU | About 75 seconds |
 | Size of the Iceberg warehouse | About 430 MB |
 
-Most of a kafka-to-store batch is the Iceberg upsert, not SQS. The upsert matches the batch's keys against the whole `BT4` table, so each batch scans the table once, and the scan grows with the table. Four times the CPU cut the batch time from about 40 to about 25 seconds.
+Most of a kafka-to-store batch is spent after SQS: parallel receive and delete calls did not change the rate much. Four times the CPU cut a 10,000-row batch from about 40 to about 25 seconds, because the task went from half a core to a full core. Three times the batch took three times as long, so the cost is per row: the pandas cleaning in `store()` and the merge inside pyiceberg's upsert, which run on one core. Which of the two dominates is not yet measured.
 
-More kafka-to-store tasks would not help. Two writers to one Iceberg table conflict at commit: pyiceberg uses optimistic concurrency, so the second commit fails and must retry against the new snapshot. Bigger batches are the lever, because each batch pays the table scan once.
+More kafka-to-store tasks would not help either. Two writers to one Iceberg table conflict at commit: pyiceberg uses optimistic concurrency, so the second commit fails and redoes its whole upsert against the new snapshot. Bigger batches do not help, because the cost is per row. The next step is to profile one batch, then make the per-row work cheaper, for example with an append-then-deduplicate write for full loads.
 
 ### 8.3 Lessons
 
 1. **A pinned revision depends on its image.** `skip_destroy` keeps old task-definition revisions active, but ECR can still delete their images. Each ECR repository now keeps 5 images. During a multi-day run, push at most four new images of a service whose step has not started.
 2. **A retry needs the same image as the first attempt.** The scraper's non-zero exit and the Step Functions retry worked as designed. The retry failed for a reason outside the code: a missing image.
 3. **Incremental steps make a failed run recoverable.** Upserts by deterministic key let the remaining steps run by hand, with no work repeated and no duplicate rows.
-4. **Measure before scaling.** The batch times showed that kafka-to-store was CPU-bound at 0.5 vCPU and that the upsert, not SQS, took most of the time. They pointed to bigger batches and more CPU per task, not more tasks. The cluster now has Container Insights, so CloudWatch shows each task's CPU and memory use.
+4. **Measure before scaling.** The batch times showed that kafka-to-store was CPU-bound at 0.5 vCPU and that the upsert, not SQS, took most of the time. They showed that one full core helps, while more tasks, more cores and bigger batches do not, and that the next step is profiling, not more guesses. The cluster now has Container Insights, so CloudWatch shows each task's CPU and memory use.
 
 Section 10.2 lists the follow-ups: an append-then-deduplicate write for full loads, Iceberg maintenance, and a Spot design with an On-Demand fallback.
 
@@ -779,7 +780,7 @@ Section 10.2 lists the follow-ups: an append-then-deduplicate write for full loa
 | ECR keeps 5 images per repository | Keep 2 images, to save storage | A pinned revision of a running run needs its image. With 2 images, the 5-year backfill lost the scraper's image and failed (Section 8). |
 | Promotion gate; training saves every model, and only `promote` changes the live model | Each training run replaces the live model | A truncated dataset or a changed feature contract would otherwise reach inference at once. The gate checks rows, the feature contract and a sane holdout. `scripts/promote_model.sh` promotes or rolls back by hand. |
 | No MAE comparison in the gate | Promote only a model with a lower holdout MAE | Each model holds out the latest 20% of its own rows, so two models are scored on different periods. |
-| Bigger kafka-to-store batches | Several kafka-to-store tasks in parallel | Parallel writers to one Iceberg table conflict at commit. Each batch scans the table once, so bigger batches cut that cost (Section 8.2). |
+| One kafka-to-store task with one full core | Several kafka-to-store tasks in parallel | Parallel writers to one Iceberg table conflict at commit. The cost is per row on one core, so bigger batches do not help either (Section 8.2). |
 | OIDC roles for CI | An IAM user with keys stored in GitHub | A stored key lives until rotated. OIDC credentials are temporary and bound to one repository and trigger. |
 | Two-stage deploy: a saved plan, then an approved apply of exactly that plan | `terraform apply -auto-approve` after the plan | The reviewer approves the changes that are applied, not a fresh plan made after the approval. |
 | Saved plan encrypted with `TFPLAN_KEY` before upload | Upload the plan file as it is | The plan holds sensitive values in plain text, and the artifacts of a public repository are public. |

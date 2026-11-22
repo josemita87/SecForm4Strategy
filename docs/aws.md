@@ -112,7 +112,7 @@ A run started by hand for a test sets `PROMOTE=never` for training. Training the
 | Step | Measured rate | Setting that sets it |
 | --- | --- | --- |
 | scraper | 6 to 7.8 filings per second | `SEC_MAX_RATE`, `FETCH_WORKERS=12`, `BUFFER_SIZE=200`, `RETRY_PAUSE=5` |
-| kafka-to-store | About 40 seconds per 10,000-row batch at 0.5 vCPU, about 25 seconds at 2 vCPU | `BUFFER_SIZE` (one Iceberg upsert and commit per batch), the task's CPU |
+| kafka-to-store | About 40 seconds per 10,000-row batch at 0.5 vCPU, about 25 seconds at 2 vCPU; about 75 seconds per 30,000 rows, so about 400 rows per second whatever the batch size | The task's CPU up to one core; the per-row cleaning and upsert work runs on one core, so bigger batches do not raise the rate |
 
 Most of kafka-to-store's batch time is the Iceberg upsert, not SQS. The upsert matches the batch's keys against the whole `BT4` table, so it slows as the table grows. Two writers to one Iceberg table conflict at commit: pyiceberg uses optimistic concurrency, so the second commit fails and retries. More kafka-to-store tasks therefore do not speed up the load. A larger `BUFFER_SIZE` does, because each batch pays the table scan once.
 
