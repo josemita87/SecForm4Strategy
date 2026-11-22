@@ -10,7 +10,7 @@ from typing import Any
 import joblib
 from pydantic import TypeAdapter
 
-from secform4strategy_clients.ports import ModelMetadata
+from secform4strategy_clients.records import ModelMetadata
 
 METADATA = TypeAdapter(ModelMetadata)
 

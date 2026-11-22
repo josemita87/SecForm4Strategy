@@ -10,7 +10,7 @@ import logging
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from secform4strategy_clients.ports import Message
+from secform4strategy_clients.records import Message
 
 logger = logging.getLogger(__name__)
 

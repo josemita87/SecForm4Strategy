@@ -30,7 +30,7 @@ module "storage" {
   alert_email        = var.alert_email
   services = [
     "master-index", "scraper", "kafka-to-store",
-    "yahoo-connect", "target", "training", "inference"
+    "yahoo-connect", "target", "training", "inference", "site-publisher"
   ]
 }
 
@@ -80,7 +80,8 @@ module "iam" {
     kafka-to-store = { receives = ["live-transactions"], sends = ["live-tickers"], capabilities = ["lakehouse-write"] }
     yahoo-connect  = { capabilities = ["lakehouse-write"] }
     target         = { capabilities = ["lakehouse-write"] }
-    inference      = { capabilities = ["lakehouse-read", "models-read", "read-secrets"] }
+    inference      = { capabilities = ["lakehouse-read", "models-read", "read-alpaca-keys"] }
+    site-publisher = { capabilities = ["lakehouse-read", "models-read", "read-alpaca-keys"] }
   }
 }
 
@@ -201,7 +202,8 @@ output "retrain" {
 locals {
   inference_run = { SYSTEM_INFERENCE = "true", FILTER_KEY = "acquired_disposed", ACQUIRED_DISPOSED = "D" }
   # Lambda cannot inject SSM parameters; SsmSettings reads the ones SSM_PARAMETERS names at cold start
-  sec_secrets = { SSM_PARAMETERS = jsonencode({ sec_user_agent = "/secform4strategy/sec-user-agent" }) }
+  sec_secrets    = { SSM_PARAMETERS = jsonencode({ sec_user_agent = "/secform4strategy/sec-user-agent" }) }
+  alpaca_secrets = jsonencode({ alpaca_api_key = "/secform4strategy/alpaca-api-key", alpaca_api_secret = "/secform4strategy/alpaca-api-secret" })
 }
 
 module "live" {
@@ -270,7 +272,7 @@ module "live" {
       timeout   = 180
       environment = merge(local.lakehouse, local.models, {
         ALPACA_BASE_URL = "https://paper-api.alpaca.markets", QTY = "1", PREDICTION_THRESHOLD = local.prediction_threshold
-        SSM_PARAMETERS  = jsonencode({ alpaca_api_key = "/secform4strategy/alpaca-api-key", alpaca_api_secret = "/secform4strategy/alpaca-api-secret" })
+        SSM_PARAMETERS  = local.alpaca_secrets
       })
     }
   }
@@ -298,4 +300,27 @@ module "dashboard" {
 
 output "dashboard" {
   value = module.dashboard
+}
+
+module "site" {
+  source                       = "../../modules/site"
+  site_directory               = "${path.root}/../../../site"
+  name                         = "secform4strategy"
+  publisher_enabled            = var.site_publisher_enabled
+  schedule_enabled             = var.switched_on
+  publisher_role_name          = module.iam.lambda_role_names["site-publisher"]
+  publisher_role_arn           = module.iam.lambda_role_arns["site-publisher"]
+  live_score_state_machine_arn = module.live.score_state_machine_arn
+  retrain_state_machine_arn    = module.retrain.state_machine_arn
+  poller_schedule_name         = module.live.poller_schedule_name
+  retrain_schedule_name        = module.retrain.schedule_name
+  queue_arns                   = concat([for queue in module.queues.queues : queue.arn], values(module.queues.dead_letter_queues))
+  publisher_environment = merge(local.lakehouse, local.models, {
+    ALPACA_BASE_URL = "https://paper-api.alpaca.markets", PREDICTION_THRESHOLD = local.prediction_threshold
+    SSM_PARAMETERS  = local.alpaca_secrets
+  })
+}
+
+output "site" {
+  value = module.site
 }

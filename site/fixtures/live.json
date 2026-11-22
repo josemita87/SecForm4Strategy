@@ -1,0 +1,303 @@
+{
+  "generated_at": "2026-11-23T15:02:11Z",
+  "prediction_threshold": -0.05,
+  "poller_enabled": true,
+  "runs": [
+    {
+      "id": "live-7c1e2b0a-nvda",
+      "status": "RUNNING",
+      "started_at": "2026-11-23T15:01:52Z",
+      "stopped_at": null,
+      "tickers": [
+        "NVDA"
+      ],
+      "steps": [
+        {
+          "name": "yahoo-connect",
+          "started_at": "2026-11-23T15:01:52Z",
+          "stopped_at": "2026-11-23T15:02:01Z",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "target",
+          "started_at": "2026-11-23T15:02:01Z",
+          "stopped_at": null,
+          "status": "RUNNING"
+        }
+      ],
+      "error": null,
+      "filings": []
+    },
+    {
+      "id": "live-5a9d33f1-dbx-tgt",
+      "status": "SUCCEEDED",
+      "started_at": "2026-11-23T14:58:20Z",
+      "stopped_at": "2026-11-23T14:58:52Z",
+      "tickers": [
+        "DBX",
+        "TGT"
+      ],
+      "steps": [
+        {
+          "name": "yahoo-connect",
+          "started_at": "2026-11-23T14:58:20Z",
+          "stopped_at": "2026-11-23T14:58:31Z",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "target",
+          "started_at": "2026-11-23T14:58:31Z",
+          "stopped_at": "2026-11-23T14:58:44Z",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "inference",
+          "started_at": "2026-11-23T14:58:44Z",
+          "stopped_at": "2026-11-23T14:58:52Z",
+          "status": "SUCCEEDED"
+        }
+      ],
+      "error": null,
+      "filings": [
+        {
+          "key": "DBX@2026-11-23T14:57Z",
+          "ticker": "DBX",
+          "accepted_at": "2026-11-23T14:57:31Z",
+          "prediction": -0.0712,
+          "shorted": true,
+          "order": {
+            "id": "6f1c2a9e-0d1b-4c55-9a51-1b7f3e2a8c10",
+            "status": "filled",
+            "filled_avg_price": 27.1
+          }
+        },
+        {
+          "key": "TGT@2026-11-23T14:57Z",
+          "ticker": "TGT",
+          "accepted_at": "2026-11-23T14:57:02Z",
+          "prediction": -0.0118,
+          "shorted": false,
+          "order": null
+        }
+      ]
+    },
+    {
+      "id": "live-33b2e8c4-pltr",
+      "status": "SUCCEEDED",
+      "started_at": "2026-11-23T14:41:07Z",
+      "stopped_at": "2026-11-23T14:41:30Z",
+      "tickers": [
+        "PLTR"
+      ],
+      "steps": [
+        {
+          "name": "yahoo-connect",
+          "started_at": "2026-11-23T14:41:07Z",
+          "stopped_at": "2026-11-23T14:41:14Z",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "target",
+          "started_at": "2026-11-23T14:41:14Z",
+          "stopped_at": "2026-11-23T14:41:24Z",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "inference",
+          "started_at": "2026-11-23T14:41:24Z",
+          "stopped_at": "2026-11-23T14:41:30Z",
+          "status": "SUCCEEDED"
+        }
+      ],
+      "error": null,
+      "filings": []
+    },
+    {
+      "id": "live-91f0aa27-snow",
+      "status": "FAILED",
+      "started_at": "2026-11-23T14:20:44Z",
+      "stopped_at": "2026-11-23T14:21:26Z",
+      "tickers": [
+        "SNOW"
+      ],
+      "steps": [
+        {
+          "name": "yahoo-connect",
+          "started_at": "2026-11-23T14:20:44Z",
+          "stopped_at": "2026-11-23T14:21:26Z",
+          "status": "FAILED"
+        }
+      ],
+      "error": "yahoo-connect: YFRateLimitError: Too Many Requests. Rate limited. Try after a while.",
+      "filings": []
+    },
+    {
+      "id": "live-0d4c7e55-crwd",
+      "status": "SUCCEEDED",
+      "started_at": "2026-11-23T13:52:18Z",
+      "stopped_at": "2026-11-23T13:53:21Z",
+      "tickers": [
+        "CRWD"
+      ],
+      "steps": [
+        {
+          "name": "yahoo-connect",
+          "started_at": "2026-11-23T13:52:18Z",
+          "stopped_at": "2026-11-23T13:52:57Z",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "target",
+          "started_at": "2026-11-23T13:52:57Z",
+          "stopped_at": "2026-11-23T13:53:12Z",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "inference",
+          "started_at": "2026-11-23T13:53:12Z",
+          "stopped_at": "2026-11-23T13:53:21Z",
+          "status": "SUCCEEDED"
+        }
+      ],
+      "error": null,
+      "filings": [
+        {
+          "key": "CRWD@2026-11-23T13:50Z",
+          "ticker": "CRWD",
+          "accepted_at": "2026-11-23T13:50:49Z",
+          "prediction": -0.0634,
+          "shorted": true,
+          "order": {
+            "id": "2b9e4f10-7a3c-4f0e-8d2a-55c1e0b7a941",
+            "status": "filled",
+            "filled_avg_price": 338.42
+          }
+        }
+      ]
+    },
+    {
+      "id": "live-77aa1c09-abnb-mdb",
+      "status": "SUCCEEDED",
+      "started_at": "2026-11-23T13:30:05Z",
+      "stopped_at": "2026-11-23T13:30:38Z",
+      "tickers": [
+        "ABNB",
+        "MDB"
+      ],
+      "steps": [
+        {
+          "name": "yahoo-connect",
+          "started_at": "2026-11-23T13:30:05Z",
+          "stopped_at": "2026-11-23T13:30:17Z",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "target",
+          "started_at": "2026-11-23T13:30:17Z",
+          "stopped_at": "2026-11-23T13:30:31Z",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "inference",
+          "started_at": "2026-11-23T13:30:31Z",
+          "stopped_at": "2026-11-23T13:30:38Z",
+          "status": "SUCCEEDED"
+        }
+      ],
+      "error": null,
+      "filings": [
+        {
+          "key": "ABNB@2026-11-23T13:29Z",
+          "ticker": "ABNB",
+          "accepted_at": "2026-11-23T13:29:12Z",
+          "prediction": 0.0183,
+          "shorted": false,
+          "order": null
+        },
+        {
+          "key": "MDB@2026-11-23T13:28Z",
+          "ticker": "MDB",
+          "accepted_at": "2026-11-23T13:28:40Z",
+          "prediction": -0.0341,
+          "shorted": false,
+          "order": null
+        }
+      ]
+    },
+    {
+      "id": "live-4e2f6b13-hood",
+      "status": "SUCCEEDED",
+      "started_at": "2026-11-23T12:47:33Z",
+      "stopped_at": "2026-11-23T12:48:02Z",
+      "tickers": [
+        "HOOD"
+      ],
+      "steps": [
+        {
+          "name": "yahoo-connect",
+          "started_at": "2026-11-23T12:47:33Z",
+          "stopped_at": "2026-11-23T12:47:43Z",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "target",
+          "started_at": "2026-11-23T12:47:43Z",
+          "stopped_at": "2026-11-23T12:47:55Z",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "inference",
+          "started_at": "2026-11-23T12:47:55Z",
+          "stopped_at": "2026-11-23T12:48:02Z",
+          "status": "SUCCEEDED"
+        }
+      ],
+      "error": null,
+      "filings": []
+    },
+    {
+      "id": "live-c8d1f2e0-ddog",
+      "status": "SUCCEEDED",
+      "started_at": "2026-11-23T11:15:41Z",
+      "stopped_at": "2026-11-23T11:16:42Z",
+      "tickers": [
+        "DDOG"
+      ],
+      "steps": [
+        {
+          "name": "yahoo-connect",
+          "started_at": "2026-11-23T11:15:41Z",
+          "stopped_at": "2026-11-23T11:16:16Z",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "target",
+          "started_at": "2026-11-23T11:16:16Z",
+          "stopped_at": "2026-11-23T11:16:32Z",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "inference",
+          "started_at": "2026-11-23T11:16:32Z",
+          "stopped_at": "2026-11-23T11:16:42Z",
+          "status": "SUCCEEDED"
+        }
+      ],
+      "error": null,
+      "filings": [
+        {
+          "key": "DDOG@2026-11-23T11:14Z",
+          "ticker": "DDOG",
+          "accepted_at": "2026-11-23T11:14:20Z",
+          "prediction": -0.0527,
+          "shorted": true,
+          "order": {
+            "id": "9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+            "status": "filled",
+            "filled_avg_price": 131.66
+          }
+        }
+      ]
+    }
+  ]
+}

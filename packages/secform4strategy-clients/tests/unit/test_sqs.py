@@ -8,8 +8,9 @@ import json
 from collections.abc import Iterator
 
 import pytest
-from botocore.stub import Stubber
-from secform4strategy_clients.ports import Message, PermanentError, RetryableError
+from botocore.stub import ANY, Stubber
+from secform4strategy_clients.ports import PermanentError, RetryableError
+from secform4strategy_clients.records import Message, QueueDepth
 from secform4strategy_clients.sqs import SqsQueue, SqsReceipt
 
 URL = 'https://sqs.us-east-1.amazonaws.com/100118195151/tmi'
@@ -142,3 +143,18 @@ class TestLookup:
         )
         with pytest.raises(PermanentError, match='NonExistentQueue'):
             sqs.send('tmi', [('k', {'n': 1})])
+
+
+class TestDepths:
+    """Queues are listed by prefix and reported by name."""
+
+    def test_queue_depths_by_name(self, queue: tuple[SqsQueue, Stubber]) -> None:
+        sqs, stubber = queue
+        url = 'https://sqs.us-east-1.amazonaws.com/1/secform4strategy-filings'
+        stubber.add_response('list_queues', {'QueueUrls': [url]}, {'QueueNamePrefix': 'secform4strategy-'})
+        stubber.add_response(
+            'get_queue_attributes',
+            {'Attributes': {'ApproximateNumberOfMessages': '5', 'ApproximateNumberOfMessagesNotVisible': '2'}},
+            {'QueueUrl': url, 'AttributeNames': ANY},
+        )
+        assert sqs.depths('secform4strategy-') == {'secform4strategy-filings': QueueDepth(5, 2)}

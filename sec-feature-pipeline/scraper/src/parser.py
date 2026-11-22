@@ -17,7 +17,8 @@ from transaction import Trade
 
 if TYPE_CHECKING:
     from form4 import OwnershipDocument, Position, Transaction
-    from secform4strategy_clients.ports import Filing, Filings
+    from secform4strategy_clients.ports import Filings
+    from secform4strategy_clients.records import Filing
 
 logger = logging.getLogger(__name__)
 

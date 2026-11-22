@@ -80,6 +80,21 @@ resource "aws_iam_role_policy" "plan" {
   policy = data.aws_iam_policy_document.state_lock.json
 }
 
+# PR branches can assume the plan role, and the key-value store holds the site password hash
+data "aws_iam_policy_document" "deny_site_keys" {
+  statement {
+    effect    = "Deny"
+    actions   = ["cloudfront-keyvaluestore:GetKey", "cloudfront-keyvaluestore:ListKeys"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "plan_deny_site_keys" {
+  name   = "deny-site-keys"
+  role   = aws_iam_role.github["plan"].id
+  policy = data.aws_iam_policy_document.deny_site_keys.json
+}
+
 resource "aws_iam_role_policy_attachment" "apply" {
   role       = aws_iam_role.github["apply"].name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"

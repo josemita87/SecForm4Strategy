@@ -16,7 +16,7 @@ The training service (`training/src/main.py`) fits a `HistGradientBoostingRegres
 
 - `model_params`: the fixed regressor parameters, `max_iter=500`, `early_stopping=true` and `validation_fraction=0.1`.
 - `param_grid`: the parameters the grid search tries on top of `model_params`.
-- `report_thresholds`: the thresholds at which training logs the holdout short return.
+- `report_thresholds`: the thresholds at which training logs the holdout short return. Training saves them in the model metadata, and the site's `model.json` reports the holdout at the same thresholds.
 
 ## Splits
 
@@ -92,7 +92,7 @@ Training logs:
 - the holdout scores of the model and each baseline;
 - the model's holdout short return at each threshold.
 
-`model.meta.json` saves the `ModelMetadata` record (`secform4strategy_clients.ports`), with these fields among the others:
+`model.meta.json` saves the `ModelMetadata` record (`secform4strategy_clients.records`), with these fields among the others:
 
 | Field | Content |
 | --- | --- |
@@ -101,6 +101,7 @@ Training logs:
 | `validation_mae` | The best combination's validation MAE per fold |
 | `validation_zero_mae` | The zero baseline's MAE per fold |
 | `prediction_threshold` | The threshold used to score the holdout |
+| `report_thresholds` | The `report_thresholds` of `spec.yaml`; empty in models saved before training recorded them |
 | `metrics` | The holdout scores of the model and its baselines |
 
 [configuration.md](configuration.md) lists the rest of the record.

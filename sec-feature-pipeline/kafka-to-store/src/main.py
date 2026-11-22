@@ -18,7 +18,8 @@ from secform4strategy_clients.ports import RetryableError
 from secform4strategy_clients.sqs import SqsQueue
 
 if TYPE_CHECKING:
-    from secform4strategy_clients.ports import FeatureStore, Message, MessageQueue
+    from secform4strategy_clients.ports import FeatureStore, MessageQueue
+    from secform4strategy_clients.records import Message
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(

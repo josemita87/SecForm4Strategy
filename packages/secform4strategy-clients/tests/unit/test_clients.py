@@ -9,12 +9,13 @@ clients carry no domain logic of their own.
 import importlib
 import sys
 import types
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pandas as pd
 import pytest
 from pydantic import SecretStr
 from secform4strategy_clients.ports import PermanentError, RetryableError
+from secform4strategy_clients.records import BrokerAccount, BrokerOrder, BrokerPosition, EquityPoint
 
 
 def _fresh(monkeypatch, module):
@@ -30,9 +31,59 @@ class _FakeAPIError(Exception):
         self.status_code = status_code
 
 
+class _FakeModel(types.SimpleNamespace):
+    """An alpaca-py response model: its fields as attributes."""
+
+
+class _FakeTradeAccount(_FakeModel): ...
+
+
+class _FakePosition(_FakeModel): ...
+
+
+class _FakeOrder(_FakeModel): ...
+
+
+class _FakePortfolioHistory(_FakeModel): ...
+
+
+#: What the fake account reads return: one account, position, order and equity history.
+_READS = {
+    'account': _FakeTradeAccount(
+        equity='1000.5', cash=None, buying_power='2000', status=types.SimpleNamespace(value='ACTIVE')
+    ),
+    'positions': [
+        _FakePosition(
+            symbol='AAPL',
+            qty='-3',
+            avg_entry_price='200',
+            current_price='190',
+            market_value=None,
+            unrealized_pl='30',
+            unrealized_plpc='0.05',
+        ),
+        {'raw': 'skipped'},
+    ],
+    'orders': [
+        _FakeOrder(
+            id='o1',
+            client_order_id='AAPL@k',
+            symbol='AAPL',
+            side=types.SimpleNamespace(value='sell'),
+            qty='3',
+            status=types.SimpleNamespace(value='filled'),
+            submitted_at=None,
+            filled_at=None,
+            filled_avg_price='200',
+        )
+    ],
+    'history': _FakePortfolioHistory(timestamp=[1763650800, 1763737200], equity=[1000.0, None]),
+}
+
+
 def _install_fake_alpaca(monkeypatch, outcomes):
     """Install a fake alpaca-py whose ``submit_order`` returns or raises each outcome in turn."""
-    calls = {'client': {}, 'orders': []}
+    calls = {'client': {}, 'orders': [], 'reads': []}
 
     class _FakeTradingClient:
         def __init__(self, api_key, secret_key, paper, url_override):
@@ -44,6 +95,20 @@ def _install_fake_alpaca(monkeypatch, outcomes):
                 raise outcome
             return outcome
 
+        def get_account(self):
+            return _READS['account']
+
+        def get_all_positions(self):
+            return _READS['positions']
+
+        def get_orders(self, request):
+            calls['reads'].append(request)
+            return _READS['orders']
+
+        def get_portfolio_history(self, request):
+            calls['reads'].append(request)
+            return _READS['history']
+
     def _module(name, **attrs):
         module = types.ModuleType(name)
         module.__dict__.update(attrs)
@@ -54,8 +119,26 @@ def _install_fake_alpaca(monkeypatch, outcomes):
     _module('alpaca.common.exceptions', APIError=_FakeAPIError)
     _module('alpaca.trading')
     _module('alpaca.trading.client', TradingClient=_FakeTradingClient)
-    _module('alpaca.trading.enums', OrderSide=str, OrderType=str, TimeInForce=str)
-    _module('alpaca.trading.requests', OrderRequest=types.SimpleNamespace)
+    _module(
+        'alpaca.trading.enums',
+        OrderSide=str,
+        OrderType=str,
+        TimeInForce=str,
+        QueryOrderStatus=types.SimpleNamespace(ALL='all'),
+    )
+    _module(
+        'alpaca.trading.models',
+        Order=_FakeOrder,
+        PortfolioHistory=_FakePortfolioHistory,
+        Position=_FakePosition,
+        TradeAccount=_FakeTradeAccount,
+    )
+    _module(
+        'alpaca.trading.requests',
+        OrderRequest=types.SimpleNamespace,
+        GetOrdersRequest=types.SimpleNamespace,
+        GetPortfolioHistoryRequest=types.SimpleNamespace,
+    )
     return calls
 
 
@@ -115,6 +198,19 @@ def test_alpaca_rejection_is_permanent(monkeypatch):
     with pytest.raises(PermanentError, match='403'):
         client.place_order('AAPL', 1, 'sell', 'market', 'gtc', 'k')
     assert len(calls['orders']) == 1
+
+
+def test_alpaca_reads_parse_the_account(monkeypatch):
+    client, calls = _alpaca(monkeypatch, [])
+    assert client.paper is True
+    assert client.account() == BrokerAccount(1000.5, 0.0, 2000.0, 'ACTIVE')
+    assert client.positions() == (BrokerPosition('AAPL', -3.0, 200.0, 190.0, None, 30.0, 0.05),)
+    assert client.orders(50) == (BrokerOrder('o1', 'AAPL@k', 'AAPL', 'sell', 3.0, 'filled', None, None, 200.0),)
+    assert client.equity_history('1M', '1D') == (EquityPoint(datetime.fromtimestamp(1763650800, UTC), 1000.0),)
+    assert [vars(request) for request in calls['reads']] == [
+        {'status': 'all', 'limit': 50},
+        {'period': '1M', 'timeframe': '1D'},
+    ]
 
 
 # --- KafkaClient ---

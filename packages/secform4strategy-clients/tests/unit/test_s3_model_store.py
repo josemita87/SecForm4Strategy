@@ -14,7 +14,8 @@ import pytest
 from botocore.response import StreamingBody
 from botocore.stub import ANY, Stubber
 from secform4strategy_clients.model_store import METADATA
-from secform4strategy_clients.ports import ModelMetadata, PermanentError, RetryableError, Scores
+from secform4strategy_clients.ports import PermanentError, RetryableError
+from secform4strategy_clients.records import ModelMetadata, Scores
 from secform4strategy_clients.s3_model_store import S3ModelStore
 
 METADATA_RECORD = ModelMetadata(
@@ -88,3 +89,28 @@ class TestLoad:
         stubber.add_client_error('get_object', service_error_code='InternalError', http_status_code=500)
         with pytest.raises(RetryableError, match=r'latest\.json'):
             s3.load()
+
+
+class TestModelFiles:
+    """The pointer and the metadata are read without the model."""
+
+    def test_the_pointer_names_the_version(self, store: tuple[S3ModelStore, Stubber]) -> None:
+        s3, stubber = store
+        stored(stubber, 'models/latest.json', b'{"version": "20261120T210617Z"}')
+        assert s3.latest_version() == '20261120T210617Z'
+
+    def test_no_pointer_is_no_version(self, store: tuple[S3ModelStore, Stubber]) -> None:
+        s3, stubber = store
+        stubber.add_client_error('get_object', service_error_code='NoSuchKey', http_status_code=404)
+        assert s3.latest_version() is None
+
+    def test_a_denied_pointer_is_permanent(self, store: tuple[S3ModelStore, Stubber]) -> None:
+        s3, stubber = store
+        stubber.add_client_error('get_object', service_error_code='AccessDenied', http_status_code=403)
+        with pytest.raises(PermanentError, match='AccessDenied'):
+            s3.latest_version()
+
+    def test_metadata_is_validated(self, store: tuple[S3ModelStore, Stubber]) -> None:
+        s3, stubber = store
+        stored(stubber, 'models/v1/model.meta.json', METADATA.dump_json(METADATA_RECORD))
+        assert s3.metadata('v1') == METADATA_RECORD

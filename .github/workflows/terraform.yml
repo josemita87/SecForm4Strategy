@@ -4,10 +4,10 @@ name: terraform
 # Run it by hand on master to deploy images pushed since the last apply.
 on:
   pull_request:
-    paths: [infra/envs/**, infra/modules/**, .github/workflows/terraform.yml]
+    paths: [infra/envs/**, infra/modules/**, site/**, .github/workflows/terraform.yml]
   push:
     branches: [master]
-    paths: [infra/envs/**, infra/modules/**, .github/workflows/terraform.yml]
+    paths: [infra/envs/**, infra/modules/**, site/**, .github/workflows/terraform.yml]
   workflow_dispatch:
 
 permissions:

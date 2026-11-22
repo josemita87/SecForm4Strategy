@@ -17,7 +17,8 @@ from secform4strategy_clients.ports import PermanentError, RetryableError
 from secform4strategy_clients.sqs import SqsQueue
 
 if TYPE_CHECKING:
-    from secform4strategy_clients.ports import Filing, Filings, MessageQueue, SeenKeys
+    from secform4strategy_clients.ports import Filings, MessageQueue, SeenKeys
+    from secform4strategy_clients.records import Filing
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(

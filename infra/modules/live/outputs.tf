@@ -12,3 +12,8 @@ output "score_state_machine_arn" {
   description = "State machine scoring and trading the tickers of new filings."
   value       = aws_sfn_state_machine.score.arn
 }
+
+output "poller_schedule_name" {
+  description = "The schedule that invokes the poller every minute."
+  value       = aws_scheduler_schedule.poll.name
+}

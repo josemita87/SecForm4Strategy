@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING
 from secform4strategy_clients.ports import PermanentError
 
 if TYPE_CHECKING:
-    from secform4strategy_clients.ports import Filing, Filings
+    from secform4strategy_clients.ports import Filings
+    from secform4strategy_clients.records import Filing
 
 
 @dataclass(frozen=True)

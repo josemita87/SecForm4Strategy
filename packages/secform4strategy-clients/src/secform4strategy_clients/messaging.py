@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from confluent_kafka import KafkaException, TopicPartition
 from quixstreams import Application
 
-from secform4strategy_clients.ports import Message
+from secform4strategy_clients.records import Message
 
 if TYPE_CHECKING:
     from quixstreams.kafka import Consumer

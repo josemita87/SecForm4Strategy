@@ -1,18 +1,33 @@
-"""Ports: the contracts services depend on, and the records, order vocabulary and errors they exchange.
+"""Ports: the contracts services depend on, their order vocabulary and filters, and the errors adapters raise.
 
 Services annotate their dependencies with these Protocols, never with a concrete
 client, so swapping a backend (a local catalog for AWS Glue, local disk for a bucket) is a new
 adapter and no service change. The clients satisfy them structurally. Adapters retry transient
-failures, then raise ``RetryableError`` or ``PermanentError`` (docs/error-handling.md).
+failures, then raise ``RetryableError`` or ``PermanentError`` (docs/error-handling.md). The records
+the ports exchange are in ``records``.
 """
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, Protocol, TypeGuard
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeGuard
 
 if TYPE_CHECKING:
     import pandas as pd
+
+    from secform4strategy_clients.records import (
+        BrokerAccount,
+        BrokerOrder,
+        BrokerPosition,
+        EquityPoint,
+        Execution,
+        ExecutionSummary,
+        Filing,
+        FunctionMetrics,
+        HistoryEvent,
+        Message,
+        ModelMetadata,
+        QueueDepth,
+    )
 
 #: Read filter: column -> required value; an iterable (non-string) value means "any of".
 Filters = Mapping[str, object]
@@ -29,58 +44,6 @@ class RetryableError(Exception):
 
 class PermanentError(Exception):
     """The operation fails however often it is repeated."""
-
-
-class Filing(NamedTuple):
-    """One SEC filing: its accession number, archive path of the full submission, and when it was filed."""
-
-    accession: str
-    file_path: str
-    filed_at: datetime
-
-
-class Message(NamedTuple):
-    """One received message: its decoded JSON body, and the receipt that acknowledges it.
-
-    The receipt is opaque to services; only the client that issued it reads it.
-    """
-
-    body: Mapping[str, Any]
-    receipt: object
-
-
-@dataclass(frozen=True, slots=True)
-class Scores:
-    """How a predictor did on the test set: error, and the mean return captured per short (positive is a profit)."""
-
-    mae: float
-    short_return: float
-    n_shorts: int
-
-
-@dataclass(frozen=True, slots=True)
-class ModelMetadata:
-    """The facts saved with a trained model to reproduce, audit and score with it.
-
-    ``features`` is the column order the model's input arrays follow; ``metrics`` holds the
-    model and its baselines by name, scored on the holdout. The defaulted fields record the
-    walk-forward validation, per fold, and the threshold the shorts were scored at.
-    """
-
-    trained_at: datetime
-    git_sha: str
-    sklearn_version: str
-    feature_group_version: int
-    target: str
-    features: tuple[str, ...]
-    model_params: Mapping[str, bool | int | float | str]
-    train_rows: int
-    test_rows: int
-    test_start: datetime
-    metrics: Mapping[str, Scores]
-    prediction_threshold: float | None = None
-    validation_mae: tuple[float, ...] = ()
-    validation_zero_mae: tuple[float, ...] = ()
 
 
 def is_many(value: object) -> TypeGuard[Iterable[object]]:
@@ -132,6 +95,107 @@ class Broker(Protocol):
         client_order_id: str,
     ) -> object | None:
         """Submit an order; return it, or None if an order with ``client_order_id`` was placed before."""
+        ...
+
+
+class TradingAccount(Protocol):
+    """The broker account: balances, positions, orders and equity history."""
+
+    @property
+    def paper(self) -> bool:
+        """Whether this is a paper-trading account."""
+        ...
+
+    def account(self) -> BrokerAccount:
+        """Return the balances and status."""
+        ...
+
+    def positions(self) -> tuple[BrokerPosition, ...]:
+        """Return the open positions."""
+        ...
+
+    def orders(self, limit: int) -> tuple[BrokerOrder, ...]:
+        """Return up to ``limit`` orders of any status, newest first."""
+        ...
+
+    def equity_history(self, period: str, timeframe: str) -> tuple[EquityPoint, ...]:
+        """Return the equity over ``period`` at ``timeframe`` resolution, oldest first."""
+        ...
+
+
+class RecentRows(Protocol):
+    """Feature-group rows from an event time on, with only the columns asked for."""
+
+    def read_since(self, reference: str, since: datetime, columns: Iterable[str]) -> pd.DataFrame:
+        """Return the rows whose event time is at or after ``since``; none, with ``columns``, for a missing table."""
+        ...
+
+
+class ModelFiles(Protocol):
+    """The model store's pointer and metadata, read without the model itself."""
+
+    def latest_version(self) -> str | None:
+        """Return the version the pointer names, or None when no model was saved."""
+        ...
+
+    def metadata(self, version: str) -> ModelMetadata:
+        """Return a version's metadata."""
+        ...
+
+
+class Site(Protocol):
+    """A static site's data files, by name."""
+
+    def read(self, name: str) -> bytes | None:
+        """Return a data file's content, or None when it does not exist."""
+        ...
+
+    def write(self, name: str, body: bytes) -> None:
+        """Write a data file as JSON the browser must not cache."""
+        ...
+
+
+class Executions(Protocol):
+    """Step Functions executions and their histories."""
+
+    def latest(self, state_machine_arn: str, limit: int) -> tuple[ExecutionSummary, ...]:
+        """Return up to ``limit`` executions, newest first."""
+        ...
+
+    def started_since(self, state_machine_arn: str, since: datetime) -> tuple[ExecutionSummary, ...]:
+        """Return every execution started at or after ``since``, newest first."""
+        ...
+
+    def describe(self, execution_arn: str) -> Execution:
+        """Return an execution with its input, output and error."""
+        ...
+
+    def history(self, execution_arn: str, newest_first: bool, limit: int) -> tuple[HistoryEvent, ...]:
+        """Return up to ``limit`` history events."""
+        ...
+
+
+class Schedules(Protocol):
+    """EventBridge Scheduler schedules."""
+
+    def enabled(self, name: str) -> bool:
+        """Return whether the schedule exists and is enabled."""
+        ...
+
+
+class Queues(Protocol):
+    """Queue depths."""
+
+    def depths(self, prefix: str) -> dict[str, QueueDepth]:
+        """Return each queue whose name starts with ``prefix``, by name."""
+        ...
+
+
+class Metrics(Protocol):
+    """CloudWatch metrics of Lambda functions."""
+
+    def functions(self, names: Iterable[str], since: datetime, until: datetime) -> dict[str, FunctionMetrics]:
+        """Return each function's invocations, errors and p90 duration over the window, by name."""
         ...
 
 

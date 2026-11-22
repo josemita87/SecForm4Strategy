@@ -19,26 +19,38 @@ consuming and producing — not separate consumer/producer classes):
 | Client | Module | Extra | SDK |
 | --- | --- | --- | --- |
 | `IcebergFeatureStore` | `secform4strategy_clients.feature_store` (catalog: `feature_groups`) | `feature-store` | `pyiceberg` |
-| `AlpacaClient` | `secform4strategy_clients.broker` | `broker` | `alpaca-py` |
+| `AlpacaClient` (orders and account reads) | `secform4strategy_clients.broker` | `broker` | `alpaca-py` |
 | `KafkaClient` | `secform4strategy_clients.messaging` | `messaging` | `quixstreams` |
-| `SqsQueue` | `secform4strategy_clients.sqs` | `aws` | `boto3` |
+| `SqsQueue` (messages and queue depths) | `secform4strategy_clients.sqs` | `aws` | `boto3` |
 | `DynamoSeenKeys` | `secform4strategy_clients.dynamodb` | `aws` | `boto3` |
 | `SsmSettings` (settings base reading SSM parameters on Lambda) | `secform4strategy_clients.ssm_settings` | `aws` | `boto3`, `pydantic-settings` |
 | `EdgarClient` | `secform4strategy_clients.edgar` | `edgar` | `httpx` |
 | `MarketDataClient` | `secform4strategy_clients.market_data` | `market-data` | `yfinance` |
 | `LocalModelStore` | `secform4strategy_clients.model_store` | `model-store` | `joblib` |
 | `S3ModelStore` | `secform4strategy_clients.s3_model_store` | `model-store`, `aws` | `joblib`, `boto3` |
+| `StepFunctions` | `secform4strategy_clients.stepfunctions` | `stepfunctions` | `boto3` |
+| `Scheduler` | `secform4strategy_clients.scheduler` | `scheduler` | `boto3` |
+| `CloudWatchMetrics` | `secform4strategy_clients.cloudwatch` | `cloudwatch` | `boto3` |
+| `S3Site` (a static site's JSON data files) | `secform4strategy_clients.s3_site` | `s3-site` | `boto3` |
+
+The site publisher is the only service that uses `StepFunctions`, `Scheduler`, `CloudWatchMetrics`, `S3Site` and the read methods of `AlpacaClient`, `SqsQueue`, `S3ModelStore` and `IcebergFeatureStore`.
 
 ## Ports
 
 `secform4strategy_clients.ports` defines the Protocols services depend on:
-`FeatureStore`, `ModelStore`, `Broker`, `MarketData`, `MessageQueue` and `Filings`, plus the
-records and vocabulary they exchange: the `Filing` and `Message` named tuples, the order
-literals `Side`, `OrderType` and `TimeInForce`, and the errors `RetryableError` and
-`PermanentError`. Services
+`FeatureStore`, `ModelStore`, `Broker`, `MarketData`, `MessageQueue`, `SeenKeys` and `Filings`.
+The site publisher's read-only ports are `TradingAccount`, `RecentRows`, `ModelFiles`, `Site`,
+`Executions`, `Schedules`, `Queues` and `Metrics`. The module also defines the order literals
+`Side`, `OrderType` and `TimeInForce`, the `Filters` read filter, and the errors
+`RetryableError` and `PermanentError`.
+
+`secform4strategy_clients.records` defines the records the ports exchange: the named tuples
+`Filing`, `Message`, `Execution`, `ExecutionSummary`, `HistoryEvent`, `QueueDepth`,
+`FunctionMetrics`, `BrokerAccount`, `BrokerPosition`, `BrokerOrder` and `EquityPoint`, the
+frozen dataclasses `Scores` and `ModelMetadata`, and the `RunStatus` literal. Services
 annotate their dependencies with a port, never a concrete client, and each
-service's `main.py` is the one place that builds the clients from config and
-passes them in. Swapping a backend (a local catalog for AWS Glue, local disk for a bucket)
+service's `main.py` (or `handler.py` on Lambda) is the one place that builds the
+clients from config and passes them in. Swapping a backend (a local catalog for AWS Glue, local disk for a bucket)
 is a new adapter that satisfies the port, with no service change.
 
 `FeatureStore.read` filters with a plain mapping, `{column: value}`, where an

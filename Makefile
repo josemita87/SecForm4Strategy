@@ -5,7 +5,7 @@
 CLIENTS_SRC := packages/secform4strategy-clients/src
 # Services importing flat from src/ (`from config import config`)
 FLAT_SERVICES := training inference sec-feature-pipeline/master-index sec-feature-pipeline/scraper \
-	sec-feature-pipeline/kafka-to-store
+	sec-feature-pipeline/kafka-to-store site-publisher
 # Services importing through the src package (`from src.config import config`)
 PACKAGE_SERVICES := prices-feature-pipeline/target prices-feature-pipeline/yahoo_connect
 # Every project with its own environment, in test order

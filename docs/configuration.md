@@ -44,6 +44,7 @@ Current formats:
 | target | `p`, `bt4`, `bi4`, `rt4`, `bir4` | joins transactions with prices, writes labelled `rt4` and scored-input `bir4` |
 | training | `rt4` | reads the labelled transactions |
 | inference | `bir4` | reads the transactions to score |
+| site-publisher | `rt4`, `bt4`, `bi4` | reads the labelled transactions for `model.json`, and the recent sales for `explore.json` |
 
 ## Other `spec.yaml` sections
 
@@ -53,7 +54,7 @@ Current formats:
 - `identification_features`: kept for traceability, excluded from the model inputs. `accepted_at` (acceptance) and `label_known_at` (exit close), both UTC timestamps, drive the holdout split and the walk-forward folds: the holdout is the latest `HOLDOUT_RATIO` of filings, and each training set keeps only labels known before its validation or holdout period starts ([training.md](training.md)).
 - `model_params`: fixed keyword arguments for `HistGradientBoostingRegressor` (`random_state` comes from `RANDOM_STATE`).
 - `param_grid`: the values the grid search tries on top of `model_params`.
-- `report_thresholds`: the prediction thresholds at which training logs the holdout short return.
+- `report_thresholds`: the prediction thresholds at which training logs the holdout short return. Training saves them in the model metadata.
 
 Inference has only its catalog: the model's input columns and their order come from the trained model's metadata (`features`).
 
@@ -62,6 +63,17 @@ Inference has only its catalog: the model's input columns and their order come f
 - `cluster_window_days` (30): how far back each disclosure row counts its ticker's distinct insiders, officers and filings (`insiders_recent`, `officers_recent`, `filings_recent`), ending at the row's acceptance.
 
 Target collapses transactions into one row per ticker and *next market print* (the first 09:30 open or 16:00 close after acceptance): everything disclosed before a tradable price, with stock and derivative quantities apart, code and role flags, filing and insider counts and the filing lag (`aggregate_disclosures` in target `main.py`). One row per trading opportunity keeps every filing timed at its own window and gives each label once.
+
+**site-publisher**
+
+`Spec` in `site-publisher/src/config.py` validates these keys:
+
+- `live_functions`: the live Lambdas that `health.json` reports, each named `<name_prefix>-live-<function>`.
+- `live_runs` (50, at most 1000): the newest `live-score` runs that `live.json` lists.
+- `importance`: permutation importance on a sample of the holdout. `n_repeats` (3) is the number of shuffles per feature, `random_state` (42) the seed, `max_rows` (20000) the sample size, and `top` (15) the number of features kept.
+- `explore`: the recent insider sales of `explore.json`. `days` (7) is the window, `limit` (25) the length of each list, and `every_minutes` (15) the rebuild interval. `every_minutes` must divide 60.
+- `orders_limit` (100, at most 500): the Alpaca orders that `portfolio.json` lists.
+- `equity_period` (`1M`) and `equity_timeframe` (`1D`): the period and the resolution of the Alpaca equity history.
 
 ## Reference data (target)
 
@@ -74,4 +86,4 @@ Paths default to these files and can be overridden with `MARKET_CAPS_PATH` and `
 
 ## Model artifacts
 
-Training saves the fitted pipeline as `model.joblib` and its metadata beside it as `model.meta.json`: training time, git SHA (`GIT_SHA`, else `git rev-parse HEAD`), scikit-learn version, feature-group version, target, ordered `features`, model parameters, row counts, holdout start, the `Scores` of the model and its baselines on the holdout, the per-fold validation MAE of the model and the zero baseline, and the prediction threshold, as the `ModelMetadata` record (`secform4strategy_clients.ports`). The pipeline addresses columns by position, so inputs must follow `features`. Inference refuses a model saved under another scikit-learn version.
+Training saves the fitted pipeline as `model.joblib` and its metadata beside it as `model.meta.json`: training time, git SHA (`GIT_SHA`, else `git rev-parse HEAD`), scikit-learn version, feature-group version, target, ordered `features`, model parameters, row counts, holdout start, the `Scores` of the model and its baselines on the holdout, the per-fold validation MAE of the model and the zero baseline, the prediction threshold, and the report thresholds, as the `ModelMetadata` record (`secform4strategy_clients.records`). The pipeline addresses columns by position, so inputs must follow `features`. Inference refuses a model saved under another scikit-learn version.

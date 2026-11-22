@@ -1,0 +1,704 @@
+{
+  "generated_at": "2026-11-23T13:02:11Z",
+  "version": "20261121T071002Z",
+  "trained_at": "2026-11-21T07:10:02Z",
+  "git_sha": "7af238c",
+  "params": {
+    "loss": "absolute_error",
+    "learning_rate": 0.03,
+    "max_leaf_nodes": 31,
+    "min_samples_leaf": 200,
+    "l2_regularization": 1.0,
+    "max_iter": 500,
+    "early_stopping": true
+  },
+  "train_rows": 53747,
+  "test_rows": 14639,
+  "test_start": "2026-06-10T00:00:00Z",
+  "prediction_threshold": -0.05,
+  "folds": [
+    {
+      "fold": 1,
+      "model_mae": 0.152,
+      "zero_mae": 0.141
+    },
+    {
+      "fold": 2,
+      "model_mae": 0.131,
+      "zero_mae": 0.127
+    },
+    {
+      "fold": 3,
+      "model_mae": 0.118,
+      "zero_mae": 0.121
+    },
+    {
+      "fold": 4,
+      "model_mae": 0.124,
+      "zero_mae": 0.123
+    }
+  ],
+  "metrics": {
+    "model": {
+      "mae": 0.1216,
+      "short_return": 0.108,
+      "n_shorts": 265
+    },
+    "zero": {
+      "mae": 0.1193,
+      "short_return": 0.0,
+      "n_shorts": 0
+    }
+  },
+  "thresholds": [
+    {
+      "threshold": 0.0,
+      "n_shorts": 4120,
+      "mean_return": 0.019
+    },
+    {
+      "threshold": -0.02,
+      "n_shorts": 1384,
+      "mean_return": 0.047
+    },
+    {
+      "threshold": -0.05,
+      "n_shorts": 265,
+      "mean_return": 0.108
+    },
+    {
+      "threshold": -0.1,
+      "n_shorts": 31,
+      "mean_return": 0.142
+    }
+  ],
+  "cumulative": [
+    {
+      "date": "2026-06-10",
+      "strategy": 0.0,
+      "spy": 0.0
+    },
+    {
+      "date": "2026-06-11",
+      "strategy": 0.0073,
+      "spy": -0.0047
+    },
+    {
+      "date": "2026-06-12",
+      "strategy": 0.0124,
+      "spy": -0.0012
+    },
+    {
+      "date": "2026-06-15",
+      "strategy": 0.0066,
+      "spy": 0.0129
+    },
+    {
+      "date": "2026-06-16",
+      "strategy": 0.0144,
+      "spy": 0.023
+    },
+    {
+      "date": "2026-06-17",
+      "strategy": 0.0091,
+      "spy": 0.0174
+    },
+    {
+      "date": "2026-06-18",
+      "strategy": 0.0069,
+      "spy": 0.0169
+    },
+    {
+      "date": "2026-06-19",
+      "strategy": 0.0155,
+      "spy": 0.0194
+    },
+    {
+      "date": "2026-06-22",
+      "strategy": 0.0121,
+      "spy": 0.012
+    },
+    {
+      "date": "2026-06-23",
+      "strategy": 0.008,
+      "spy": 0.0222
+    },
+    {
+      "date": "2026-06-24",
+      "strategy": 0.0006,
+      "spy": 0.0247
+    },
+    {
+      "date": "2026-06-25",
+      "strategy": 0.0069,
+      "spy": 0.0129
+    },
+    {
+      "date": "2026-06-26",
+      "strategy": 0.0091,
+      "spy": 0.0238
+    },
+    {
+      "date": "2026-06-29",
+      "strategy": -0.0117,
+      "spy": 0.0216
+    },
+    {
+      "date": "2026-06-30",
+      "strategy": -0.0113,
+      "spy": 0.0153
+    },
+    {
+      "date": "2026-07-01",
+      "strategy": -0.0043,
+      "spy": 0.0152
+    },
+    {
+      "date": "2026-07-02",
+      "strategy": -0.0187,
+      "spy": 0.0224
+    },
+    {
+      "date": "2026-07-03",
+      "strategy": -0.0099,
+      "spy": 0.0305
+    },
+    {
+      "date": "2026-07-06",
+      "strategy": 0.0073,
+      "spy": 0.0339
+    },
+    {
+      "date": "2026-07-07",
+      "strategy": 0.0103,
+      "spy": 0.0236
+    },
+    {
+      "date": "2026-07-08",
+      "strategy": 0.0187,
+      "spy": 0.019
+    },
+    {
+      "date": "2026-07-09",
+      "strategy": 0.0153,
+      "spy": 0.0091
+    },
+    {
+      "date": "2026-07-10",
+      "strategy": 0.0061,
+      "spy": 0.0052
+    },
+    {
+      "date": "2026-07-13",
+      "strategy": 0.022,
+      "spy": -0.0107
+    },
+    {
+      "date": "2026-07-14",
+      "strategy": 0.0072,
+      "spy": -0.0084
+    },
+    {
+      "date": "2026-07-15",
+      "strategy": 0.0248,
+      "spy": -0.0035
+    },
+    {
+      "date": "2026-07-16",
+      "strategy": 0.0051,
+      "spy": -0.0231
+    },
+    {
+      "date": "2026-07-17",
+      "strategy": 0.0106,
+      "spy": -0.0285
+    },
+    {
+      "date": "2026-07-20",
+      "strategy": -0.0002,
+      "spy": -0.0205
+    },
+    {
+      "date": "2026-07-21",
+      "strategy": 0.0135,
+      "spy": -0.0189
+    },
+    {
+      "date": "2026-07-22",
+      "strategy": 0.0179,
+      "spy": -0.0151
+    },
+    {
+      "date": "2026-07-23",
+      "strategy": 0.0373,
+      "spy": -0.0098
+    },
+    {
+      "date": "2026-07-24",
+      "strategy": 0.0449,
+      "spy": -0.0051
+    },
+    {
+      "date": "2026-07-27",
+      "strategy": 0.0286,
+      "spy": 0.0055
+    },
+    {
+      "date": "2026-07-28",
+      "strategy": 0.041,
+      "spy": 0.0102
+    },
+    {
+      "date": "2026-07-29",
+      "strategy": 0.0201,
+      "spy": 0.0055
+    },
+    {
+      "date": "2026-07-30",
+      "strategy": 0.0312,
+      "spy": -0.0087
+    },
+    {
+      "date": "2026-07-31",
+      "strategy": 0.0307,
+      "spy": -0.0002
+    },
+    {
+      "date": "2026-08-03",
+      "strategy": 0.0175,
+      "spy": 0.0131
+    },
+    {
+      "date": "2026-08-04",
+      "strategy": 0.0253,
+      "spy": 0.0122
+    },
+    {
+      "date": "2026-08-05",
+      "strategy": 0.0306,
+      "spy": 0.0179
+    },
+    {
+      "date": "2026-08-06",
+      "strategy": 0.0336,
+      "spy": 0.0276
+    },
+    {
+      "date": "2026-08-07",
+      "strategy": 0.0278,
+      "spy": 0.0246
+    },
+    {
+      "date": "2026-08-10",
+      "strategy": 0.0412,
+      "spy": 0.0253
+    },
+    {
+      "date": "2026-08-11",
+      "strategy": 0.0328,
+      "spy": 0.0335
+    },
+    {
+      "date": "2026-08-12",
+      "strategy": 0.0511,
+      "spy": 0.0302
+    },
+    {
+      "date": "2026-08-13",
+      "strategy": 0.0368,
+      "spy": 0.0295
+    },
+    {
+      "date": "2026-08-14",
+      "strategy": 0.0368,
+      "spy": 0.0274
+    },
+    {
+      "date": "2026-08-17",
+      "strategy": 0.0544,
+      "spy": 0.0194
+    },
+    {
+      "date": "2026-08-18",
+      "strategy": 0.0707,
+      "spy": 0.0095
+    },
+    {
+      "date": "2026-08-19",
+      "strategy": 0.0632,
+      "spy": 0.015
+    },
+    {
+      "date": "2026-08-20",
+      "strategy": 0.0781,
+      "spy": 0.0224
+    },
+    {
+      "date": "2026-08-21",
+      "strategy": 0.0839,
+      "spy": 0.0239
+    },
+    {
+      "date": "2026-08-24",
+      "strategy": 0.0875,
+      "spy": 0.0291
+    },
+    {
+      "date": "2026-08-25",
+      "strategy": 0.0871,
+      "spy": 0.0318
+    },
+    {
+      "date": "2026-08-26",
+      "strategy": 0.0957,
+      "spy": 0.0322
+    },
+    {
+      "date": "2026-08-27",
+      "strategy": 0.1066,
+      "spy": 0.0373
+    },
+    {
+      "date": "2026-08-28",
+      "strategy": 0.1329,
+      "spy": 0.0404
+    },
+    {
+      "date": "2026-08-31",
+      "strategy": 0.1294,
+      "spy": 0.0377
+    },
+    {
+      "date": "2026-09-01",
+      "strategy": 0.131,
+      "spy": 0.0458
+    },
+    {
+      "date": "2026-09-02",
+      "strategy": 0.1286,
+      "spy": 0.0494
+    },
+    {
+      "date": "2026-09-03",
+      "strategy": 0.1532,
+      "spy": 0.0283
+    },
+    {
+      "date": "2026-09-04",
+      "strategy": 0.1408,
+      "spy": 0.0307
+    },
+    {
+      "date": "2026-09-07",
+      "strategy": 0.1477,
+      "spy": 0.0331
+    },
+    {
+      "date": "2026-09-08",
+      "strategy": 0.1441,
+      "spy": 0.0389
+    },
+    {
+      "date": "2026-09-09",
+      "strategy": 0.1494,
+      "spy": 0.035
+    },
+    {
+      "date": "2026-09-10",
+      "strategy": 0.182,
+      "spy": 0.0384
+    },
+    {
+      "date": "2026-09-11",
+      "strategy": 0.1767,
+      "spy": 0.038
+    },
+    {
+      "date": "2026-09-14",
+      "strategy": 0.1756,
+      "spy": 0.0378
+    },
+    {
+      "date": "2026-09-15",
+      "strategy": 0.1422,
+      "spy": 0.0342
+    },
+    {
+      "date": "2026-09-16",
+      "strategy": 0.1567,
+      "spy": 0.025
+    },
+    {
+      "date": "2026-09-17",
+      "strategy": 0.1577,
+      "spy": 0.0332
+    },
+    {
+      "date": "2026-09-18",
+      "strategy": 0.1705,
+      "spy": 0.0459
+    },
+    {
+      "date": "2026-09-21",
+      "strategy": 0.1505,
+      "spy": 0.0434
+    },
+    {
+      "date": "2026-09-22",
+      "strategy": 0.148,
+      "spy": 0.049
+    },
+    {
+      "date": "2026-09-23",
+      "strategy": 0.1636,
+      "spy": 0.0269
+    },
+    {
+      "date": "2026-09-24",
+      "strategy": 0.1794,
+      "spy": 0.0154
+    },
+    {
+      "date": "2026-09-25",
+      "strategy": 0.1902,
+      "spy": 0.0037
+    },
+    {
+      "date": "2026-09-28",
+      "strategy": 0.1944,
+      "spy": 0.0137
+    },
+    {
+      "date": "2026-09-29",
+      "strategy": 0.1943,
+      "spy": 0.0157
+    },
+    {
+      "date": "2026-09-30",
+      "strategy": 0.2067,
+      "spy": 0.0172
+    },
+    {
+      "date": "2026-10-01",
+      "strategy": 0.2075,
+      "spy": 0.0301
+    },
+    {
+      "date": "2026-10-02",
+      "strategy": 0.2233,
+      "spy": 0.0281
+    },
+    {
+      "date": "2026-10-05",
+      "strategy": 0.2622,
+      "spy": 0.0191
+    },
+    {
+      "date": "2026-10-06",
+      "strategy": 0.2769,
+      "spy": 0.0173
+    },
+    {
+      "date": "2026-10-07",
+      "strategy": 0.2808,
+      "spy": 0.0235
+    },
+    {
+      "date": "2026-10-08",
+      "strategy": 0.286,
+      "spy": 0.0291
+    },
+    {
+      "date": "2026-10-09",
+      "strategy": 0.2665,
+      "spy": 0.0171
+    },
+    {
+      "date": "2026-10-12",
+      "strategy": 0.2771,
+      "spy": 0.0097
+    },
+    {
+      "date": "2026-10-13",
+      "strategy": 0.2647,
+      "spy": -0.0018
+    },
+    {
+      "date": "2026-10-14",
+      "strategy": 0.2843,
+      "spy": 0.0045
+    },
+    {
+      "date": "2026-10-15",
+      "strategy": 0.3072,
+      "spy": -0.0026
+    },
+    {
+      "date": "2026-10-16",
+      "strategy": 0.3093,
+      "spy": -0.0113
+    },
+    {
+      "date": "2026-10-19",
+      "strategy": 0.3224,
+      "spy": 0.0017
+    },
+    {
+      "date": "2026-10-20",
+      "strategy": 0.3116,
+      "spy": 0.0146
+    },
+    {
+      "date": "2026-10-21",
+      "strategy": 0.3279,
+      "spy": 0.0135
+    },
+    {
+      "date": "2026-10-22",
+      "strategy": 0.3013,
+      "spy": 0.0254
+    },
+    {
+      "date": "2026-10-23",
+      "strategy": 0.302,
+      "spy": 0.0208
+    },
+    {
+      "date": "2026-10-26",
+      "strategy": 0.3098,
+      "spy": 0.0246
+    },
+    {
+      "date": "2026-10-27",
+      "strategy": 0.3335,
+      "spy": 0.0166
+    },
+    {
+      "date": "2026-10-28",
+      "strategy": 0.3523,
+      "spy": 0.0291
+    },
+    {
+      "date": "2026-10-29",
+      "strategy": 0.376,
+      "spy": 0.0281
+    },
+    {
+      "date": "2026-10-30",
+      "strategy": 0.367,
+      "spy": 0.0368
+    },
+    {
+      "date": "2026-11-02",
+      "strategy": 0.3709,
+      "spy": 0.0383
+    },
+    {
+      "date": "2026-11-03",
+      "strategy": 0.3946,
+      "spy": 0.0365
+    },
+    {
+      "date": "2026-11-04",
+      "strategy": 0.3616,
+      "spy": 0.0337
+    },
+    {
+      "date": "2026-11-05",
+      "strategy": 0.336,
+      "spy": 0.0409
+    },
+    {
+      "date": "2026-11-06",
+      "strategy": 0.3428,
+      "spy": 0.0362
+    },
+    {
+      "date": "2026-11-09",
+      "strategy": 0.3448,
+      "spy": 0.0435
+    },
+    {
+      "date": "2026-11-10",
+      "strategy": 0.3481,
+      "spy": 0.055
+    },
+    {
+      "date": "2026-11-11",
+      "strategy": 0.3493,
+      "spy": 0.0642
+    },
+    {
+      "date": "2026-11-12",
+      "strategy": 0.3736,
+      "spy": 0.0784
+    },
+    {
+      "date": "2026-11-13",
+      "strategy": 0.3657,
+      "spy": 0.0864
+    }
+  ],
+  "importance": [
+    {
+      "feature": "price_to_close",
+      "importance": 0.0094
+    },
+    {
+      "feature": "filing_lag_days",
+      "importance": 0.0071
+    },
+    {
+      "feature": "market_cap",
+      "importance": 0.0063
+    },
+    {
+      "feature": "avg_target_expanding",
+      "importance": 0.0048
+    },
+    {
+      "feature": "tx_value",
+      "importance": 0.0039
+    },
+    {
+      "feature": "remaining_value",
+      "importance": 0.0031
+    },
+    {
+      "feature": "insiders_recent",
+      "importance": 0.0026
+    },
+    {
+      "feature": "sic_group",
+      "importance": 0.0021
+    },
+    {
+      "feature": "officer",
+      "importance": 0.0017
+    },
+    {
+      "feature": "filings_recent",
+      "importance": 0.0014
+    },
+    {
+      "feature": "n_insiders",
+      "importance": 0.0011
+    },
+    {
+      "feature": "director",
+      "importance": 0.0008
+    },
+    {
+      "feature": "tax_withholding",
+      "importance": 0.0006
+    },
+    {
+      "feature": "exchange",
+      "importance": 0.0004
+    },
+    {
+      "feature": "gift",
+      "importance": 0.0002
+    }
+  ]
+}

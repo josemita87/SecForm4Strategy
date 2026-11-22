@@ -4,7 +4,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from secform4strategy_clients.ports import Message
+from secform4strategy_clients.records import Message
 
 if TYPE_CHECKING:
     from secform4strategy_clients.ports import MessageQueue
