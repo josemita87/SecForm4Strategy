@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
-# Builds docs/report/report.pdf from report.md: pandoc to HTML, then headless Chrome to PDF.
+# Builds docs/report/<name>.pdf from <name>.md (default name: report): pandoc to HTML, then headless Chrome to PDF.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+name="${1:-report}"
 pandoc="${PANDOC:-/opt/homebrew/bin/pandoc}"
 chrome="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
+# <name>.css, when present, overrides report.css for that document
+css=(--css "file://$here/report.css")
+[[ -f "$here/$name.css" ]] && css+=(--css "file://$here/$name.css")
+
 "$pandoc" -f gfm -t html5 -s \
   --metadata pagetitle="SecForm4Strategy" --metadata lang=en \
-  --css "file://$here/report.css" \
-  -o "$work/raw.html" "$here/report.md"
+  "${css[@]}" \
+  -o "$work/raw.html" "$here/$name.md"
 
 # Absolute image paths, a title page, and a landscape page for each wide diagram with its caption
 python3 -I - "$here" "$work/raw.html" "$work/report.html" <<'PY'
@@ -59,6 +64,6 @@ PY
 
 "$chrome" --headless --disable-gpu --no-pdf-header-footer \
   --allow-file-access-from-files \
-  --print-to-pdf="$here/report.pdf" "file://$work/report.html" 2>/dev/null
+  --print-to-pdf="$here/$name.pdf" "file://$work/report.html" 2>/dev/null
 
-echo "Wrote $here/report.pdf"
+echo "Wrote $here/$name.pdf"

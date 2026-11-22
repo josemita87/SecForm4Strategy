@@ -1,4 +1,4 @@
-/* Print styling for report.pdf; build_pdf.sh wraps figures and the title block */
+/* Print styling for the report PDFs; build_pdf.sh wraps figures and the title block */
 
 @page {
   size: A4;
