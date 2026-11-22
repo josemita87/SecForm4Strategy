@@ -12,7 +12,17 @@ from secform4strategy_clients.feature_groups import load_feature_group_catalog
 from secform4strategy_clients.feature_store import IcebergFeatureStore
 
 from src.config import config
-from src.constants import MARKET_CLOSE, MARKET_OPEN, MAX_PRICE_WAIT, Col, FeatureGroup, ReferenceData
+from src.constants import (
+    LABEL_COLUMNS,
+    MARKET_CLOSE,
+    MARKET_OPEN,
+    MAX_PRICE_WAIT,
+    PRICE_COLUMNS,
+    TRANSACTION_COLUMNS,
+    Col,
+    FeatureGroup,
+    ReferenceData,
+)
 from src.helpers import acceptance_day, as_of_keys, instant, next_print, normalize_prices
 from src.paths import SPEC_PATH
 
@@ -399,14 +409,21 @@ def publish_inference_rows(
     Returns:
         The rows upserted into BIR4.
     """
-    transactions = store.read(FeatureGroup.BI4, where=where)
+    transactions = store.read(FeatureGroup.BI4, where=where, columns=TRANSACTION_COLUMNS)
     tickers = transactions[Col.TICKER].unique()
     # Without prices no feature can be computed, so a failed read fails the run
     daily = disclosure_rows(
-        transactions, normalize_prices(store.read(FeatureGroup.PRICES, where={Col.TICKER: tickers})), reference, window
+        transactions,
+        normalize_prices(store.read(FeatureGroup.PRICES, where={Col.TICKER: tickers}, columns=PRICE_COLUMNS)),
+        reference,
+        window,
     )
     bir4 = daily.assign(
-        **{Col.AVG_TARGET_EXPANDING: known_label_mean(store.read(FeatureGroup.RT4, where={Col.TICKER: tickers}), daily)}
+        **{
+            Col.AVG_TARGET_EXPANDING: known_label_mean(
+                store.read(FeatureGroup.RT4, where={Col.TICKER: tickers}, columns=LABEL_COLUMNS), daily
+            )
+        }
     )
     store.push(FeatureGroup.BIR4, bir4)
     logger.info(f'Pushed {len(bir4)} disclosure rows of {len(tickers)} tickers to BIR4')
@@ -426,10 +443,12 @@ if __name__ == '__main__':
     reference = ReferenceData.load(config.market_caps_path, config.companies_path)
     window = pd.Timedelta(days=config.cluster_window_days)
     if config.system_training:
-        transactions = store.read(FeatureGroup.BT4, where={config.filter_key: config.acquired_disposed})
+        transactions = store.read(
+            FeatureGroup.BT4, where={config.filter_key: config.acquired_disposed}, columns=TRANSACTION_COLUMNS
+        )
         logger.info(f'{len(tickers := transactions[Col.TICKER].unique())} tickers in BT4')
         # Without prices no feature or target can be computed, so a failed read fails the run
-        P = normalize_prices(store.read(FeatureGroup.PRICES, where={Col.TICKER: tickers}))
+        P = normalize_prices(store.read(FeatureGroup.PRICES, where={Col.TICKER: tickers}, columns=PRICE_COLUMNS))
         daily = disclosure_rows(transactions, P, reference, window)
         # Every labelled row is kept, its average missing until a label of its ticker is known
         RT4 = compute_target(daily, P, config.delta_period).dropna(subset=[Col.LABEL_KNOWN_AT, Col.PCT_CHANGE])
