@@ -1,0 +1,5 @@
+/* Overrides for submission.pdf: the conclusion and the glossary continue the previous page */
+[id="10-conclusion"],
+#appendix-b-glossary {
+  break-before: auto;
+}

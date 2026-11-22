@@ -63,5 +63,5 @@ docs/presentation/
 # Site data the publisher writes; previews use site/fixtures
 site/data/
 
-# Built from docs/report/report.md; submitted as a file, not tracked
-docs/report/report.pdf
+# Built from docs/report/*.md by build_pdf.sh; submitted as files, not tracked
+docs/report/*.pdf
