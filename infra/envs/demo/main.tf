@@ -208,8 +208,6 @@ module "live" {
   source            = "../../modules/live"
   name              = "secform4strategy"
   poller            = "master-index"
-  subnet_ids        = module.network.private_subnet_ids
-  security_group_id = module.network.security_group_id
   schedule_enabled  = var.switched_on && var.live_enabled
   score_steps       = ["yahoo-connect", "target", "inference"]
   tickers_queue_arn = module.queues.queues["live-tickers"].arn

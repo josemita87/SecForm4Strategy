@@ -127,7 +127,7 @@ resource "aws_iam_role_policy" "lambda" {
   policy   = data.aws_iam_policy_document.access["live-${each.key}"].json
 }
 
-# Logs, plus the network interfaces a Lambda needs to run inside the VPC
+# Logs; the network-interface permissions let Lambda delete the VPC interfaces of earlier function versions
 resource "aws_iam_role_policy_attachment" "lambda_vpc" {
   for_each   = var.lambda_access
   role       = aws_iam_role.lambda[each.key].name
