@@ -142,7 +142,9 @@ module "tasks" {
     }
     kafka-to-store = {
       task_role_arn = local.roles["kafka-to-store"]
-      memory        = 2048
+      # An Iceberg upsert loads and merges table rows; 0.5 vCPU / 2 GB made each 10,000-row batch CPU-bound
+      cpu    = 2048
+      memory = 8192
       environment = merge(local.sqs, local.lakehouse, {
         INPUT_QUEUE = local.queues.transactions, BUFFER_SIZE = "100", POLL_TIMEOUT = "20", SYSTEM_TRAINING = "true"
       })

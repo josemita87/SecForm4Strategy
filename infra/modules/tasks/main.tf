@@ -1,9 +1,10 @@
 
 resource "aws_ecs_cluster" "main" {
   name = var.name
+  # Per-task CPU and memory in CloudWatch; the batch tasks are few, so it costs cents
   setting {
     name  = "containerInsights"
-    value = "disabled"
+    value = "enabled"
   }
 }
 

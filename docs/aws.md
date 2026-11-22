@@ -79,7 +79,7 @@ One Step Functions state machine, `retrain`, runs six ECS tasks in order:
 5. target builds the labelled rows.
 6. training saves a new model to `models/` in S3.
 
-Each step runs one Fargate ARM64 task in the cluster `secform4strategy`, in the private subnets, and waits for it to stop. The tasks use the `FARGATE` launch type (On-Demand). Fargate Spot runs ARM64 tasks too, but a Spot interruption fails the step, and the retry policy allows only 3 attempts, which a multi-day backfill could use up. A step whose task fails is retried after 600 seconds, at most 3 times. Each task writes its logs to the log group `/secform4strategy/<service>`, kept 14 days.
+Each step runs one Fargate ARM64 task in the cluster `secform4strategy`, in the private subnets, and waits for it to stop. kafka-to-store runs with 2 vCPU and 8 GB, because each Iceberg upsert loads and merges table rows. The cluster has Container Insights enabled, so CloudWatch shows each task's CPU and memory use. The tasks use the `FARGATE` launch type (On-Demand). Fargate Spot runs ARM64 tasks too, but a Spot interruption fails the step, and the retry policy allows only 3 attempts, which a multi-day backfill could use up. A step whose task fails is retried after 600 seconds, at most 3 times. Each task writes its logs to the log group `/secform4strategy/<service>`, kept 14 days.
 
 EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC. master-index then runs with `MODE=recent` and `DAYS_BACK=7`: it reads the master indexes of the quarters that the last 7 days touch, and publishes only the filings of those 7 days. The schedule is enabled only while both `switched_on` and `weekly_retrain_enabled` are `true`.
 

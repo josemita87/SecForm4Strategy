@@ -293,7 +293,7 @@ The Step Functions state machine `secform4strategy-retrain` runs six ECS tasks i
 
 Each step runs one Fargate ARM64 (Graviton) task in the cluster `secform4strategy`, in the private subnets, and waits for it to stop. The tasks use the `FARGATE` launch type (On-Demand). Fargate Spot runs ARM64 tasks too, but a Spot interruption fails the step, and the retry policy allows only 3 attempts, which a multi-day backfill could use up. A failed step is retried after 600 seconds, at most 3 times. The wait is deliberately longer than the 300-second SQS visibility timeout. A rerun that started earlier would find the unfinished messages still hidden, stop at once and leave the work undone. Each task logs to `/secform4strategy/<service>`, kept 14 days.
 
-Task sizes follow the work. Most tasks run with 0.5 vCPU and 1 GB or 2 GB. target reads every ticker's price history at once and runs with 2 vCPU and 16 GB, because 4 GB ran out of memory on one year of filings. training runs the 128 grid-search fits in parallel on 4 vCPU and 16 GB.
+Task sizes follow the work. Most tasks run with 0.5 vCPU and 1 GB or 2 GB. kafka-to-store runs with 2 vCPU and 8 GB, because each Iceberg upsert loads and merges table rows, and at 0.5 vCPU a 10,000-row batch took about 40 seconds. target reads every ticker's price history at once and runs with 2 vCPU and 16 GB, because 4 GB ran out of memory on one year of filings. training runs the 128 grid-search fits in parallel on 4 vCPU and 16 GB.
 
 EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC (`secform4strategy-weekly-retrain`). master-index then runs with `MODE=recent` and `DAYS_BACK=7` and publishes only the filings of the last 7 days. Each run's model replaces the previous one.
 
