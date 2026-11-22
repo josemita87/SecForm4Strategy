@@ -53,6 +53,12 @@ service's `main.py` (or `handler.py` on Lambda) is the one place that builds the
 clients from config and passes them in. Swapping a backend (a local catalog for AWS Glue, local disk for a bucket)
 is a new adapter that satisfies the port, with no service change.
 
+`ModelStore.save` writes a model and its metadata as a new version and returns the version.
+It does not change which model `load` returns. `ModelStore.promote(version)` makes that version
+the one `load` returns: `S3ModelStore` writes `latest.json`, and `LocalModelStore` copies the
+version's files to its path. `ModelStore` includes the `ModelFiles` methods `latest_version` and
+`metadata`.
+
 `FeatureStore.read` filters with a plain mapping, `{column: value}`, where an
 iterable value means "any of". Each adapter translates it to its own query.
 
@@ -62,7 +68,7 @@ Adapters retry transient failures with `retry.with_backoff`, then raise `Retryab
 services act on each.
 
 `secform4strategy_clients.fakes` holds typed in-memory implementations of the
-ports for tests, one module per port (`fakes.filings`, `fakes.market_data`, `fakes.messaging`), each
+ports for tests, one module per port (`fakes.filings`, `fakes.market_data`, `fakes.messaging`, `fakes.models`, `fakes.seen`), each
 bound to its Protocol so `make type-check` fails when one drifts.
 
 ```toml

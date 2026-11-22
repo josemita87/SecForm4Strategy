@@ -70,15 +70,31 @@ class FeatureStore(Protocol):
         ...
 
 
-class ModelStore(Protocol):
-    """Storage for one trained model and its metadata."""
+class ModelFiles(Protocol):
+    """The model store's pointer and metadata, read without the model itself."""
 
-    def save(self, model: object, metadata: ModelMetadata) -> None:
-        """Persist the model together with its metadata."""
+    def latest_version(self) -> str | None:
+        """Return the version the pointer names, or None when no model was promoted."""
+        ...
+
+    def metadata(self, version: str) -> ModelMetadata:
+        """Return a version's metadata."""
+        ...
+
+
+class ModelStore(ModelFiles, Protocol):
+    """Versioned trained models with their metadata, and a pointer to the promoted one that ``load`` reads."""
+
+    def save(self, model: object, metadata: ModelMetadata) -> str:
+        """Persist the model together with its metadata as a new version, without promoting it; return the version."""
+        ...
+
+    def promote(self, version: str) -> None:
+        """Point the store at a saved version, so ``load`` returns it."""
         ...
 
     def load(self) -> tuple[Any, ModelMetadata]:
-        """Return the stored model and its metadata."""
+        """Return the promoted model and its metadata."""
         ...
 
 
@@ -128,18 +144,6 @@ class RecentRows(Protocol):
 
     def read_since(self, reference: str, since: datetime, columns: Iterable[str]) -> pd.DataFrame:
         """Return the rows whose event time is at or after ``since``; none, with ``columns``, for a missing table."""
-        ...
-
-
-class ModelFiles(Protocol):
-    """The model store's pointer and metadata, read without the model itself."""
-
-    def latest_version(self) -> str | None:
-        """Return the version the pointer names, or None when no model was saved."""
-        ...
-
-    def metadata(self, version: str) -> ModelMetadata:
-        """Return a version's metadata."""
         ...
 
 

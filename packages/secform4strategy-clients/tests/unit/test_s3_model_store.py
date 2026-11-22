@@ -1,4 +1,4 @@
-"""Models are saved to versioned S3 folders behind a pointer, and loaded through it.
+"""Models are saved to versioned S3 folders, promoted by a pointer, and loaded through it.
 
 Under test:
     packages/secform4strategy-clients/src/secform4strategy_clients/s3_model_store.py
@@ -54,17 +54,36 @@ def stored(stubber: Stubber, key: str, body: bytes) -> None:
 
 
 class TestSave:
-    """The model and metadata go to a folder named after the training time, and the pointer last."""
+    """The model and metadata go to a folder named after the training time; the pointer is left alone."""
 
-    def test_the_pair_is_written_before_the_pointer(self, store: tuple[S3ModelStore, Stubber]) -> None:
+    def test_the_pair_is_written_without_the_pointer(self, store: tuple[S3ModelStore, Stubber]) -> None:
         s3, stubber = store
         for key, body in (
             ('models/20261113T060000Z/model.joblib', ANY),
             ('models/20261113T060000Z/model.meta.json', METADATA.dump_json(METADATA_RECORD, indent=2)),
-            ('models/latest.json', b'{"version": "20261113T060000Z"}'),
         ):
             stubber.add_response('put_object', {}, {'Bucket': 'bucket', 'Key': key, 'Body': body})
-        s3.save({'weights': [1, 2]}, METADATA_RECORD)
+        assert s3.save({'weights': [1, 2]}, METADATA_RECORD) == '20261113T060000Z'
+
+
+class TestPromote:
+    """Promoting a saved version points the pointer at its folder."""
+
+    def test_the_pointer_names_the_saved_version(self, store: tuple[S3ModelStore, Stubber]) -> None:
+        s3, stubber = store
+        stored(stubber, 'models/20261113T060000Z/model.meta.json', METADATA.dump_json(METADATA_RECORD))
+        stubber.add_response(
+            'put_object',
+            {},
+            {'Bucket': 'bucket', 'Key': 'models/latest.json', 'Body': b'{"version": "20261113T060000Z"}'},
+        )
+        s3.promote('20261113T060000Z')
+
+    def test_an_unsaved_version_is_permanent_and_not_pointed_at(self, store: tuple[S3ModelStore, Stubber]) -> None:
+        s3, stubber = store
+        stubber.add_client_error('get_object', service_error_code='NoSuchKey', http_status_code=404)
+        with pytest.raises(PermanentError, match='NoSuchKey'):
+            s3.promote('20991231T000000Z')
 
 
 class TestLoad:

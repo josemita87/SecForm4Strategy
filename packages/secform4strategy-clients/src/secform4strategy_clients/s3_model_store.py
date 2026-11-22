@@ -1,13 +1,12 @@
 """Amazon S3 model store (a ``ModelStore`` and ``ModelFiles`` adapter).
 
 Each save writes the same pair as ``LocalModelStore`` (``model.joblib`` + ``model.meta.json``)
-under a folder named after the training time, then points ``latest.json`` at that folder.
-Writing the pointer last means a load never pairs a new model with old metadata, and every
-earlier model stays in the bucket for audit and rollback.
+under a folder named after the training time. Promoting a saved version points ``latest.json``
+at its folder. The pair is complete before any pointer names it, so a load never pairs a new
+model with old metadata, and every earlier model stays in the bucket for audit and rollback.
 """
 
 import json
-from datetime import UTC
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
@@ -15,7 +14,7 @@ import boto3
 import joblib
 
 from secform4strategy_clients.aws import RETRIES, classified, read_optional
-from secform4strategy_clients.model_store import METADATA
+from secform4strategy_clients.model_store import METADATA, version_of
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
@@ -49,21 +48,33 @@ class S3ModelStore:
         self.bucket = bucket
         self.prefix = prefix
 
-    def save(self, model: object, metadata: ModelMetadata) -> None:
-        """Write the model and its metadata to a new version folder, then point ``latest.json`` at it.
+    def save(self, model: object, metadata: ModelMetadata) -> str:
+        """Write the model and its metadata to a new version folder, without promoting it.
 
         Args:
             model: The fitted model to persist.
             metadata: The facts about the model; ``trained_at`` names the version.
+
+        Returns:
+            The version.
         """
-        version = metadata.trained_at.astimezone(UTC).strftime('%Y%m%dT%H%M%SZ')
+        version = version_of(metadata)
         joblib.dump(model, buffer := BytesIO())
         self._write(f'{version}/{MODEL}', buffer.getvalue())
         self._write(f'{version}/{METADATA_FILE}', METADATA.dump_json(metadata, indent=2))
+        return version
+
+    def promote(self, version: str) -> None:
+        """Point ``latest.json`` at a saved version; an unsaved version is a ``PermanentError``.
+
+        Args:
+            version: The version folder, whose metadata is read and validated first.
+        """
+        self.metadata(version)
         self._write(POINTER, json.dumps({'version': version}).encode())
 
     def load(self) -> tuple[Any, ModelMetadata]:
-        """Read the model ``latest.json`` points at, and its validated metadata; no saved model is a ``PermanentError``.
+        """Read the promoted model and its validated metadata; no promoted model is a ``PermanentError``.
 
         Returns:
             The model and its metadata.
@@ -72,7 +83,7 @@ class S3ModelStore:
         return joblib.load(BytesIO(self._read(f'{version}/{MODEL}'))), self.metadata(version)
 
     def latest_version(self) -> str | None:
-        """Return the version ``latest.json`` names, or None when no model was saved.
+        """Return the version ``latest.json`` names, or None when no model was promoted.
 
         Returns:
             The version, such as ``20261120T210617Z``.
