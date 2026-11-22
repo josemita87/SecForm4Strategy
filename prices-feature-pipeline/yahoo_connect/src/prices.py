@@ -24,8 +24,20 @@ class Resume(NamedTuple):
     factors: Mapping[date, float]
 
 
+def history_start(years: int) -> date:
+    """Return the first day a full refetch downloads: ``years`` years before today.
+
+    Args:
+        years: Years of history to keep.
+
+    Returns:
+        Today minus ``years`` years.
+    """
+    return (pd.Timestamp.today() - pd.DateOffset(years=years)).date()
+
+
 def resume_points(stored: pd.DataFrame) -> dict[str, Resume]:
-    """Return where each ticker's refresh resumes; tickers without bars are absent, so they fetch full history.
+    """Return where each ticker's refresh resumes; tickers without bars are absent and fetch from the history start.
 
     The refresh starts ``REBASE_LOOKBACK_DAYS`` stored days back. Those days' adjustment
     factors (adjusted over as-traded close) are kept, so ``rebased`` can tell whether a split or
@@ -75,19 +87,20 @@ def rebased(bars: pd.DataFrame, resume: Mapping[str, Resume]) -> set[str]:
 
 
 def new_prices(
-    market_data: MarketData, tickers: Sequence[str], resume: Mapping[str, Resume], batch_size: int
+    market_data: MarketData, tickers: Sequence[str], resume: Mapping[str, Resume], batch_size: int, start: date
 ) -> Iterator[pd.DataFrame]:
     """Yield each batch's final daily bars as soon as it is downloaded, so the caller can store them as they arrive.
 
     A bar whose close has not printed yet (fetched mid-session) is left out, so no provisional
-    close is ever stored. A ticker whose stored prices were rebased (``rebased``) gets its full
-    history again, which the caller's upsert writes over every stored bar.
+    close is ever stored. A ticker whose stored prices were rebased (``rebased``) gets its history
+    from ``start`` again, which the caller's upsert writes over its stored bars from that day.
 
     Args:
         market_data: Source of daily price history.
         tickers: Tickers to refresh.
-        resume: Ticker -> where its refresh resumes (``resume_points``); absent tickers fetch full history.
+        resume: Ticker -> where its refresh resumes (``resume_points``); absent tickers fetch from ``start``.
         batch_size: Tickers downloaded per batch.
+        start: First day of a full refetch (``history_start``).
 
     Yields:
         One batch's daily bars (``date``, ``open``, ``close``, ``close_as_traded``, ``split``, ``dividend``,
@@ -95,9 +108,11 @@ def new_prices(
     """
     for batch in batched(tickers, batch_size, strict=False):
         resumed = {ticker: point for ticker in batch if (point := resume.get(ticker))}
-        bars = market_data.price_histories(batch, starts={ticker: point.start for ticker, point in resumed.items()})
+        bars = market_data.price_histories(
+            batch, starts={ticker: resumed[ticker].start if ticker in resumed else start for ticker in batch}
+        )
         if stale := rebased(bars[bars[Col.TICKER].astype(str).isin(resumed)], resumed):
-            logger.info(f'Prices rebased since last stored, fetching full history: {sorted(stale)}')
-            full = market_data.price_histories(sorted(stale))
+            logger.info(f'Prices rebased since last stored, fetching again from {start}: {sorted(stale)}')
+            full = market_data.price_histories(sorted(stale), starts=dict.fromkeys(stale, start))
             bars = pd.concat([bars[~bars[Col.TICKER].astype(str).isin(stale)], full], ignore_index=True)
         yield bars[bars[Col.DATE].dt.tz_localize(MARKET_TZ) + MARKET_CLOSE < pd.Timestamp.now(MARKET_TZ)]

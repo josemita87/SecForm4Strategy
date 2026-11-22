@@ -27,7 +27,9 @@ logging.basicConfig(
 )
 
 
-def refresh_prices(store: FeatureStore, market: MarketData, tickers: list[str], buffer_size: int) -> None:
+def refresh_prices(
+    store: FeatureStore, market: MarketData, tickers: list[str], buffer_size: int, history_years: int
+) -> None:
     """Fetch the tickers' bars after their last stored day and upsert them into the prices group.
 
     Args:
@@ -35,6 +37,7 @@ def refresh_prices(store: FeatureStore, market: MarketData, tickers: list[str], 
         market: Where the bars come from.
         tickers: The tickers to price.
         buffer_size: Tickers fetched per batch.
+        history_years: Years of bars a ticker without stored prices fetches.
     """
     try:
         stored = store.read(
@@ -43,10 +46,12 @@ def refresh_prices(store: FeatureStore, market: MarketData, tickers: list[str], 
             columns=(Col.TICKER, Col.DATE, Col.CLOSE, Col.CLOSE_AS_TRADED),
         )
     except NoSuchTableError:
-        # The first run creates the price table, so every ticker fetches its full history
+        # The first run creates the price table, so every ticker fetches from the history start
         stored = pd.DataFrame({Col.TICKER: [], Col.DATE: pd.to_datetime([]), Col.CLOSE: [], Col.CLOSE_AS_TRADED: []})
 
-    batches = prices.new_prices(market, tickers, prices.resume_points(stored), buffer_size)
+    batches = prices.new_prices(
+        market, tickers, prices.resume_points(stored), buffer_size, prices.history_start(history_years)
+    )
     for batch in tqdm(batches, total=-(-len(tickers) // buffer_size), desc='Pricing tickers', unit='batch'):
         # One key column: pyiceberg's upsert crashes on composite keys
         store.push(
@@ -75,4 +80,5 @@ if __name__ == '__main__':
         MarketDataClient(),
         np.unique(store.read(source, where=where, columns=(Col.TICKER,))[Col.TICKER]).tolist(),
         config.buffer_size,
+        config.price_history_years,
     )

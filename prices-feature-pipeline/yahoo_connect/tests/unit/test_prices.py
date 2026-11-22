@@ -7,7 +7,7 @@ Under test:
 import pandas as pd
 from secform4strategy_clients.fakes.market_data import FakeMarketData
 from src.constants import REBASE_LOOKBACK_DAYS
-from src.prices import new_prices, resume_points
+from src.prices import history_start, new_prices, resume_points
 
 from tests.factories import TODAY, bars, stored
 
@@ -15,6 +15,8 @@ from tests.factories import TODAY, bars, stored
 STORED_DAYS = pd.bdate_range(end=TODAY - pd.Timedelta(days=10), periods=60)
 NEW_DAYS = pd.bdate_range(STORED_DAYS[-1] + pd.Timedelta(days=1), TODAY - pd.Timedelta(days=1))
 ALL_DAYS = STORED_DAYS.append(NEW_DAYS)
+#: The first day a full refetch downloads, inside the stored days
+START = STORED_DAYS[10].date()
 
 
 def refresh(
@@ -22,13 +24,13 @@ def refresh(
 ) -> tuple[pd.DataFrame, FakeMarketData]:
     """Refresh ``tickers`` (default: every ticker Yahoo has) against the ``store``d bars, in one batch."""
     market, tickers = FakeMarketData(yahoo), tickers or list(yahoo)
-    batches = list(new_prices(market, tickers, resume_points(store), batch_size=len(tickers)))
+    batches = list(new_prices(market, tickers, resume_points(store), batch_size=len(tickers), start=START))
     return pd.concat(batches, ignore_index=True), market
 
 
 def full_refetches(market: FakeMarketData) -> list[str]:
-    """The tickers downloaded again in full (calls without a start)."""
-    return sorted(symbol for symbols, starts in market.calls for symbol in symbols if symbol not in starts)
+    """The tickers downloaded in full, meaning from the history start."""
+    return sorted(symbol for symbols, starts in market.calls for symbol in symbols if starts.get(symbol) == START)
 
 
 class TestResumePoints:
@@ -52,10 +54,18 @@ class TestIncrementalRefresh:
         assert full_refetches(market) == []
         assert out['date'].min() == STORED_DAYS[-REBASE_LOOKBACK_DAYS]
 
-    def test_a_new_ticker_fetches_its_full_history(self) -> None:
+    def test_a_new_ticker_fetches_from_the_history_start(self) -> None:
         out, market = refresh(stored({'A': bars(STORED_DAYS)}), {'A': bars(ALL_DAYS), 'NEW': bars(ALL_DAYS)})
         assert full_refetches(market) == ['NEW']
-        assert len(out[out['ticker'] == 'NEW']) == len(ALL_DAYS)
+        assert out[out['ticker'] == 'NEW']['date'].min().date() == START
+        assert len(out[out['ticker'] == 'NEW']) == len(ALL_DAYS[ALL_DAYS.date >= START])
+
+
+class TestHistoryStart:
+    """A full refetch reaches back a fixed number of years."""
+
+    def test_history_start_is_the_given_years_before_today(self) -> None:
+        assert history_start(15) == (pd.Timestamp.today() - pd.DateOffset(years=15)).date()
 
 
 class TestRebasing:
@@ -64,8 +74,9 @@ class TestRebasing:
     def test_an_action_after_the_stored_days_refetches_in_full(self) -> None:
         after = NEW_DAYS[0].strftime('%Y-%m-%d')
         yahoo = {'A': bars(ALL_DAYS, 0.98, actions={after: (2.0, 0.0)})}
-        _, market = refresh(stored({'A': bars(STORED_DAYS, 0.98)}), yahoo)
+        out, market = refresh(stored({'A': bars(STORED_DAYS, 0.98)}), yahoo)
         assert full_refetches(market) == ['A']
+        assert out['date'].min().date() == START
 
     def test_an_action_recorded_late_inside_the_stored_days_refetches_in_full(self) -> None:
         # Yahoo now applies a dividend dated inside the stored days, so their factors moved
