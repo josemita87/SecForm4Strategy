@@ -41,5 +41,5 @@ def handle(event: Mapping[str, Any], _context: object) -> dict[str, list[str]]:
     Returns:
         The tickers, for the next step.
     """
-    refresh_prices(store, market, tickers := list(event['tickers']), config.buffer_size)
+    refresh_prices(store, market, tickers := list(event['tickers']), config.buffer_size, config.price_history_years)
     return {'tickers': tickers}

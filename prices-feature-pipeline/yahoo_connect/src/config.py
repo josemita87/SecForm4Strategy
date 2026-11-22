@@ -12,6 +12,8 @@ class Config(BaseSettings):
 
     # System Settings
     buffer_size: int
+    # Years of daily bars a ticker without stored prices (or a rebased one) fetches
+    price_history_years: int = 15
     delay: int = 0
     system_training: bool = False
     system_inference: bool = False
