@@ -254,6 +254,12 @@ A Lambda that runs a container image needs that image in ECR, and the repository
 
 A temporary variable gated the publisher resources for this. It is removed; `moved` blocks in `infra/modules/site/main.tf` record the resources' old `[0]` addresses. A future image-based Lambda needs the same two steps.
 
+The publisher now reads its image at plan time, so building the stack in an empty account needs the image first:
+
+1. Run `terraform apply -target=module.storage` to create the ECR repositories.
+2. Run `images.yml` to push every image.
+3. Run the full apply.
+
 ## Deploys
 
 Terraform uploads the site files. The `site` module creates one `aws_s3_object` for each file under `site/`, except `fixtures/`, `data/` and `README.md`. Each object carries the MD5 hash of its file as its ETag, so an apply uploads a file again only when its content changes. The module sets the content type from the file extension.

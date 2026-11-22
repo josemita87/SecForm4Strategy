@@ -363,7 +363,7 @@ resource "aws_lambda_permission" "live_score_finished" {
   source_arn    = aws_cloudwatch_event_rule.live_score_finished.arn
 }
 
-# The publisher resources had count = 1 while the removed site_publisher_enabled switch was on
+# Old [0] addresses of the publisher resources (docs/site.md)
 moved {
   from = aws_cloudwatch_log_group.publisher[0]
   to   = aws_cloudwatch_log_group.publisher
