@@ -27,7 +27,7 @@ Each service lists the feature groups it touches, keyed by the reference the cod
 | `event_time` | yes | Event-time column |
 | `name` | no | Feature-group name; defaults to the reference key |
 
-`version` is not in the file: `load_feature_group_catalog` injects it from `FEATURE_GROUP_VERSION`, so one template serves every version. Entries are validated against `FeatureGroupSpec` and unknown keys are rejected; `make validate-config` checks every catalog. The version stays at 1 while nothing is deployed: a change to a table's key or columns means rebuilding the tables (drop them, or start a fresh lakehouse), since a table's schema is fixed when it is created. Bump it once stored data must be kept.
+`version` is not in the file: `load_feature_group_catalog` injects it from `FEATURE_GROUP_VERSION`, so one template serves every version. Entries are validated against `FeatureGroupSpec` and unknown keys are rejected; `make validate-config` checks every catalog. The version is 1. A table's schema is fixed when the table is created, so a change to a table's key or columns means rebuilding the tables (drop them, or start a fresh lakehouse). To keep the stored data instead, bump the version.
 
 The transaction `key` is deterministic: a hash of the filing's accession, its table (derivative or not) and the transaction's position in that table. A filed accession never changes, so every redelivery (feed re-polls, Kafka retries, backfill reruns) upserts the same row instead of adding a duplicate. 
 

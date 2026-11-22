@@ -54,7 +54,7 @@ A static site on S3 behind CloudFront shows the project in five pages: Story, Li
 
 ![AWS CI/CD](docs/diagrams/aws-ci-cd.drawio.svg)
 
-GitHub Actions authenticates to AWS with OIDC, so GitHub holds no AWS key. A merge to master runs the quality gate, then builds the `linux/arm64` image of each changed service and pushes it to ECR, then runs a `terraform apply` that waits for a reviewer's approval.
+GitHub Actions authenticates to AWS with OIDC, so GitHub holds no AWS key. A merge to master runs the quality gate, then builds the `linux/arm64` image of each changed service and pushes it to ECR. A Terraform change runs in two stages: a `plan` job saves the plan and uploads it encrypted, and an `apply` job applies exactly that plan after a reviewer approves it. Details are in [docs/aws.md](docs/aws.md#cicd).
 
 ### One code base, two runtimes
 
@@ -106,7 +106,7 @@ Services depend on the Protocols in `secform4strategy_clients.ports`, never on c
 | **sec-feature-pipeline/kafka-to-store** | Consumes transactions, casts and validates them, and upserts them into `BT4` / `BI4`. |
 | **prices-feature-pipeline/yahoo_connect** | Refreshes daily bars for the transactions' tickers into `P`, never mixing price bases and never storing a provisional close. |
 | **prices-feature-pipeline/target** | Collapses transactions into one row per ticker and next market print, adds insider clusters, company context and values, computes labels, and writes `RT4` / `BIR4`. |
-| **training** | Purged walk-forward grid search with a time holdout ([docs/training.md](docs/training.md)), a scikit-learn pipeline (preprocessing + gradient-boosted regressor), baselines, a short-side simulation; saves the pipeline with its metadata. |
+| **training** | Purged walk-forward grid search with a time holdout ([docs/training.md](docs/training.md)), a scikit-learn pipeline (preprocessing + gradient-boosted regressor), baselines, a short-side simulation; saves the pipeline with its metadata as a new version, and promotes it only through a gate ([docs/training.md](docs/training.md#promotion)). |
 | **inference** | Loads the saved pipeline, scores the newest `BIR4` rows and places short orders through Alpaca. On the live path it trades only rows accepted within the last 60 minutes. |
 | **site-publisher** | Reads the runs, queues, lakehouse, model and Alpaca paper account, and writes the study website's `data/*.json`. |
 | **packages/secform4strategy-clients** | The ports, their adapters (EDGAR, SQS, Kafka, Iceberg, DynamoDB, yfinance, Alpaca, local and S3 model stores, SSM settings) and typed fakes for tests. See its [README](packages/secform4strategy-clients/README.md). |
@@ -127,7 +127,7 @@ Services depend on the Protocols in `secform4strategy_clients.ports`, never on c
 ├── infra/                               # Terraform: bootstrap (state bucket), envs/demo, modules
 ├── .github/workflows/                   # quality, images and terraform
 ├── docker-compose/                      # Redpanda, the local training / inference stacks and the lakehouse summary tool
-├── scripts/                             # make status, the lakehouse summary and the site password
+├── scripts/                             # make status, the lakehouse summary, model promotion and the site password
 ├── docs/                                # AWS, site, training, configuration, development, Form 4 parsing, report, diagrams
 ├── Makefile                             # quality gate, tests, local stacks, AWS status and switch
 └── pyproject.toml                       # repo-wide ruff, mypy, pydoclint and bandit config
@@ -235,9 +235,9 @@ Development conventions (tests, fakes, comments, Docker builds) are in [docs/dev
 | Document | Covers |
 | --- | --- |
 | [docs/report/report.md](docs/report/report.md) | The full project report: hypothesis, data, model, results and cloud design |
-| [docs/aws.md](docs/aws.md) | The AWS deployment: paths, network, identity, messaging, CI/CD, cost, operating |
+| [docs/aws.md](docs/aws.md) | The AWS deployment: paths, network, identity, messaging, CI/CD, cost, operating, the 5-year backfill |
 | [docs/site.md](docs/site.md) | The study website: architecture, publisher, network, security, rollout |
-| [docs/training.md](docs/training.md) | Validation, grid search, evaluation and the model metadata |
+| [docs/training.md](docs/training.md) | Validation, grid search, evaluation, the model metadata and model promotion |
 | [docs/configuration.md](docs/configuration.md) | Settings, backends, feature-group specs |
 | [docs/form4-parsing.md](docs/form4-parsing.md) | How a Form 4 becomes transaction records |
 | [docs/error-handling.md](docs/error-handling.md) | Retryable and permanent errors across the services |

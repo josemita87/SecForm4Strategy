@@ -112,7 +112,9 @@ A run started by hand for a test sets `PROMOTE=never` for training. Training the
 | Step | Measured rate | Setting that sets it |
 | --- | --- | --- |
 | scraper | 6 to 7.8 filings per second | `SEC_MAX_RATE`, `FETCH_WORKERS=12`, `BUFFER_SIZE=200`, `RETRY_PAUSE=5` |
-| kafka-to-store | About 185 transactions per second with sequential SQS calls; the parallel receive and ack remove most of the SQS wait (not yet measured) | `BUFFER_SIZE=10000` (one Iceberg commit per batch; a commit takes about 7 seconds) |
+| kafka-to-store | About 40 seconds per 10,000-row batch at 0.5 vCPU, about 25 seconds at 2 vCPU | `BUFFER_SIZE` (one Iceberg upsert and commit per batch), the task's CPU |
+
+Most of kafka-to-store's batch time is the Iceberg upsert, not SQS. The upsert matches the batch's keys against the whole `BT4` table, so it slows as the table grows. Two writers to one Iceberg table conflict at commit: pyiceberg uses optimistic concurrency, so the second commit fails and retries. More kafka-to-store tasks therefore do not speed up the load. A larger `BUFFER_SIZE` does, because each batch pays the table scan once.
 
 The scraper downloads up to `FETCH_WORKERS` filings at once. SEC answers each request in about 0.5 seconds, so several requests in flight keep the rate near the cap. `EdgarClient` spaces request starts at least `1 / SEC_MAX_RATE` seconds apart across all threads.
 
@@ -126,6 +128,24 @@ A `retrain` run names exact task-definition revisions, for example `secform4stra
 
 The images have a second limit. Each ECR repository keeps only its 5 newest images. If a service gets five newer images while a run still has to start it, ECR deletes the image the run's revision names, and that step fails. During a multi-day run, push at most four new images of a service whose step has not started.
 
+#### The 5-year backfill
+
+The run `backfill-5y` started on 2026-11-20 at 18:11 UTC, with the full-load input in "Run input". It ended `FAILED`:
+
+1. master-index and the scraper processed every filing. At the end, the `filings` queue and its dead-letter queue were empty.
+2. The scraper had left filings unacknowledged for retry, so it exited non-zero, as designed.
+3. Step Functions retried the scraper step. Each retry failed with `CannotPullContainerError`. The run's revision `scraper:3` named an image digest that ECR had already deleted, because the lifecycle rule then kept only 2 images per repository.
+4. After its last retry, the run ended `FAILED`.
+
+The remaining steps run as tasks started by hand, on the latest revisions:
+
+1. kafka-to-store, with 2 vCPU, 8 GB and `BUFFER_SIZE=30000`.
+2. yahoo-connect.
+3. target.
+4. training, with `PROMOTE=never`. The model is then promoted with `scripts/promote_model.sh` ([training.md](training.md#manual-promotion-and-rollback)).
+
+A pinned revision works only while ECR still holds its image. For this reason each repository now keeps 5 images, and "Revisions of a running run" limits the new images during a run.
+
 ### Live path
 
 The live path runs the batch services as Lambda functions, on the same images, scoped to the tickers of each new filing:
@@ -138,6 +158,8 @@ The live path runs the batch services as Lambda functions, on the same images, s
 6. `live-score` runs three Lambdas in order, each passing `{"tickers": [...]}` to the next: yahoo-connect refreshes the prices, target builds the `BIR4` rows, and inference scores them and places Alpaca paper orders.
 
 The schedule is enabled only while both `switched_on` and `live_enabled` are `true`.
+
+The account allows 10 concurrent Lambda executions in total, shared by the live functions and the site publisher. [site.md](site.md#known-gaps) describes the risk and the fix.
 
 | Function | Trigger | Settings |
 | --- | --- | --- |
@@ -470,7 +492,7 @@ The `site` module adds these resources:
 | No provisioned concurrency | One warm instance per live function | It costs about $10 per month per function. A cold filing reaches inference about 1 to 2 minutes later. |
 | Lambda secrets read by `SsmSettings` at cold start | Terraform reads them and sets them as environment variables | The values would enter the Terraform state. |
 | `skip_destroy` on task definitions | Terraform deregisters replaced revisions | A running `retrain` run can no longer start tasks from a deregistered revision. |
-| `FARGATE` launch type (On-Demand) | Fargate Spot (`FARGATE_SPOT`, about 70% cheaper, ARM64 supported) | A Spot interruption fails the step, and 3 retries may not cover a multi-day backfill. The saving is a few dollars per week. |
+| `FARGATE` launch type (On-Demand) | Fargate Spot (`FARGATE_SPOT`, about 70% cheaper, ARM64 supported) | A Spot interruption fails the step, and 3 retries may not cover a multi-day backfill. The saving is a few dollars per week. A Spot design for scraper and kafka-to-store, with an On-Demand fallback in a `Catch`, is planned. |
 | NAT gateway only while switched on | An always-on NAT gateway | An always-on NAT gateway costs about $32 per month, more than six times the budget. |
 | S3 gateway endpoint plus NAT gateway | Interface endpoints for ECR (API and Docker), CloudWatch Logs, SQS and SSM | Five interface endpoints in two availability zones cost about $73 per month. The services need the internet for SEC, Yahoo Finance and Alpaca anyway, so the NAT gateway is required. |
 | OIDC roles for CI | An IAM user with access keys stored in GitHub | A stored key lives until someone rotates it, and anyone who reads it can use it. OIDC credentials are temporary and bound to one repository and one trigger. |
