@@ -364,9 +364,9 @@ Each role trusts the provider only for the audience `sts.amazonaws.com` and exac
 
 | Role | Trusted subject | Permissions |
 | --- | --- | --- |
-| `secform4strategy-github-images` | `repo:<owner>/SecForm4Strategy:ref:refs/heads/master` | `ecr:GetAuthorizationToken`, and image push and pull on `secform4strategy/*` |
-| `secform4strategy-github-plan` | `repo:<owner>/SecForm4Strategy:pull_request`, and `repo:<owner>/SecForm4Strategy:ref:refs/heads/master` for the plan of a master run | `ReadOnlyAccess`, plus `s3:PutObject` and `s3:DeleteObject` on `*.tflock` in the state bucket, minus `cloudfront-keyvaluestore:GetKey` and `ListKeys` |
-| `secform4strategy-github-apply` | `repo:<owner>/SecForm4Strategy:environment:aws` | `AdministratorAccess` |
+| `secform4strategy-github-images` | `repo:josemita87/SecForm4Strategy:ref:refs/heads/master` | `ecr:GetAuthorizationToken`, and image push and pull on `secform4strategy/*` |
+| `secform4strategy-github-plan` | `repo:josemita87/SecForm4Strategy:pull_request`, and `repo:josemita87/SecForm4Strategy:ref:refs/heads/master` for the plan of a master run | `ReadOnlyAccess`, plus `s3:PutObject` and `s3:DeleteObject` on `*.tflock` in the state bucket, minus `cloudfront-keyvaluestore:GetKey` and `ListKeys` |
+| `secform4strategy-github-apply` | `repo:josemita87/SecForm4Strategy:environment:aws` | `AdministratorAccess` |
 
 The plan role can read every resource and the state, and can write only the lock file. A pull request therefore cannot change any resource. The inline policy `deny-site-keys` denies the plan role `cloudfront-keyvaluestore:GetKey` and `cloudfront-keyvaluestore:ListKeys` on all resources. A pull request branch can assume the plan role, and the key-value store `secform4strategy-site-auth` holds the hash of the site password.
 

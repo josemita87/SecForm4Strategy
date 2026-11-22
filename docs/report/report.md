@@ -7,7 +7,7 @@
 | Course | Cloud Solutions |
 | Project | SecForm4Strategy |
 | Date | 2026-11-22 |
-| Repository | `prod_inside_out`, branch `master` |
+| Repository | [https://github.com/josemita87/SecForm4Strategy](https://github.com/josemita87/SecForm4Strategy), branch `master` |
 
 ## Abstract
 
@@ -442,9 +442,9 @@ GitHub Actions authenticates with OIDC (OpenID Connect). A workflow requests a t
 
 | Role | Trusted subject | Permissions |
 | --- | --- | --- |
-| `secform4strategy-github-images` | `repo:<owner>/SecForm4Strategy:ref:refs/heads/master` | ECR push and pull on `secform4strategy/*` |
-| `secform4strategy-github-plan` | `repo:<owner>/SecForm4Strategy:pull_request`, and `ref:refs/heads/master` for the plan of a master run | `ReadOnlyAccess`, plus write and delete on the state lock file only; `deny-site-keys` denies reading the site's key-value store |
-| `secform4strategy-github-apply` | `repo:<owner>/SecForm4Strategy:environment:aws` | `AdministratorAccess` |
+| `secform4strategy-github-images` | `repo:josemita87/SecForm4Strategy:ref:refs/heads/master` | ECR push and pull on `secform4strategy/*` |
+| `secform4strategy-github-plan` | `repo:josemita87/SecForm4Strategy:pull_request`, and `ref:refs/heads/master` for the plan of a master run | `ReadOnlyAccess`, plus write and delete on the state lock file only; `deny-site-keys` denies reading the site's key-value store |
+| `secform4strategy-github-apply` | `repo:josemita87/SecForm4Strategy:environment:aws` | `AdministratorAccess` |
 
 A merge to master that changes `infra/` or `site/` runs `terraform.yml` in two stages:
 
@@ -879,7 +879,7 @@ On one year of data, the result is negative on MAE and promising only in the tai
 ## Appendix B: Repository map
 
 ```
-.
+SecForm4Strategy/
 ├── sec-feature-pipeline/                # master-index, scraper, kafka-to-store
 ├── prices-feature-pipeline/             # yahoo_connect (prices), target (rows and labels)
 ├── training/                            # walk-forward grid search, holdout, model metadata
