@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SecForm4Strategy Live</title>
+<meta name="description" content="SEC Form 4 insider sales, scored by a gradient-boosted model and shorted on an Alpaca paper account, in real time.">
+<script>try { if (localStorage.getItem('sf4-theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch (e) { /* storage unavailable */ }</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="assets/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%230a84ff'/%3E%3Cstop offset='1' stop-color='%23ff375f'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3C/svg%3E">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/3.1.0/plotly-basic.min.js" integrity="sha512-SqALT5iAQNn2zw/cGc65ipvfDf46hZPH5pzKJ3DQp2NoUl+36eaL0Gzgn8S3YGXu3Wk+u87k49SrNx8D4fhKNg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script type="module" src="assets/js/main.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header id="nav">
+  <a class="brand" href="#/live"><i aria-hidden="true"></i><span>SecForm4Strategy</span></a>
+  <nav aria-label="Pages">
+    <a class="nav-link" data-route="story" href="#/story">Story</a>
+    <a class="nav-link" data-route="live" href="#/live"><span class="nav-dot" aria-hidden="true"></span>Live</a>
+    <a class="nav-link" data-route="portfolio" href="#/portfolio">Portfolio</a>
+    <a class="nav-link" data-route="model" href="#/model">Model</a>
+    <a class="nav-link" data-route="explore" href="#/explore">Explore</a>
+  </nav>
+  <div class="nav-tools">
+    <span id="fixtures-pill" class="pill warn" hidden title="Data comes from site/fixtures, not the live publisher">Fixtures</span>
+    <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch theme">
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- Story -->
+<section id="page-story" class="page page-story" hidden aria-label="Story">
+  <iframe id="story-frame" title="SecForm4Strategy presentation"></iframe>
+</section>
+
+<!-- Live -->
+<section id="page-live" class="page" hidden aria-labelledby="live-title">
+  <div class="hero">
+    <div>
+      <p class="eyebrow">Live trading desk &middot; paper account</p>
+      <h1 id="live-title">Insider sales in, <span class="grad">short decisions out</span>.</h1>
+      <p class="lede">Every Form 4 sale that SEC accepts is parsed, priced, turned into features and scored by the model. A predicted fall below the threshold places a short order on Alpaca.</p>
+    </div>
+    <button id="replay-toggle" class="btn replay-btn" type="button" aria-pressed="false" title="Replay the runs in live.json, one every 3 seconds">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/></svg><span>Replay</span>
+    </button>
+  </div>
+
+  <div class="strip" role="group" aria-label="System status">
+    <div class="tile" id="st-poller" data-state="unknown">
+      <span class="pulse" aria-hidden="true"></span>
+      <div><div class="tile-k">SEC poller</div><div class="tile-v" id="st-poller-text">&mdash;</div></div>
+    </div>
+    <div class="tile" id="st-market" data-state="off" title="Regular session 09:30 to 16:00 ET on weekdays; exchange holidays are not shown">
+      <span class="pulse" aria-hidden="true"></span>
+      <div><div class="tile-k" id="st-market-text">NYSE</div><div class="tile-v" id="st-market-detail">&mdash;</div></div>
+    </div>
+    <div class="tile">
+      <div><div class="tile-k">Model version</div><div class="tile-v mono" id="st-model">&mdash;</div></div>
+    </div>
+    <div class="tile">
+      <div><div class="tile-k">Short threshold</div><div class="tile-v" id="st-threshold">&mdash;</div></div>
+    </div>
+    <div class="tile">
+      <div><div class="tile-k">Last update</div><div class="tile-v fresh" id="st-fresh">&mdash;</div></div>
+      <span id="live-delayed" class="delayed" hidden>Data delayed</span>
+    </div>
+  </div>
+
+  <div id="replay-banner" class="replay-banner" hidden role="status">
+    <span class="replay-tag">REPLAY</span>
+    <span class="replay-copy">Recorded runs from live.json, replayed one every 3 s. <span id="replay-text"></span></span>
+    <span class="replay-actions"><button id="replay-again" class="btn small" type="button">Replay again</button><button id="replay-exit" class="btn small" type="button">Back to live</button></span>
+    <span class="replay-progress"><i id="replay-bar"></i></span>
+  </div>
+
+  <div class="live-grid">
+    <div class="feed-col">
+      <div class="section-head">
+        <h2>Pipeline feed</h2>
+        <dl class="summary" aria-label="Latest 50 runs">
+          <div><dt>Filings scored</dt><dd id="sum-filings">&mdash;</dd></div>
+          <div><dt>Shorted</dt><dd id="sum-shorts">&mdash;</dd></div>
+          <div><dt>Median SEC &rarr; decision</dt><dd id="sum-latency">&mdash;</dd></div>
+          <div><dt>Runs ok</dt><dd id="sum-runs">&mdash;</dd></div>
+        </dl>
+      </div>
+      <div id="feed" class="feed" aria-live="polite" aria-relevant="additions"></div>
+      <p id="feed-empty" class="empty-state">No live-score runs yet. A run starts within about a minute of SEC accepting a new Form 4 sale.</p>
+    </div>
+
+    <aside class="health card" aria-labelledby="health-title">
+      <div class="health-head"><h2 id="health-title">System health</h2><span id="health-delayed" class="delayed" hidden>Data delayed</span></div>
+      <div id="h-switches" class="chips"></div>
+      <div class="minis">
+        <div class="mini"><span class="mini-v" id="h-ok">&mdash;</span><span class="mini-k">runs ok, 24 h</span></div>
+        <div class="mini"><span class="mini-v" id="h-failed">&mdash;</span><span class="mini-k">runs failed, 24 h</span></div>
+        <div class="mini"><span class="mini-v" id="h-running">&mdash;</span><span class="mini-k">running now</span></div>
+        <div class="mini"><span class="mini-v" id="h-errors">&mdash;</span><span class="mini-k">Lambda errors, 1 h</span></div>
+      </div>
+      <h3>Queues</h3>
+      <div class="table-wrap"><table class="table compact">
+        <thead><tr><th scope="col">Queue</th><th scope="col">Depth</th><th scope="col">In flight</th><th scope="col">DLQ</th></tr></thead>
+        <tbody id="h-queues"></tbody>
+      </table></div>
+      <h3>Lambda functions, last hour</h3>
+      <div class="table-wrap"><table class="table compact">
+        <thead><tr><th scope="col">Function</th><th scope="col">Calls</th><th scope="col">Errors</th><th scope="col">p90</th></tr></thead>
+        <tbody id="h-lambdas"></tbody>
+      </table></div>
+      <h3>Retrain</h3>
+      <div id="h-retrain" class="retrain"></div>
+    </aside>
+  </div>
+</section>
+
+<!-- Portfolio -->
+<section id="page-portfolio" class="page" hidden aria-labelledby="pf-title">
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Alpaca account <span id="pf-paper" class="pill accent">Paper</span> <span id="pf-status" class="chip muted">&mdash;</span></p>
+      <h1 id="pf-title">Portfolio</h1>
+    </div>
+    <div class="updated">Updated <span id="pf-updated" data-ago="">&mdash;</span> <span id="pf-delayed" class="delayed" hidden>Data delayed</span></div>
+  </div>
+  <div class="kpis">
+    <div class="kpi hero-kpi"><div class="kpi-k">Equity</div><div class="kpi-v" id="pf-equity">&mdash;</div><div class="kpi-s" id="pf-change">&mdash;</div></div>
+    <div class="kpi"><div class="kpi-k">Cash</div><div class="kpi-v" id="pf-cash">&mdash;</div><div class="kpi-s">includes short sale proceeds</div></div>
+    <div class="kpi"><div class="kpi-k">Buying power</div><div class="kpi-v" id="pf-bp">&mdash;</div><div class="kpi-s">margin account</div></div>
+    <div class="kpi"><div class="kpi-k">Open positions</div><div class="kpi-v" id="pf-npos">&mdash;</div><div class="kpi-s" id="pf-upl">&mdash;</div></div>
+  </div>
+  <div class="card chart-card">
+    <div class="card-head"><h2>Equity, last month</h2><span class="muted">daily close</span></div>
+    <div id="pf-chart" class="chart" role="img" aria-label="Account equity over the last month"></div>
+    <p id="pf-chart-empty" class="empty" hidden>Not enough equity history yet.</p>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>Open positions</h2></div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th scope="col">Symbol</th><th scope="col">Side</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Entry</th><th scope="col" class="num">Price</th><th scope="col" class="num">Market value</th><th scope="col" class="num">Unrealized P&amp;L</th><th scope="col" class="num">%</th></tr></thead>
+      <tbody id="pf-positions"></tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>Orders</h2><span class="muted">latest 100; each order carries its filing key as client order id</span></div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th scope="col">Submitted</th><th scope="col">Symbol</th><th scope="col">Side</th><th scope="col" class="num">Qty</th><th scope="col">Status</th><th scope="col" class="num">Fill price</th><th scope="col">Filled</th><th scope="col">Filing</th></tr></thead>
+      <tbody id="pf-orders"></tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- Model -->
+<section id="page-model" class="page" hidden aria-labelledby="md-title">
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Model in production &middot; <span id="md-version-when">&mdash;</span></p>
+      <h1 id="md-title">Model <span class="mono grad" id="md-version">&mdash;</span></h1>
+    </div>
+    <div class="updated"><span id="md-delayed" class="delayed" hidden>Data delayed</span></div>
+  </div>
+  <div class="callout">
+    <p><b>How to read this page.</b> Walk-forward folds choose the hyper-parameters. The model is then scored once on a time-ordered holdout: the latest filings, which the selection never saw. Every number below comes from that holdout.</p>
+    <p id="md-verdict" class="verdict-line"></p>
+  </div>
+  <div class="model-top">
+    <div class="card">
+      <div class="card-head"><h2>Training facts</h2></div>
+      <dl id="md-facts" class="facts"></dl>
+      <div id="md-params" class="params"></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Holdout metrics</h2></div>
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th scope="col">Predictor</th><th scope="col" class="num">MAE</th><th scope="col" class="num">Mean short return</th><th scope="col" class="num">Shorts</th></tr></thead>
+        <tbody id="md-metrics"></tbody>
+      </table></div>
+      <p class="note">MAE is the mean absolute error of the predicted return to the next print. A short return is the negated actual return, so a positive value is a profit.</p>
+    </div>
+  </div>
+  <div class="charts">
+    <div class="card chart-card" id="md-folds-card">
+      <div class="card-head"><h2>Walk-forward validation</h2><span class="muted">MAE per fold, then the holdout</span></div>
+      <div id="md-folds" class="chart tall" role="img" aria-label="Model and zero-baseline MAE per walk-forward fold and on the holdout"></div>
+    </div>
+    <div class="card chart-card" id="md-thr-card">
+      <div class="card-head"><h2>Threshold trade-off</h2><span class="muted">holdout; the active threshold is highlighted</span></div>
+      <div id="md-thr" class="chart tall" role="img" aria-label="Number of shorts and mean short return for each threshold"></div>
+    </div>
+    <div class="card chart-card" id="md-cum-card">
+      <div class="card-head"><h2>Shorts vs shorting SPY</h2><span class="muted">holdout; each short adds its 30-day return once; SPY shorted over the same windows</span></div>
+      <div id="md-cum" class="chart tall" role="img" aria-label="Summed return of the holdout shorts and of shorting SPY over the same windows"></div>
+    </div>
+    <div class="card chart-card" id="md-imp-card">
+      <div class="card-head"><h2>Feature importance</h2><span class="muted">permutation importance on the holdout, top 15</span></div>
+      <div id="md-imp" class="chart tall" role="img" aria-label="Permutation importance of the top features"></div>
+    </div>
+  </div>
+</section>
+
+<!-- Explore -->
+<section id="page-explore" class="page" hidden aria-labelledby="ex-title">
+  <div class="page-head">
+    <div><p class="eyebrow">Insider activity &middot; last 7 days</p><h1 id="ex-title">Explore</h1></div>
+    <div class="updated">Updated <span id="ex-updated" data-ago="">&mdash;</span> <span id="ex-delayed" class="delayed" hidden>Data delayed</span></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>Largest sales</h2></div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th scope="col">Ticker</th><th scope="col">Insider</th><th scope="col">Role</th><th scope="col" class="num">Shares</th><th scope="col" class="num">Value</th><th scope="col">Accepted</th></tr></thead>
+      <tbody id="ex-sales"></tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>Clusters</h2><span class="muted">several insiders selling the same stock</span></div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th scope="col">Ticker</th><th scope="col" class="num">Insiders</th><th scope="col" class="num">Value</th><th scope="col">First filing</th><th scope="col">Last filing</th></tr></thead>
+      <tbody id="ex-clusters"></tbody>
+    </table></div>
+  </div>
+</section>
+
+</main>
+<div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

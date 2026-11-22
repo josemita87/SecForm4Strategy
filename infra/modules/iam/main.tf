@@ -79,6 +79,10 @@ locals {
     read-secrets = [
       { actions = ["ssm:GetParameters"], resources = ["arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.name}/*"] },
     ]
+    # The two Alpaca keys only, for the services that trade or read the account
+    read-alpaca-keys = [
+      { actions = ["ssm:GetParameters"], resources = [for key in ["alpaca-api-key", "alpaca-api-secret"] : "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.name}/${key}"] },
+    ]
   }
 
   # Lambda keys get a live- prefix, so a service can have both a task role and a Lambda role
@@ -127,9 +131,9 @@ resource "aws_iam_role_policy" "lambda" {
   policy   = data.aws_iam_policy_document.access["live-${each.key}"].json
 }
 
-# Logs; the network-interface permissions let Lambda delete the VPC interfaces of earlier function versions
-resource "aws_iam_role_policy_attachment" "lambda_vpc" {
+# CloudWatch Logs only; no Lambda runs in a VPC
+resource "aws_iam_role_policy_attachment" "lambda_logs" {
   for_each   = var.lambda_access
   role       = aws_iam_role.lambda[each.key].name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }

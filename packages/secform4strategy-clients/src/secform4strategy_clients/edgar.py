@@ -14,7 +14,8 @@ from http import HTTPStatus
 
 import httpx
 
-from secform4strategy_clients.ports import Filing, PermanentError, RetryableError
+from secform4strategy_clients.ports import PermanentError, RetryableError
+from secform4strategy_clients.records import Filing
 from secform4strategy_clients.retry import with_backoff
 
 ATOM = {'atom': 'http://www.w3.org/2005/Atom'}

@@ -1,0 +1,1826 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SecForm4Strategy</title>
+<style>
+:root{
+  --bg:#fbfbfd; --panel:#ffffff; --panel2:#f5f5f7; --ink:#1d1d1f; --muted:#6e6e73; --faint:#86868b;
+  --line:#d2d2d7; --edge:#b8b8bf; --accent:#0071e3; --accent-soft:rgba(0,113,227,.09); --on-accent:#fff;
+  --good:#248a3d; --good-soft:rgba(52,199,89,.13); --warn:#c45500; --warn-soft:rgba(255,149,0,.13);
+  --bad:#d70015; --bad-soft:rgba(255,59,48,.10);
+  --k-compute:#ff9500; --k-int:#ff2d55; --k-store:#34c759; --k-data:#5856d6; --k-sec:#ff3b30;
+  --k-ext:#8e8e93; --k-ci:#007aff; --k-ml:#30b0c7;
+  --nshadow:rgba(0,0,0,.07); --shadow:0 2px 6px rgba(0,0,0,.04),0 14px 34px rgba(0,0,0,.07); --tok:#0071e3;
+  --g1:#0071e3; --g2:#7a5af8; --g3:#e0457b; --glass:rgba(255,255,255,.72);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+  --bg:#000000; --panel:#1c1c1e; --panel2:#2c2c2e; --ink:#f5f5f7; --muted:#a1a1a6; --faint:#6e6e73;
+  --line:#38383a; --edge:#55555a; --accent:#2997ff; --accent-soft:rgba(41,151,255,.14); --on-accent:#fff;
+  --good:#30d158; --good-soft:rgba(48,209,88,.15); --warn:#ff9f0a; --warn-soft:rgba(255,159,10,.15);
+  --bad:#ff453a; --bad-soft:rgba(255,69,58,.15);
+  --k-compute:#ff9f0a; --k-int:#ff375f; --k-store:#30d158; --k-data:#5e5ce6; --k-sec:#ff453a;
+  --k-ext:#98989d; --k-ci:#0a84ff; --k-ml:#40c8e0;
+  --nshadow:rgba(0,0,0,.55); --shadow:0 0 0 1px rgba(255,255,255,.07),0 16px 40px rgba(0,0,0,.55); --tok:#2997ff;
+  --g1:#2997ff; --g2:#a78bfa; --g3:#ff6b9d; --glass:rgba(28,28,30,.72);
+  color-scheme:dark;
+}
+}
+:root[data-theme="dark"]{
+  --bg:#000000; --panel:#1c1c1e; --panel2:#2c2c2e; --ink:#f5f5f7; --muted:#a1a1a6; --faint:#6e6e73;
+  --line:#38383a; --edge:#55555a; --accent:#2997ff; --accent-soft:rgba(41,151,255,.14); --on-accent:#fff;
+  --good:#30d158; --good-soft:rgba(48,209,88,.15); --warn:#ff9f0a; --warn-soft:rgba(255,159,10,.15);
+  --bad:#ff453a; --bad-soft:rgba(255,69,58,.15);
+  --k-compute:#ff9f0a; --k-int:#ff375f; --k-store:#30d158; --k-data:#5e5ce6; --k-sec:#ff453a;
+  --k-ext:#98989d; --k-ci:#0a84ff; --k-ml:#40c8e0;
+  --nshadow:rgba(0,0,0,.55); --shadow:0 0 0 1px rgba(255,255,255,.07),0 16px 40px rgba(0,0,0,.55); --tok:#2997ff;
+  --g1:#2997ff; --g2:#a78bfa; --g3:#ff6b9d; --glass:rgba(28,28,30,.72);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font-family:Inter,"SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;transition:background .4s,color .4s}
+code,.mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+button{font:inherit;color:inherit}
+
+/* ---------- chrome ---------- */
+#top{position:fixed;left:0;right:0;top:0;height:58px;display:flex;align-items:center;gap:14px;padding:0 16px;background:color-mix(in srgb,var(--panel) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);z-index:20}
+#brand{font-weight:750;letter-spacing:-.01em;font-size:16px;white-space:nowrap;display:flex;align-items:center;gap:9px}
+#brand i{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--k-ci),var(--k-int));display:inline-block}
+#rail{flex:1;display:flex;gap:4px;justify-content:center;min-width:0;overflow:hidden}
+.rail-item{border:0;background:transparent;padding:7px 10px;border-radius:9px;cursor:pointer;display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--muted);white-space:nowrap;transition:background .25s,color .25s}
+.rail-item b{display:inline-grid;place-items:center;width:21px;height:21px;border-radius:50%;font-size:11.5px;background:var(--panel2);color:var(--muted);transition:background .25s,color .25s}
+.rail-item:hover{background:var(--panel2);color:var(--ink)}
+.rail-item.done b{background:var(--accent-soft);color:var(--accent)}
+.rail-item.cur{color:var(--ink);background:var(--accent-soft)}
+.rail-item.cur b{background:var(--accent);color:#fff}
+@media (max-width:1500px){.rail-item span{display:none}.rail-item.cur span{display:inline}}
+@media (max-width:900px){.rail-item.cur span{display:none}#brand span{display:none}}
+#tools{display:flex;gap:4px}
+.tbtn{border:1px solid var(--line);background:var(--panel);border-radius:9px;height:34px;min-width:34px;padding:0 9px;cursor:pointer;font-size:13px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.tbtn:hover{color:var(--ink);border-color:var(--edge)}
+.tbtn.on{color:var(--accent);border-color:var(--accent)}
+.tbtn kbd{font-size:11px;opacity:.7}
+#progress{position:fixed;top:58px;left:0;height:3px;background:var(--accent);width:0;transition:width .5s cubic-bezier(.2,.7,.2,1);z-index:21}
+#bottom{position:fixed;left:0;right:0;bottom:0;height:42px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font-size:13px;color:var(--faint);z-index:20}
+#stepdots{display:flex;gap:7px;align-items:center}
+#stepdots button{width:10px;height:10px;border-radius:50%;border:0;padding:0;background:var(--line);cursor:pointer;transition:background .25s,transform .25s}
+#stepdots button.on{background:var(--accent);transform:scale(1.25)}
+#stepdots button.past{background:color-mix(in srgb,var(--accent) 45%,var(--line))}
+#counter{font-variant-numeric:tabular-nums}
+#navbtns{display:flex;gap:6px}
+
+/* ---------- stage ---------- */
+#viewport{position:fixed;left:0;top:61px;bottom:42px;right:0;transition:right .45s cubic-bezier(.2,.7,.2,1)}
+body.notes #viewport{right:430px}
+#stage{position:absolute;left:0;top:0;width:1600px;height:900px;transform-origin:0 0}
+.slide{position:absolute;inset:0;opacity:0;visibility:hidden;transition:opacity .6s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1),visibility 0s .7s;transform:translateX(70px)}
+.slide.before{transform:translateX(-70px)}
+.slide.cur{opacity:1;visibility:visible;transform:none;transition:opacity .6s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1),visibility 0s}
+.slide>svg.dia{position:absolute;inset:0;width:1600px;height:900px;overflow:visible}
+.head{position:absolute;left:44px;top:22px;right:44px;pointer-events:none;z-index:2}
+.kicker{font-size:15px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.head h1{margin:4px 0 0;font-size:44px;line-height:1.08;letter-spacing:-.022em;font-weight:760}
+.caps{position:relative;height:74px;margin-top:10px}
+.cap{position:absolute;left:0;top:0;margin:0;font-size:25px;line-height:1.36;color:var(--muted);max-width:1500px}
+.cap code{font-size:.9em;color:var(--ink)}
+.cap strong{color:var(--ink);font-weight:650}
+
+/* reveal */
+.rv{opacity:0;translate:0 12px;transition:opacity .55s cubic-bezier(.2,.7,.2,1),translate .6s cubic-bezier(.2,.7,.2,1),filter .4s}
+.rv.on{opacity:1;translate:0 0}
+.w.rv:not(.on){pointer-events:none}
+.cap.rv{translate:0 8px}
+.cap.rv.on{transition-delay:.12s}
+.rv.on.soft{opacity:.3}
+[data-d="1"]{transition-delay:.08s}[data-d="2"]{transition-delay:.16s}[data-d="3"]{transition-delay:.24s}[data-d="4"]{transition-delay:.32s}[data-d="5"]{transition-delay:.4s}[data-d="6"]{transition-delay:.48s}[data-d="7"]{transition-delay:.56s}[data-d="8"]{transition-delay:.64s}
+
+/* ---------- svg vocabulary ---------- */
+svg text{fill:var(--ink);font-family:inherit}
+.nb{fill:var(--panel);stroke:var(--line);stroke-width:1.5;filter:drop-shadow(0 2px 5px rgba(15,23,42,.08));transition:stroke .3s,fill .3s}
+.ni{transition:fill .3s}
+.ig{fill:none;stroke:#fff;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.ig text{fill:#fff;stroke:none;font-weight:800;font-size:19px}
+.nt{font-size:21px;font-weight:660;letter-spacing:-.01em}
+.ns{font-size:16.5px;fill:var(--muted)}
+.nt.mono,.ns.mono{font-family:"SF Mono",ui-monospace,Menlo,monospace}
+.nt.mono{font-size:19.5px}
+.k-compute .ni{fill:var(--k-compute)} .k-int .ni{fill:var(--k-int)} .k-store .ni{fill:var(--k-store)} .k-data .ni{fill:var(--k-data)}
+.k-sec .ni{fill:var(--k-sec)} .k-ext .ni{fill:var(--k-ext)} .k-ci .ni{fill:var(--k-ci)} .k-ml .ni{fill:var(--k-ml)}
+.node{transition:opacity .4s}
+.hot .nb{stroke:var(--accent);stroke-width:2.6;fill:color-mix(in srgb,var(--accent) 7%,var(--panel))}
+.okk .nb{stroke:var(--good);stroke-width:2.4}
+.wait .nb{stroke:var(--warn);stroke-width:2.4;stroke-dasharray:7 5}
+.badk .nb{stroke:var(--bad);stroke-width:2.4}
+.off{opacity:.2!important;filter:grayscale(1)}
+.edge{fill:none;stroke:var(--edge);stroke-width:2.2;transition:stroke .3s,opacity .4s}
+.edge.flow{stroke-dasharray:7 8;animation:dash 1.1s linear infinite}
+.edge.dashed{stroke-dasharray:4 6}
+.edge.hot{stroke:var(--accent);stroke-width:3}
+@keyframes dash{to{stroke-dashoffset:-15}}
+.ah{fill:var(--edge)} .ahh{fill:var(--accent)}
+.frame{fill:color-mix(in srgb,var(--panel2) 55%,transparent);stroke:var(--line);stroke-width:1.5;stroke-dasharray:6 6}
+.frame.solid{stroke-dasharray:none}
+.ft{font-size:15px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;fill:var(--muted)}
+.lbl{font-size:17px;fill:var(--muted)}
+.lbl.big{font-size:21px;fill:var(--ink);font-weight:600}
+.lbl.acc{fill:var(--accent);font-weight:650}
+.lbl.good{fill:var(--good);font-weight:650}
+.lbl.bad{fill:var(--bad);font-weight:650}
+.lbl.warn{fill:var(--warn);font-weight:650}
+.lbl.mono{font-family:"SF Mono",ui-monospace,Menlo,monospace}
+.pill rect{fill:var(--panel2);stroke:var(--line)}
+.pill text{font-size:15.5px;font-weight:600;font-family:"SF Mono",ui-monospace,Menlo,monospace}
+.tok{fill:var(--tok);filter:drop-shadow(0 0 6px var(--tok))}
+.tok-ring{fill:none;stroke:var(--tok);stroke-width:2;opacity:.5}
+.toklbl{font-size:15px;font-weight:700;fill:var(--tok)}
+.amb{fill:var(--accent);opacity:.75}
+.draw{transition:stroke-dashoffset 1.8s cubic-bezier(.4,.1,.2,1),opacity .5s}
+.badge circle{fill:var(--good)} .badge path{stroke:#fff;stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.badge{opacity:0;transition:opacity .35s}
+.badge.show{opacity:1}
+
+/* ---------- html widgets on the canvas ---------- */
+.w{position:absolute;z-index:3}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:22px 26px}
+.card h3{margin:0 0 10px;font-size:23px;letter-spacing:-.01em}
+.card p{margin:6px 0;font-size:19px;line-height:1.42;color:var(--muted)}
+.card p b,.card p code{color:var(--ink)}
+.card ul{margin:6px 0 0;padding-left:22px;font-size:19px;line-height:1.5;color:var(--muted)}
+.card li b,.card li code{color:var(--ink)}
+.seg{display:inline-flex;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px}
+.seg button{border:0;background:transparent;border-radius:9px;padding:9px 16px;font-size:17px;font-weight:600;color:var(--muted);cursor:pointer;transition:background .25s,color .25s}
+.seg button.on{background:var(--panel);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:11px;padding:10px 18px;font-size:17px;font-weight:650;cursor:pointer;display:inline-flex;gap:8px;align-items:center}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn:hover{filter:brightness(1.08)}
+.lab{font-size:15px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+input[type=range]{accent-color:var(--accent);width:100%;height:28px;cursor:pointer}
+.code{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:17px;line-height:1.5;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;white-space:pre-wrap;color:var(--ink);margin:0}
+.code .k{color:var(--k-int)} .code .s{color:var(--k-store)} .code .c{color:var(--faint)}
+.chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:7px 14px;font-size:17px;font-weight:600;transition:border-color .3s,background .3s}
+.chip .dot{width:10px;height:10px;border-radius:50%;background:var(--faint);transition:background .3s}
+.chip.ok{border-color:color-mix(in srgb,var(--good) 55%,var(--line));background:var(--good-soft)} .chip.ok .dot{background:var(--good)}
+.chip.warn .dot{background:var(--warn)}
+.tag{display:inline-block;font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 9px;border-radius:999px;background:var(--panel2);color:var(--muted)}
+.tag.good{background:var(--good-soft);color:var(--good)} .tag.warn{background:var(--warn-soft);color:var(--warn)} .tag.bad{background:var(--bad-soft);color:var(--bad)} .tag.acc{background:var(--accent-soft);color:var(--accent)}
+.console{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:14px;line-height:1.42;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:12px 14px;overflow:hidden;display:flex;flex-direction:column;gap:3px}
+.console .ln{opacity:0;translate:0 6px;transition:opacity .35s,translate .35s;color:var(--muted)}
+.console .ln.on{opacity:1;translate:0 0}
+.console .ln b{color:var(--ink)}
+.console .ln.ok b{color:var(--good)}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
+.sw code{font-size:16px}
+.toggle{width:54px;height:30px;border-radius:999px;background:var(--line);border:0;position:relative;cursor:pointer;flex:none;transition:background .3s}
+.toggle::after{content:"";position:absolute;left:3px;top:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .3s cubic-bezier(.2,.7,.2,1)}
+.toggle.on{background:var(--good)}
+.toggle.on::after{left:27px}
+.stripes{background-image:repeating-linear-gradient(-45deg,var(--accent-soft) 0 12px,transparent 12px 24px);background-size:34px 34px;animation:stripes 1.2s linear infinite}
+@keyframes stripes{to{background-position:34px 0}}
+.flip{perspective:1200px;cursor:pointer;border:0;background:transparent;padding:0;text-align:left}
+.flip .in{position:relative;width:100%;height:100%;transition:transform .7s cubic-bezier(.2,.7,.2,1);transform-style:preserve-3d}
+.flip.open .in{transform:rotateY(180deg)}
+.flip .fa,.flip .fb{position:absolute;inset:0;backface-visibility:hidden;border-radius:16px;border:1px solid var(--line);background:var(--panel);box-shadow:var(--shadow);padding:18px 22px;display:flex;flex-direction:column;justify-content:center}
+.flip .fb{transform:rotateY(180deg);background:var(--panel2)}
+.flip h4{margin:0;font-size:22px;line-height:1.3}
+.flip p{margin:0;font-size:17.5px;line-height:1.42;color:var(--muted)}
+.flip .hint{font-size:13px;color:var(--faint);margin-top:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+.tbd{border:2px dashed var(--warn);color:var(--warn);border-radius:8px;padding:1px 8px;font-weight:700;font-size:16px;white-space:nowrap}
+
+/* ---------- notes, overview, help ---------- */
+#notes{position:fixed;top:61px;right:0;bottom:0;width:430px;background:var(--panel);border-left:1px solid var(--line);z-index:15;transform:translateX(100%);transition:transform .45s cubic-bezier(.2,.7,.2,1);padding:22px 24px;overflow:auto}
+body.notes #notes{transform:none}
+#notes .lab{margin-bottom:6px}
+#notes h2{margin:0 0 4px;font-size:20px}
+#notes .cur-step{font-size:14px;color:var(--faint);margin-bottom:14px}
+#notes ul{margin:0;padding-left:20px}
+#notes li{font-size:17.5px;line-height:1.5;margin:0 0 10px}
+#notes li code{font-size:15px}
+#notes .next{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);font-size:15px;color:var(--muted)}
+#notes .clock{font-variant-numeric:tabular-nums;font-size:14px;color:var(--faint);margin-top:16px}
+#overview{position:fixed;inset:0;z-index:40;background:color-mix(in srgb,var(--bg) 94%,transparent);backdrop-filter:blur(6px);opacity:0;visibility:hidden;transition:opacity .35s,visibility 0s .35s;overflow:auto;padding:28px 34px}
+#overview.open{opacity:1;visibility:visible;transition:opacity .35s}
+#overview h2{margin:0 0 18px;font-size:22px}
+#ogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:20px}
+.ocard{border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden;cursor:pointer;transition:transform .25s,box-shadow .25s,border-color .25s;padding:0;text-align:left;opacity:0;translate:0 14px}
+#overview.open .ocard{opacity:1;translate:0 0;transition:transform .25s,box-shadow .25s,border-color .25s,opacity .45s,translate .45s}
+.ocard:hover,.ocard:focus-visible{transform:translateY(-3px);box-shadow:var(--shadow);border-color:var(--accent)}
+.ocard.cur{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.othumb{position:relative;aspect-ratio:16/9;overflow:hidden;background:var(--bg);border-bottom:1px solid var(--line)}
+.othumb .slide{opacity:1!important;visibility:visible!important;transition:none!important;inset:auto;left:0;top:0;width:1600px;height:900px}
+.othumb .rv{transition:none!important}
+.othumb *{animation:none!important}
+.othumb .w{pointer-events:none}
+.ometa{padding:10px 14px;font-size:15px;font-weight:650;display:flex;gap:10px;align-items:center}
+.ometa b{color:var(--accent)}
+#help{position:fixed;inset:0;z-index:45;display:grid;place-items:center;background:rgba(5,10,20,.45);opacity:0;visibility:hidden;transition:opacity .3s,visibility 0s .3s}
+#help.open{opacity:1;visibility:visible;transition:opacity .3s}
+#help .card{width:min(560px,92vw)}
+#help table{width:100%;border-collapse:collapse;font-size:16px}
+#help td{padding:7px 4px;border-bottom:1px solid var(--line)}
+#help td:first-child{white-space:nowrap;padding-right:18px}
+kbd{font-family:inherit;font-size:13px;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 7px;background:var(--panel2)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:.01ms!important;transition-delay:0s!important;animation:none!important}
+}
+
+/* ================= refined: clean, calm, smooth ================= */
+:root{--sans:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Helvetica Neue",Inter,Arial,sans-serif;--ease:cubic-bezier(.25,.8,.25,1)}
+body{font-family:var(--sans);background:var(--bg)}
+.grad{background:linear-gradient(100deg,var(--g1),var(--g2) 55%,var(--g3));-webkit-background-clip:text;background-clip:text;color:transparent}
+#top{background:var(--glass);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid color-mix(in srgb,var(--ink) 9%,transparent)}
+#brand{font-weight:600;font-size:15px;letter-spacing:-.01em}
+#brand i{width:14px;height:14px;border-radius:50%;background:linear-gradient(135deg,var(--g1),var(--g2),var(--g3))}
+.rail-item{font-size:13px;font-weight:500;color:var(--muted);border-radius:999px;padding:6px 11px}
+.rail-item b{background:transparent;color:var(--faint);width:auto;height:auto;font-weight:600}
+.rail-item.cur{background:var(--ink);color:var(--bg)}
+.rail-item.cur b{background:transparent;color:var(--bg);opacity:.6}
+.rail-item.done b{background:transparent;color:var(--faint)}
+.tbtn{border:0;background:transparent;border-radius:999px}
+.tbtn:hover{background:var(--panel2)}
+#progress{height:2px;top:59px;background:linear-gradient(90deg,var(--g1),var(--g2),var(--g3))}
+#tape{display:none}
+#bottom{font-size:12.5px}
+#stepdots button{width:8px;height:8px}
+#stepdots button.on{transform:none;width:22px;border-radius:999px}
+#stepdots button{transition:width .4s var(--ease),background .3s}
+
+/* slides: soft scale and blur between chapters */
+.slide{transform:scale(.985);filter:blur(6px);transition:opacity .7s var(--ease),transform .9s var(--ease),filter .7s var(--ease),visibility 0s .9s}
+.slide.before{transform:scale(1.015)}
+.slide.cur{transform:none;filter:none;transition:opacity .7s var(--ease),transform .9s var(--ease),filter .7s var(--ease),visibility 0s}
+
+/* head */
+.head{top:30px}
+.kicker{font-size:19px;font-weight:600;letter-spacing:-.005em;text-transform:none;color:var(--accent)}
+.kicker .kn{color:var(--faint);font-weight:500;margin-right:10px;font-variant-numeric:tabular-nums}
+.slide.cur .kicker{animation:rise .8s var(--ease) .05s both}
+.head h1{font-family:var(--sans);font-size:52px;font-weight:700;letter-spacing:-.032em;line-height:1.06;margin-top:6px}
+.slide.cur .head h1{animation:rise .9s var(--ease) .12s both}
+@keyframes rise{0%{opacity:0;transform:translateY(14px);filter:blur(6px)}100%{opacity:1;transform:none;filter:none}}
+.caps{margin-top:12px}
+.cap{font-size:25px;color:var(--muted);letter-spacing:-.008em;filter:blur(6px);transition:opacity .7s var(--ease),translate .8s var(--ease),filter .7s var(--ease)}
+.cap.on{filter:none}
+.cap.rv.on{transition-delay:.18s}
+.cap strong{color:var(--ink);font-weight:600}
+.w.rv{filter:blur(6px);transition:opacity .7s var(--ease),translate .8s var(--ease),filter .7s var(--ease)}
+.w.rv.on{filter:none}
+
+/* diagram */
+.nb{stroke:color-mix(in srgb,var(--ink) 7%,transparent);stroke-width:1;filter:drop-shadow(0 6px 14px var(--nshadow))}
+.hot .nb{stroke:var(--accent);stroke-width:2;fill:color-mix(in srgb,var(--accent) 6%,var(--panel))}
+.okk .nb{stroke:var(--good);stroke-width:2}
+.wait .nb{stroke:var(--warn);stroke-width:2;stroke-dasharray:6 5}
+.edge{stroke:var(--edge);stroke-width:2}
+.edge.flow{stroke-dasharray:none;animation:none;opacity:.8}
+.edge.dashed{stroke-dasharray:3 6}
+.frame{fill:color-mix(in srgb,var(--panel2) 55%,transparent);stroke:color-mix(in srgb,var(--ink) 8%,transparent);stroke-dasharray:none}
+.ft{font-size:13.5px;letter-spacing:.06em;font-weight:600}
+.pill rect{fill:var(--panel);stroke:color-mix(in srgb,var(--ink) 10%,transparent)}
+.tok{fill:var(--tok);filter:drop-shadow(0 0 8px var(--tok))}
+.amb{fill:var(--accent);opacity:.9;filter:drop-shadow(0 0 4px var(--accent))}
+
+/* controls */
+.card,.console{border:0;border-radius:22px;box-shadow:var(--shadow)}
+.console{border-radius:18px}
+.code{border:0;border-radius:14px}
+.btn{border-radius:999px;font-weight:500;padding:11px 22px;box-shadow:none;letter-spacing:-.01em}
+.btn.ghost{background:transparent;border:1px solid var(--accent)}
+.seg{border:0;border-radius:11px;padding:3px}
+.seg button{border-radius:8px;font-weight:500}
+.seg button.on{box-shadow:0 3px 8px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04)}
+.toggle.on{background:#34c759}
+.lab{letter-spacing:.04em;font-weight:600}
+.chip{border:0;background:var(--panel2);font-weight:500}
+.tag{letter-spacing:.03em}
+
+/* callouts (formerly stamps) */
+.stampfx{position:absolute;z-index:8;pointer-events:none;transform:translate(-50%,-50%);font:600 22px/1.25 var(--sans);letter-spacing:-.012em;color:var(--accent);background:var(--glass);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-radius:999px;padding:12px 26px 12px 22px;box-shadow:0 12px 32px rgba(0,0,0,.14),0 0 0 1px color-mix(in srgb,var(--ink) 7%,transparent);white-space:nowrap;text-align:left;animation:callout .8s var(--ease) both}
+.stampfx::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:currentColor;margin-right:12px;vertical-align:2px;box-shadow:0 0 0 5px color-mix(in srgb,currentColor 18%,transparent)}
+.stampfx small{display:block;font-size:.66em;font-weight:500;color:var(--muted);margin:2px 0 0 22px}
+.stampfx.big{font-size:30px;padding:16px 34px 16px 28px}
+@keyframes callout{0%{opacity:0;transform:translate(-50%,-25%) scale(.94);filter:blur(10px)}100%{opacity:1;transform:translate(-50%,-50%) scale(1);filter:none}}
+.flashfx{position:absolute;inset:0;z-index:7;pointer-events:none;background:radial-gradient(ellipse at 70% 65%,var(--bad-soft),transparent 60%);animation:flashfx 1.6s var(--ease) both}
+@keyframes flashfx{0%{opacity:0}30%{opacity:1}100%{opacity:0}}
+#n-net.powerdown{animation:pdown 1.1s var(--ease)}
+@keyframes pdown{0%{filter:none}40%{filter:brightness(.55) saturate(.4)}100%{filter:none}}
+#n-net.powerup{animation:pup 1.1s var(--ease)}
+@keyframes pup{0%{filter:brightness(.6) blur(2px)}100%{filter:none}}
+
+/* chapter card */
+#wipe{position:fixed;left:0;right:0;top:61px;bottom:42px;z-index:30;pointer-events:none;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;visibility:hidden}
+#wipe.go{visibility:visible;animation:chap 1.1s cubic-bezier(.4,0,.2,1) both}
+@keyframes chap{0%{opacity:0}28%{opacity:1}62%{opacity:1}100%{opacity:0}}
+#wipe .wt{display:none}
+#wipe .wn{font-size:24vh;font-weight:700;letter-spacing:-.06em;line-height:1;background:linear-gradient(100deg,var(--g1),var(--g2) 55%,var(--g3));-webkit-background-clip:text;background-clip:text;color:transparent}
+#wipe .wt2{font-size:5.2vh;font-weight:600;letter-spacing:-.025em;color:var(--ink);margin-top:1.5vh}
+#wipe.go .wn,#wipe.go .wt2{animation:chapn 1.1s var(--ease) both}
+@keyframes chapn{0%{transform:scale(.94);filter:blur(14px)}45%{transform:scale(1);filter:none}100%{transform:scale(1.02)}}
+
+/* flashlight */
+#spot{background:radial-gradient(circle at var(--mx,50%) var(--my,50%),transparent 0 180px,rgba(0,0,0,.62) 300px)}
+
+/* introduction */
+.cv-l{position:absolute;left:120px;top:250px;width:760px}
+.cv-eyebrow{font-size:22px;font-weight:600;color:var(--accent);letter-spacing:-.01em}
+.cv-h{font-size:118px;line-height:.98;font-weight:700;letter-spacing:-.055em;margin:18px 0 30px}
+.cv-sub{font-size:32px;line-height:1.28;color:var(--muted);font-weight:500;letter-spacing:-.018em;margin:0 0 46px;max-width:700px}
+.cv-meta{display:flex;gap:30px;font-size:18px;color:var(--faint);font-weight:500}
+.cv-go{margin-top:64px;font-size:17px;color:var(--faint)}
+.cv-l>*{opacity:0;transform:translateY(16px);filter:blur(8px);transition:opacity .9s var(--ease),transform 1s var(--ease),filter .9s var(--ease)}
+.slide.cur .cv-l>*{opacity:1;transform:none;filter:none}
+.slide.cur .cv-l>:nth-child(2){transition-delay:.12s}.slide.cur .cv-l>:nth-child(3){transition-delay:.24s}.slide.cur .cv-l>:nth-child(4){transition-delay:.36s}.slide.cur .cv-l>:nth-child(5){transition-delay:3.4s}
+.cv-glow{position:absolute;left:880px;top:140px;width:720px;height:720px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--g2) 26%,transparent),color-mix(in srgb,var(--g1) 12%,transparent) 45%,transparent 70%);filter:blur(30px);animation:drift 14s ease-in-out infinite alternate}
+@keyframes drift{0%{transform:translate(0,0) scale(1)}100%{transform:translate(-40px,30px) scale(1.08)}}
+.cv-r{position:absolute;left:940px;top:240px;width:590px;display:flex;flex-direction:column;gap:20px}
+.note{display:grid;grid-template-columns:52px 1fr;gap:16px;align-items:start;background:var(--glass);backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);border-radius:24px;padding:18px 22px;box-shadow:0 18px 44px rgba(0,0,0,.12),0 0 0 1px color-mix(in srgb,var(--ink) 6%,transparent);opacity:0;transform:translateY(30px) scale(.96);filter:blur(10px);transition:opacity .9s var(--ease),transform 1s cubic-bezier(.2,1.1,.3,1),filter .8s var(--ease)}
+.note.in{opacity:1;transform:none;filter:none}
+.note .hd{display:flex;justify-content:space-between;font-size:14.5px;color:var(--faint);font-weight:500}
+.note .tt{font-size:22px;font-weight:600;margin-top:3px;letter-spacing:-.015em}
+.note .bd{font-size:17.5px;color:var(--muted);margin-top:4px;line-height:1.4}
+.cv-fine{font-size:14px;color:var(--faint);text-align:right;opacity:0;transition:opacity 1s var(--ease)}
+.cv-fine.in{opacity:1}
+@media (prefers-reduced-motion:reduce){#wipe{display:none}.cap,.w.rv,.slide{filter:none!important}}
+
+/* tactile details */
+.badge{transform-box:fill-box;transform-origin:center}
+.badge.show{animation:pop .55s cubic-bezier(.3,1.7,.5,1)}
+@keyframes pop{0%{transform:scale(.2);opacity:0}100%{transform:scale(1);opacity:1}}
+.node .nb{transition:stroke .3s,fill .3s,filter .35s var(--ease)}
+.node{transform-box:fill-box;transition:translate .35s var(--ease),opacity .4s}
+.node:hover{translate:0 -3px}
+.node:hover .nb{filter:drop-shadow(0 12px 22px var(--nshadow))}
+.hot .ni{animation:glow 1.6s var(--ease) 1}
+@keyframes glow{0%{filter:none}35%{filter:brightness(1.18) drop-shadow(0 0 8px var(--accent))}100%{filter:none}}
+.btn{transition:transform .2s var(--ease),filter .2s}
+.btn:active{transform:scale(.97)}
+.seg button{transition:background .3s var(--ease),color .3s,box-shadow .3s}
+@media (prefers-reduced-motion:reduce){.badge.show,.hot .ni{animation:none}.node:hover{translate:none}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 10 5 0 10 2.5 5z"/></marker>
+    <filter id="rough" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="2.6"/></filter>
+    <filter id="wobble"><feTurbulence type="fractalNoise" baseFrequency=".018" numOctaves="2" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="5"/></filter>
+    <marker id="ahh" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahh" d="M0 0 10 5 0 10 2.5 5z"/></marker>
+  </defs>
+</svg>
+
+<header id="top">
+  <div id="brand"><i></i><span>SecForm4Strategy</span></div>
+  <nav id="rail" aria-label="Sections"></nav>
+  <div id="tools">
+    <button class="tbtn" id="b-over" title="Overview (O)">▦ <kbd>O</kbd></button>
+    <button class="tbtn" id="b-notes" title="Presenter notes (N)">✎ <kbd>N</kbd></button>
+    <button class="tbtn" id="b-theme" title="Theme (T)">◐ <kbd>T</kbd></button>
+    <button class="tbtn" id="b-full" title="Fullscreen (F)">⤢ <kbd>F</kbd></button>
+    <button class="tbtn" id="b-help" title="Shortcuts (?)">?</button>
+  </div>
+</header>
+<div id="progress"></div>
+<main id="viewport"><div id="stage"></div></main>
+<footer id="bottom">
+  <div id="counter"></div>
+  <div id="stepdots"></div>
+  <div id="navbtns"><button class="tbtn" id="b-prev" title="Previous (←)">←</button><button class="tbtn" id="b-next" title="Next (→)">→</button></div>
+</footer>
+<aside id="notes" aria-label="Presenter notes">
+  <div class="lab">Presenter notes</div>
+  <h2 id="n-title"></h2>
+  <div class="cur-step" id="n-step"></div>
+  <ul id="n-list"></ul>
+  <div class="next" id="n-next"></div>
+  <div class="clock" id="n-clock"></div>
+</aside>
+<div id="tape" aria-hidden="true"><div class="run"></div></div>
+<div id="wipe" aria-hidden="true"><div class="wt"></div><div class="wn"></div><div class="wt2"></div></div>
+<div id="spot" aria-hidden="true"></div>
+<div id="overview" role="dialog" aria-label="Overview"><h2>Overview · click a section, or press <kbd>O</kbd> / <kbd>Esc</kbd> to close</h2><div id="ogrid"></div></div>
+<div id="help" role="dialog" aria-label="Shortcuts"><div class="card">
+  <h3>Keyboard</h3>
+  <table>
+    <tr><td><kbd>→</kbd> <kbd>Space</kbd> <kbd>PgDn</kbd> <kbd>Enter</kbd></td><td>Next step</td></tr>
+    <tr><td><kbd>←</kbd> <kbd>Shift</kbd>+<kbd>Space</kbd> <kbd>PgUp</kbd></td><td>Previous step</td></tr>
+    <tr><td><kbd>↓</kbd> / <kbd>↑</kbd></td><td>Next / previous section</td></tr>
+    <tr><td><kbd>1</kbd>…<kbd>9</kbd>, <kbd>0</kbd></td><td>Jump to chapter 1–10</td></tr>
+    <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>Introduction / last chapter</td></tr>
+    <tr><td><kbd>L</kbd></td><td>Flashlight that follows the mouse</td></tr>
+    <tr><td><kbd>O</kbd></td><td>Overview grid</td></tr>
+    <tr><td><kbd>N</kbd></td><td>Presenter notes</td></tr>
+    <tr><td><kbd>F</kbd></td><td>Fullscreen</td></tr>
+    <tr><td><kbd>T</kbd></td><td>Light / dark theme</td></tr>
+    <tr><td><kbd>R</kbd></td><td>Replay the current step's animation</td></tr>
+    <tr><td><kbd>?</kbd> / <kbd>Esc</kbd></td><td>This help / close</td></tr>
+  </table>
+</div></div>
+
+<script>
+"use strict";
+const RM = matchMedia("(prefers-reduced-motion: reduce)");
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+/* ---------- icons: 24x24, stroked ---------- */
+const circ = (cx, cy, r) => `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
+const ICON = {
+  lambda: `<text x="12" y="19" text-anchor="middle">λ</text>`,
+  fargate: `<path d="M4 7.5 12 3.5l8 4v9l-8 4-8-4z M4 7.5l8 4 8-4 M12 11.5v9"/>`,
+  sqs: `<path d="M3 7h18v10H3z M7.5 7v10 M12 7v10 M16.5 7v10"/>`,
+  sfn: `<path d="M3 3.5h6v5H3z M15 9.5h6v5h-6z M3 15.5h6v5H3z M9 6h3v12H9 M12 12h3"/>`,
+  sched: `<path d="${circ(12, 12, 8.5)} M12 7v5l3.5 2.2"/>`,
+  pipe: `<path d="M2.5 9h6v6h-6z M15.5 9h6v6h-6z M8.5 12h7"/>`,
+  s3: `<path d="M4 6.5c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3z M4 6.5 6 19c.3 1.2 2.9 2 6 2s5.7-.8 6-2l2-12.5"/>`,
+  ddb: `<path d="M5 6c0-1.7 3.1-3 7-3s7 1.3 7 3v12c0 1.7-3.1 3-7 3s-7-1.3-7-3z M5 6c0 1.7 3.1 3 7 3s7-1.3 7-3 M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>`,
+  table: `<path d="M4 4h16v16H4z M4 9.3h16 M4 14.6h16 M10 4v16"/>`,
+  key: `<path d="${circ(8, 15, 4)} M10.9 12.1 20 3 M16.3 6.7l2.4 2.4 M13.8 9.2l2 2"/>`,
+  bell: `<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z M10 20.5a2 2 0 0 0 4 0"/>`,
+  dollar: `<path d="M16 7.2c-.9-1.4-2.4-2-4-2-2.2 0-4 1.1-4 3s1.8 2.6 4 3 4 1.2 4 3-1.8 3-4 3c-1.7 0-3.2-.7-4-2 M12 3v18"/>`,
+  globe: `<path d="${circ(12, 12, 8.5)} M3.5 12h17 M12 3.5c3 3.2 3 13.8 0 17 M12 3.5c-3 3.2-3 13.8 0 17"/>`,
+  git: `<path d="${circ(6, 18, 2.6)} ${circ(6, 6, 2.6)} ${circ(18, 8, 2.6)} M6 8.6v6.8 M18 10.6c0 4.4-8 2.4-11.2 5.6"/>`,
+  nat: `<path d="M4 8h14 M14.5 4.5 18 8l-3.5 3.5 M20 16H6 M9.5 12.5 6 16l3.5 3.5"/>`,
+  shield: `<path d="M12 3l8 3v6c0 4.8-3.4 8-8 9-4.6-1-8-4.2-8-9V6z M8.5 12l2.5 2.5 4.5-4.5"/>`,
+  image: `<path d="M12 3.5 21 8l-9 4.5L3 8z M3 12.5l9 4.5 9-4.5 M3 16.5 12 21l9-4.5"/>`,
+  check: `<path d="M5 12.5l4.2 4.2L19 7"/>`,
+  model: `<path d="M3.5 19.5h17 M4 15.5l4.5-5 3.5 3 7.5-8.5 M15 5h4v4"/>`,
+  doc: `<path d="M6 3h9l4 4v14H6z M15 3v4h4 M9 12h7 M9 16h7"/>`,
+  short: `<path d="M3.5 5.5l6 6 3.5-3 7.5 9 M20.5 12.5v5h-5"/>`,
+  funnel: `<path d="M3.5 4.5h17l-6.5 8v6l-4 2v-8z"/>`,
+  person: `<path d="${circ(12, 8, 3.8)} M4.5 20.5c.8-4 3.8-6 7.5-6s6.7 2 7.5 6"/>`,
+  tf: `<path d="M3.5 3.5l5 2.8v5.8l-5-2.8z M9.5 6.3l5 2.8v5.8l-5-2.8z M15.5 3.5l5 2.8v5.8l-5-2.8z M9.5 13.3l5 2.8v5.4l-5-2.8z"/>`,
+  net: `<path d="M3.5 4.5h17v15h-17z M3.5 9.5h17 M8 4.5v15"/>`,
+  logs: `<path d="M5 4.5h14v15H5z M8 9h8 M8 12.5h8 M8 16h5"/>`,
+  gate: `<path d="${circ(12, 12, 8.5)} M8 12.5l3 3 5.5-6"/>`,
+  cloud: `<path d="M7 18.5a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.4 1.6A3.8 3.8 0 0 1 17.5 18.5z"/>`,
+  bolt: `<path d="M13 2.5 4.5 13.5H11L10 21.5l8.5-11H12z"/>`,
+};
+
+/* ---------- SVG builders ---------- */
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function at(o) {
+  let a = "";
+  if (o.s !== undefined) a += ` data-s="${o.s}"`;
+  if (o.u !== undefined) a += ` data-u="${o.u}"`;
+  if (o.hl !== undefined) a += ` data-hl="${o.hl}"`;
+  if (o.dl !== undefined) a += ` data-d="${o.dl}"`;
+  if (o.id) a += ` id="${o.id}"`;
+  if (o.data) for (const [k, v] of Object.entries(o.data)) a += ` data-${k}="${v}"`;
+  return a;
+}
+const rvc = o => (o.s === undefined && o.u === undefined ? "" : "rv ");
+function node(o) {
+  const h = o.h || 72, w = o.w || 240, isz = 44, iy = (h - isz) / 2, tx = 68, mono = o.mono ? " mono" : "";
+  const t = o.sub
+    ? `<text class="nt${mono}" x="${tx}" y="${h / 2 - 3}"${o.tid ? ` id="${o.tid}"` : ""}>${esc(o.t)}</text><text class="ns${o.submono ? " mono" : ""}" x="${tx}" y="${h / 2 + 21}"${o.sid ? ` id="${o.sid}"` : ""}>${esc(o.sub)}</text>`
+    : `<text class="nt${mono}" x="${tx}" y="${h / 2 + 7}"${o.tid ? ` id="${o.tid}"` : ""}>${esc(o.t)}</text>`;
+  return `<g class="${rvc(o)}${o.cls || ""}"${at(o)}><g class="node k-${o.k}" transform="translate(${o.x} ${o.y})">
+    <rect class="nb" width="${w}" height="${h}" rx="14"/>
+    <rect class="ni" x="12" y="${iy}" width="${isz}" height="${isz}" rx="11"/>
+    <g class="ig" transform="translate(22 ${iy + 10})">${ICON[o.i] || ""}</g>${t}
+    <g class="badge" transform="translate(${w - 4} 4)"><circle r="13"/><path d="M-6 0.5l4 4 7.5-8"/></g>
+  </g></g>`;
+}
+function edge(o) {
+  return `<path class="${rvc(o)}edge ${o.cls || "flow"}" d="${o.d}"${o.noarrow ? "" : ` marker-end="url(#${o.hot ? "ahh" : "ah"})"`}${at(o)}/>`;
+}
+function frame(o) {
+  return `<g class="${rvc(o)}${o.cls || ""}"${at(o)}><rect class="frame${o.solid ? " solid" : ""}" x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" rx="18"/>
+    <text class="ft" x="${o.x + 20}" y="${o.y + 28}">${esc(o.t)}</text></g>`;
+}
+function label(o) {
+  return `<text class="${rvc(o)}lbl ${o.cls || ""}" x="${o.x}" y="${o.y}" text-anchor="${o.a || "start"}"${at(o)}>${o.html || esc(o.t)}</text>`;
+}
+function pill(o) {
+  const w = o.w || (o.t.length * 9.6 + 26), h = 34;
+  return `<g class="${rvc(o)}pill ${o.cls || ""}"${at(o)}><g transform="translate(${o.x - w / 2} ${o.y - h / 2})"><rect width="${w}" height="${h}" rx="17"/><text x="${w / 2}" y="22.5" text-anchor="middle">${esc(o.t)}</text></g></g>`;
+}
+
+/* ---------- animation runtime ---------- */
+let EPOCH = 0;
+const TIMERS = new Set();
+function bump() { EPOCH++; for (const t of TIMERS) { clearTimeout(t); clearInterval(t); } TIMERS.clear(); $$(".tokens").forEach(g => g.replaceChildren()); $$(".stampfx, .flashfx").forEach(x => x.remove()); }
+function runner() {
+  const ep = EPOCH;
+  const alive = () => ep === EPOCH;
+  const sleep = ms => new Promise(r => { const t = setTimeout(() => { TIMERS.delete(t); r(alive()); }, RM.matches ? 0 : ms); TIMERS.add(t); });
+  const every = (fn, ms) => { const t = setInterval(() => alive() ? fn() : clearInterval(t), ms); TIMERS.add(t); };
+  const later = (fn, ms) => { const t = setTimeout(() => { TIMERS.delete(t); if (alive()) fn(); }, RM.matches ? 0 : ms); TIMERS.add(t); };
+  return { alive, sleep, every, later, travel: (svg, paths, opts) => travel(svg, paths, opts, alive) };
+}
+function tokenLayer(svg) { let g = svg.querySelector(":scope > g.tokens"); if (!g) { g = document.createElementNS("http://www.w3.org/2000/svg", "g"); g.setAttribute("class", "tokens"); svg.appendChild(g); } return g; }
+function travel(svg, paths, opts = {}, alive = () => true) {
+  return new Promise(resolve => {
+    const NS = "http://www.w3.org/2000/svg";
+    const els = paths.map(p => typeof p === "string" ? svg.querySelector("#" + p) : p).filter(Boolean);
+    if (!els.length) return resolve(alive());
+    if (RM.matches) { els.forEach((_, k) => opts.onHop && opts.onHop(k)); return resolve(alive()); }
+    const layer = tokenLayer(svg), g = document.createElementNS(NS, "g");
+    const c = document.createElementNS(NS, "circle"); c.setAttribute("r", opts.r || 8); c.setAttribute("class", opts.ambient ? "amb" : "tok");
+    g.appendChild(c);
+    if (!opts.ambient) { const ring = document.createElementNS(NS, "circle"); ring.setAttribute("r", 15); ring.setAttribute("class", "tok-ring"); g.appendChild(ring); }
+    if (opts.label) { const t = document.createElementNS(NS, "text"); t.setAttribute("class", "toklbl"); t.setAttribute("x", 16); t.setAttribute("y", -16); t.textContent = opts.label; g.appendChild(t); }
+    layer.appendChild(g);
+    const speed = opts.speed || 0.5;
+    let i = 0, start = null, L = els[0].getTotalLength();
+    const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    function step(ts) {
+      if (!alive()) { g.remove(); return resolve(false); }
+      if (start === null) start = ts;
+      const dur = Math.max(280, L / speed), t = Math.min(1, (ts - start) / dur);
+      const p = els[i].getPointAtLength(L * (opts.linear ? t : ease(t)));
+      g.setAttribute("transform", `translate(${p.x} ${p.y})`);
+      if (t >= 1) {
+        opts.onHop && opts.onHop(i);
+        i++;
+        if (i >= els.length) { g.remove(); return resolve(true); }
+        L = els[i].getTotalLength(); start = ts;
+      }
+      requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  });
+}
+function shown(e) { for (let n = e; n && n.tagName !== "svg"; n = n.parentNode) { if (n.classList.contains("off")) return false; if (n.classList.contains("rv") && !n.classList.contains("on")) return false; } return true; }
+function ambient(slide, r, ms = 1400) {
+  const svg = slide.querySelector("svg.dia"); if (!svg || RM.matches) return;
+  r.every(() => {
+    if (document.hidden) return;
+    const vis = $$("path.edge.flow", svg).filter(p => !p.dataset.noamb && shown(p));
+    if (!vis.length) return;
+    travel(svg, [vis[Math.floor(Math.random() * vis.length)]], { ambient: true, r: 4.5, speed: 0.22, linear: true }, r.alive);
+  }, ms);
+}
+function badge(root, id, on) { const g = root.querySelector("#" + id + " .badge"); if (g) g.classList.toggle("show", on); }
+function tog(root, sel, c, on) { $$(sel, root).forEach(e => e.classList.toggle(c, on)); }
+function seg(id, opts, onIdx = 0) { return `<div class="seg" id="${id}">${opts.map((o, k) => `<button data-v="${k}" class="${k === onIdx ? "on" : ""}">${o}</button>`).join("")}</div>`; }
+function segSet(root, id, v) { $$(`#${id} button`, root).forEach(b => b.classList.toggle("on", +b.dataset.v === v)); }
+function segOn(root, id, fn) { $$(`#${id} button`, root).forEach(b => b.addEventListener("click", () => { segSet(root, id, +b.dataset.v); fn(+b.dataset.v); })); }
+
+
+/* ---------- stamps, shakes, flashes ---------- */
+function shake() {}
+function stamp(slide, x, y, text, o = {}) {
+  const d = document.createElement("div");
+  d.className = "stampfx" + (o.big ? " big" : "");
+  d.style.left = x + "px"; d.style.top = y + "px"; d.style.setProperty("--r", (o.rot ?? -8) + "deg");
+  if (o.color) d.style.color = o.color;
+  d.innerHTML = esc(text) + (o.sub ? `<small>${esc(o.sub)}</small>` : "");
+  slide.appendChild(d);
+  if (o.shake !== false) setTimeout(shake, 260);
+  return d;
+}
+function flash(slide) { if (RM.matches) return; const f = document.createElement("div"); f.className = "flashfx"; slide.appendChild(f); setTimeout(() => f.isConnected && f.parentNode.removeChild(f), 1200); }
+function wipe(i, def) {
+  const w = $("#wipe");
+  $(".wt", w).textContent = "";
+  $(".wn", w).textContent = i === 0 ? "" : String(i).padStart(2, "0");
+  $(".wt2", w).textContent = def.title;
+  w.classList.remove("go"); void w.offsetWidth; w.classList.add("go");
+}
+const TAPE = [["up", "▲ scraper 1.7 → 7.8 filings/s"], ["up", "▲ kafka-to-store 14 → 185 rows/s"], ["dn", "▼ short below −0.05"], ["eq", "■ qty 1 · paper"], ["eq", "■ SEC 10 req/s per IP"], ["dn", "▼ NAT $0.045/h"], ["eq", "■ budget $5/month"], ["eq", "■ retrain Sat 06:00 UTC"], ["eq", "■ poll rate(1 minute)"], ["eq", "■ seen keys 7-day TTL"], ["up", "▲ backfill-5y running"], ["up", "✓ smoke test CRMD → target"], ["dn", "▼ cold start 10–45 s"], ["eq", "■ dormant ≈ $0/day"]];
+/* ---------- section registry ---------- */
+const SECTIONS = [];
+function section(def) { SECTIONS.push(def); }
+
+/* ===================== 0. Introduction ===================== */
+const NOTE = (k, i) => `<svg width="52" height="52" viewBox="0 0 52 52"><rect width="52" height="52" rx="13" fill="var(--k-${k})"/><g class="ig" transform="translate(14 14)">${ICON[i]}</g></svg>`;
+section({
+  id: "cover", title: "Introduction", short: "Intro", bare: true, ambient: false,
+  steps: [{ cap: "", notes: ["Open with the fact: an insider's sale becomes public the moment the SEC accepts the Form 4.", "The three cards are the whole system in one sentence: a filing, a prediction, a paper order.", "The example is illustrative; XYZ is a placeholder ticker."] }],
+  html: () => `
+    <div class="cv-glow"></div>
+    <div class="cv-l">
+      <div class="cv-eyebrow">Insider trading, read in real time</div>
+      <h1 class="cv-h"><span class="grad">SecForm4</span><br>Strategy.</h1>
+      <p class="cv-sub">Insider sales, read the moment the SEC publishes them, turned into paper shorts.</p>
+      <div class="cv-meta"><span>Ten chapters</span><span>Batch and live on AWS</span><span>23 November 2026</span></div>
+      <div class="cv-go">Press → to begin</div>
+    </div>
+    <div class="cv-r">
+      <div class="note">${NOTE("ext", "doc")}<div><div class="hd"><span>SEC EDGAR</span><span>16:42:07 ET</span></div><div class="tt">Form 4 accepted</div><div class="bd">An officer of Example Corp sold 12,500 shares of XYZ.</div></div></div>
+      <div class="note">${NOTE("ml", "model")}<div><div class="hd"><span>SecForm4Strategy</span><span>now</span></div><div class="tt">Predicted 30-day return: −7%</div><div class="bd">Below the −5% threshold. Insider sale (D).</div></div></div>
+      <div class="note">${NOTE("int", "short")}<div><div class="hd"><span>Alpaca · Paper</span><span>now</span></div><div class="tt">Short placed: sell 1 XYZ</div><div class="bd">client_order_id XYZ@next print</div></div></div>
+      <div class="cv-fine">Illustrative example. XYZ is a placeholder.</div>
+    </div>`,
+  step(el, s, r) {
+    const ns = $$(".note, .cv-fine", el);
+    ns.forEach(n => n.classList.remove("in"));
+    ns.forEach((n, k) => r.later(() => n.classList.add("in"), 650 + k * 850));
+  },
+});
+
+/* ===================== 1. Business problem ===================== */
+section({
+  id: "problem", title: "Business problem", short: "Problem",
+  h1: "Insiders trade. The SEC publishes. Then the market can react.",
+  step(el, s, r) {
+    if (s === 1) r.later(() => stamp(el, 470, 625, "Filed", { rot: -6, sub: "≤ 2 business days later" }), 700);
+    if (s === 2) r.later(() => flash(el), 1050);
+    if (s === 3) r.later(() => stamp(el, 1200, 706, "Speed is the edge", { rot: -6 }), 650);
+  },
+  steps: [
+    { cap: "Directors, officers and owners of more than 10% are <strong>insiders</strong>. They trade their own company's stock.",
+      notes: ["An insider is a director, an officer or an owner of more than 10% of the company.", "Insiders know things the market does not.", "The project tests one question: do insider sales come before price drops?"] },
+    { cap: "Each trade must reach the SEC on a <strong>Form 4</strong> within <strong>2 business days</strong>. EDGAR publishes it at <code>accepted_at</code>.",
+      notes: ["The trade date is often days before the disclosure.", "<code>accepted_at</code> is the moment the SEC accepted the filing and made it public.", "A trader can act only after <code>accepted_at</code>. The trade date is a model feature, never a clock for the label."] },
+    { cap: "Insider sales can come before price drops. The model predicts the move that follows the disclosure.",
+      notes: ["The price line is illustrative, not real data.", "Not every sale is bad news: tax withholding and gifts also reduce a holding. The features carry these flags.", "The label is the 30-day return from the first price after disclosure."] },
+    { cap: "The edge is <strong>speed from disclosure to trade</strong>. An order minutes after <code>accepted_at</code> captures more of the move.",
+      notes: ["The fast trader enters near the price at disclosure; the slow one enters after part of the drop.", "This is why the system has a live path on Lambda next to the weekly batch.", "Everything after this slide serves one goal: act soon after <code>accepted_at</code>, without look-ahead."] },
+  ],
+  svg: () => `
+    ${node({ s: 0, dl: 1, x: 80, y: 225, w: 230, k: "ext", i: "person", t: "Director" })}
+    ${node({ s: 0, dl: 2, x: 340, y: 225, w: 230, k: "ext", i: "person", t: "Officer" })}
+    ${node({ s: 0, dl: 3, x: 600, y: 225, w: 230, k: "ext", i: "person", t: "10% owner" })}
+    ${edge({ s: 0, dl: 4, d: "M850 261 H960" })}
+    ${node({ s: 0, dl: 5, x: 980, y: 225, w: 360, k: "ml", i: "short", t: "Their company's stock", sub: "buy, sell, gift, tax withholding" })}
+    <g class="rv" data-s="1">
+      <path class="edge" d="M80 770 H1520" marker-end="url(#ah)" style="stroke-width:2.5"/>
+      <line x1="240" y1="755" x2="240" y2="785" stroke="var(--ink)" stroke-width="3"/>
+      <text class="lbl big" x="240" y="820" text-anchor="middle">Trade date</text>
+      <text class="lbl" x="240" y="845" text-anchor="middle">insider sells</text>
+      <path d="M248 720 V705 H692 V720" fill="none" stroke="var(--warn)" stroke-width="2.5"/>
+      <text class="lbl warn" x="470" y="694" text-anchor="middle">≤ 2 business days</text>
+      <line x1="700" y1="360" x2="700" y2="785" stroke="var(--accent)" stroke-width="3" stroke-dasharray="6 6"/>
+      <circle cx="700" cy="770" r="9" fill="var(--accent)"/>
+      <text class="lbl big" x="700" y="820" text-anchor="middle">Form 4 public</text>
+      <text class="lbl acc mono" x="700" y="845" text-anchor="middle">accepted_at</text>
+    </g>
+    <path class="rv draw" data-s="2" fill="none" stroke="var(--ink)" stroke-width="3.5" stroke-linecap="round" d="M80 455 C 130 440, 170 470, 240 452 S 380 432, 470 450 S 640 440, 700 452 C 770 462, 830 520, 950 556 S 1180 610, 1290 628 S 1450 652, 1520 660"/>
+    ${label({ s: 2, x: 90, y: 420, t: "price (illustrative)", cls: "big" })}
+    <g class="rv" data-s="3">
+      <line x1="745" y1="466" x2="1440" y2="466" stroke="var(--good)" stroke-width="2" stroke-dasharray="5 6"/>
+      <circle cx="745" cy="466" r="10" fill="var(--good)"/>
+      <text class="lbl good" x="760" y="448">fast: order minutes after accepted_at</text>
+      <line x1="1110" y1="594" x2="1480" y2="594" stroke="var(--warn)" stroke-width="2" stroke-dasharray="5 6"/>
+      <circle cx="1110" cy="594" r="10" fill="var(--warn)"/>
+      <text class="lbl warn" x="1100" y="626" text-anchor="end">slow: next day</text>
+      <path d="M1440 470 V646" stroke="var(--good)" stroke-width="5" marker-end="url(#ah)"/>
+      <path d="M1480 598 V652" stroke="var(--warn)" stroke-width="5"/>
+      <text class="lbl good" x="1430" y="560" text-anchor="end" style="font-size:19px">captured move</text>
+    </g>`,
+});
+
+/* ===================== 2. Setup overview ===================== */
+section({
+  id: "setup", title: "Setup overview", short: "Setup",
+  h1: "From a filing to a paper short",
+  steps: [
+    { cap: "Each new Form 4 becomes <strong>features</strong>: one row per ticker and next market print.",
+      notes: ["target groups every transaction of a ticker before the same next print into one row.", "Features: insider counts in the last 30 days, USD values traded and held, roles, transaction flags, market cap, sector.", "Every USD value uses the close of the last trading day before the acceptance day, so nothing is unknown at disclosure."] },
+    { cap: "A scikit-learn model predicts the 30-day <code>pct_change</code> of each row.",
+      notes: ["The regressor is a <code>HistGradientBoostingRegressor</code> inside a scikit-learn <code>Pipeline</code>.", "The label is the return from the next print to the first close at least 30 calendar days later.", "Training uses a chronological, purged split: the last 20% of rows is the test set."] },
+    { cap: "The rule: <strong>short</strong> when the prediction is below <code>−0.05</code>, for insider sales only (<code>acquired_disposed = D</code>).",
+      notes: ["Try the slider: move the prediction across −0.05.", "Switch to a purchase (A): the pipeline filters on <code>ACQUIRED_DISPOSED=D</code>, so no order.", "<code>PREDICTION_THRESHOLD=-0.05</code> means a predicted fall of more than 5%."] },
+    { cap: "Alpaca receives a paper order: sell 1 share, market, good until cancelled. <code>client_order_id</code> is the row key.",
+      notes: ["<code>QTY=1</code>; the account is paper trading, so no real money moves.", "The row key <code>&lt;ticker&gt;@&lt;next print&gt;</code> is the <code>client_order_id</code>. Alpaca rejects a duplicate id, so a rerun never places the same order twice.", "Press R to replay the flow."] },
+  ],
+  svg: () => `
+    ${node({ s: 0, id: "s2-f", x: 40, y: 220, w: 270, k: "ext", i: "doc", t: "Form 4 filing", sub: "SEC EDGAR" })}
+    ${edge({ s: 0, id: "s2-e1", d: "M310 256 H350" })}
+    ${node({ s: 0, dl: 2, id: "s2-x", x: 350, y: 220, w: 270, k: "data", i: "table", t: "Features", sub: "ticker @ next print" })}
+    ${edge({ s: 1, id: "s2-e2", d: "M620 256 H660" })}
+    ${node({ s: 1, id: "s2-m", x: 660, y: 220, w: 270, k: "ml", i: "model", t: "Model", sub: "predicts pct_change" })}
+    ${edge({ s: 2, id: "s2-e3", d: "M930 256 H970" })}
+    ${node({ s: 2, id: "s2-r", x: 970, y: 220, w: 270, k: "sec", i: "funnel", t: "Rule", sub: "D only, < −0.05" })}
+    ${edge({ s: 3, id: "s2-e4", d: "M1240 256 H1280" })}
+    ${node({ s: 3, id: "s2-a", x: 1280, y: 220, w: 280, k: "ext", i: "short", t: "Alpaca paper", sub: "sell 1 share" })}
+    ${label({ s: 0, x: 175, y: 330, a: "middle", t: "accepted_at, owner, code" })}
+    ${label({ s: 0, dl: 2, x: 485, y: 330, a: "middle", t: "insiders_recent, tx_value …" })}
+    ${label({ s: 1, x: 795, y: 330, a: "middle", t: "HistGradientBoosting" })}
+    ${label({ s: 2, x: 1105, y: 330, a: "middle", t: "PREDICTION_THRESHOLD" })}
+    ${label({ s: 3, x: 1420, y: 330, a: "middle", t: "client_order_id = row key" })}`,
+  html: () => `
+    <div class="w card rv" data-s="2" style="left:40px;top:390px;width:1520px;height:380px;padding:26px 34px">
+      <div style="display:flex;gap:40px;align-items:flex-start">
+        <div style="width:420px">
+          <div class="lab">Transaction direction</div>
+          <div style="margin:10px 0 26px">${seg("s2-dir", ["Sale · D", "Purchase · A"])}</div>
+          <div class="lab">Predicted 30-day pct_change</div>
+          <div id="s2-val" style="font-size:64px;font-weight:760;letter-spacing:-.03em;margin:4px 0 2px;font-variant-numeric:tabular-nums">−0.080</div>
+          <input id="s2-sl" type="range" min="-0.2" max="0.1" step="0.005" value="-0.08" aria-label="Predicted pct_change">
+        </div>
+        <div style="flex:1">
+          <svg viewBox="0 0 980 210" style="width:100%;height:230px;overflow:visible">
+            <rect x="20" y="70" width="${(0.15 / 0.3) * 940}" height="64" rx="10" fill="var(--bad-soft)"/>
+            <text x="30" y="58" class="lbl bad">short zone</text>
+            <line x1="20" y1="102" x2="960" y2="102" stroke="var(--edge)" stroke-width="3"/>
+            ${[-0.2, -0.15, -0.1, -0.05, 0, 0.05, 0.1].map(v => { const x = 20 + (v + 0.2) / 0.3 * 940; return `<line x1="${x}" y1="94" x2="${x}" y2="110" stroke="var(--edge)" stroke-width="2"/><text x="${x}" y="160" text-anchor="middle" class="lbl mono">${v.toFixed(2).replace("-", "−")}</text>`; }).join("")}
+            <line x1="${20 + (0.15 / 0.3) * 940}" y1="40" x2="${20 + (0.15 / 0.3) * 940}" y2="140" stroke="var(--bad)" stroke-width="3" stroke-dasharray="6 5"/>
+            <text x="${26 + (0.15 / 0.3) * 940}" y="34" class="lbl bad mono">threshold −0.05</text>
+            <g id="s2-ptr" style="transition:transform .35s cubic-bezier(.2,.7,.2,1)"><circle cy="102" r="15" fill="var(--accent)"/><circle cy="102" r="26" fill="none" stroke="var(--accent)" stroke-width="2" opacity=".4"/></g>
+          </svg>
+          <div id="s2-dec" style="display:flex;align-items:center;gap:16px;margin-top:6px">
+            <span id="s2-chip" class="tag bad" style="font-size:20px;padding:8px 16px">Paper short</span>
+            <span id="s2-why" style="font-size:22px;color:var(--muted)">sell 1 share · market · gtc</span>
+          </div>
+        </div>
+      </div>
+    </div>`,
+  init(el) {
+    const sl = $("#s2-sl", el), self = this;
+    const upd = () => self.decide(el);
+    sl.addEventListener("input", upd);
+    segOn(el, "s2-dir", upd);
+    upd();
+  },
+  decide(el) {
+    const v = +$("#s2-sl", el).value, sale = $("#s2-dir .on", el).dataset.v === "0";
+    $$(".stampfx", el).forEach(x => x.parentNode.removeChild(x));
+    $("#s2-val", el).textContent = (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(3);
+    $("#s2-ptr", el).style.transform = `translateX(${20 + (v + 0.2) / 0.3 * 940}px)`;
+    const short = sale && v < -0.05;
+    const chip = $("#s2-chip", el), why = $("#s2-why", el);
+    chip.className = "tag " + (short ? "bad" : "");
+    chip.textContent = short ? "Paper short" : "No order";
+    why.textContent = short ? "sell 1 share · market · gtc" : !sale ? "purchases (A) are not traded" : "prediction is not below −0.05";
+    tog(el, "#s2-r", "okk", short); tog(el, "#s2-r", "badk", !short);
+    tog(el, "#s2-a, #s2-e4", "off", !short);
+    return short;
+  },
+  step(el, s, r) {
+    const svg = $("svg.dia", el);
+    if (s < 2) { tog(el, "#s2-r", "okk", false); tog(el, "#s2-r", "badk", false); tog(el, "#s2-a, #s2-e4", "off", false); }
+    else this.decide(el);
+    if (s === 3) {
+      const short = this.decide(el);
+      const path = short ? ["s2-e1", "s2-e2", "s2-e3", "s2-e4"] : ["s2-e1", "s2-e2", "s2-e3"];
+      r.sleep(500).then(ok => ok && r.travel(svg, path, { label: "Form 4", speed: 0.45, onHop: k => badge(el, ["s2-x", "s2-m", "s2-r", "s2-a"][k], true) }).then(ok2 => ok2 && stamp(el, short ? 1420 : 1105, 336, short ? "Paper short" : "No trade", { rot: short ? -9 : 7, color: short ? "" : "var(--faint)" })));
+      ["s2-x", "s2-m", "s2-r", "s2-a"].forEach(id => badge(el, id, false));
+    } else ["s2-x", "s2-m", "s2-r", "s2-a"].forEach(id => badge(el, id, false));
+  },
+});
+
+/* ===================== 3. Architecture ===================== */
+const ADAPTERS = {
+  // port: [local, aws, tests]  each [class, outside system]
+  Filings: [["EdgarClient", "SEC EDGAR over httpx"], ["EdgarClient", "SEC EDGAR over httpx"], ["FakeFilings", "canned SEC responses"]],
+  MessageQueue: [["KafkaClient", "Redpanda (Kafka)"], ["SqsQueue", "Amazon SQS"], ["FakeMessageQueue", "in memory"]],
+  FeatureStore: [["IcebergFeatureStore", "SQLite catalog, .lakehouse/"], ["IcebergFeatureStore", "Glue catalog, S3"], null],
+  MarketData: [["MarketDataClient", "Yahoo Finance via yfinance"], ["MarketDataClient", "Yahoo Finance via yfinance"], ["FakeMarketData", "in memory"]],
+  ModelStore: [["LocalModelStore", ".artifacts/ on disk"], ["S3ModelStore", "S3 models/ + latest.json"], null],
+  Broker: [["AlpacaClient", "Alpaca paper API"], ["AlpacaClient", "Alpaca paper API"], null],
+};
+const PORT_POS = { Filings: [100, 300, "L"], MessageQueue: [100, 505, "L"], FeatureStore: [100, 710, "L"], MarketData: [1130, 300, "R"], ModelStore: [1130, 505, "R"], Broker: [1130, 710, "R"] };
+section({
+  id: "architecture", thumbStep: 0, title: "Architecture", short: "Architecture",
+  h1: "Seven services, one shared clients package",
+  steps: [
+    { cap: "Seven Python 3.14 services. Each is its own uv project and container image, with one job.",
+      notes: ["SEC side: master-index lists filings, scraper parses them, kafka-to-store upserts them.", "Prices side: yahoo-connect stores daily prices, target builds rows and labels.", "ML side: training fits and saves the model, inference scores rows and places orders.", "The name kafka-to-store comes from the local Redpanda stack; on AWS the same code reads SQS."] },
+    { cap: "Services see only <strong>ports</strong> (Python Protocols). <code>main.py</code> is the composition root that builds the <strong>adapters</strong>.",
+      notes: ["Ports live in <code>secform4strategy_clients.ports</code>; adapters implement them for one outside system.", "Only <code>main.py</code> reads the configuration and builds clients.", "Click Local / AWS / Unit tests: the service code stays the same, only the adapters change."] },
+    { cap: "Environment variables choose the backend. The same code runs on a laptop and on AWS.",
+      notes: ["<code>QUEUE__BACKEND</code>: kafka or sqs. <code>MODEL_STORE__BACKEND</code>: local or s3. <code>PYICEBERG_CATALOG__DEFAULT__TYPE</code>: sql or glue.", "Each SDK is an optional extra of the package, so an image installs only what its service uses.", "Unit tests use typed in-memory fakes such as <code>FakeMessageQueue</code>. Mocks are banned."] },
+    { cap: "The feature store is a set of <strong>Apache Iceberg</strong> tables in S3, with the <strong>AWS Glue</strong> catalog.",
+      notes: ["Training system: BT4 transactions, then RT4 labelled rows, then a model.", "P holds adjusted daily prices per ticker and day.", "Every row has a deterministic key, so a redelivered message or a rerun upserts the same row. No duplicates.", "Athena can query the same tables; its workgroup cancels any query over 1 GiB."] },
+    { cap: "The inference system uses the same code: BI4 transactions, then BIR4 rows without a label, then scores.",
+      notes: ["<code>SYSTEM_TRAINING</code> or <code>SYSTEM_INFERENCE</code> selects the configuration of kafka-to-store, yahoo-connect and target.", "target also reads RT4 in inference: <code>avg_target_expanding</code> uses only labels known before the row's <code>accepted_at</code>.", "Click the toggle to switch the highlighted path."] },
+  ],
+  svg: () => {
+    const A = { s: 0, u: 0 };
+    const services = `<g class="rv" data-s="0" data-u="0">
+      ${node({ x: 40, y: 220, w: 200, k: "ext", i: "globe", t: "SEC EDGAR" })}
+      ${edge({ d: "M240 256 H290" })}
+      ${node({ x: 290, y: 220, w: 240, k: "compute", i: "fargate", t: "master-index", sub: "lists filings" })}
+      ${edge({ d: "M530 256 H575" })}
+      ${node({ x: 575, y: 220, w: 200, k: "int", i: "sqs", t: "filings", sub: "queue" })}
+      ${edge({ d: "M775 256 H820" })}
+      ${node({ x: 820, y: 220, w: 230, k: "compute", i: "fargate", t: "scraper", sub: "parses Form 4 XML" })}
+      ${edge({ d: "M1050 256 H1095" })}
+      ${node({ x: 1095, y: 220, w: 215, k: "int", i: "sqs", t: "transactions", sub: "queue" })}
+      ${edge({ d: "M1310 256 H1340" })}
+      ${node({ x: 1340, y: 220, w: 230, k: "compute", i: "fargate", t: "kafka-to-store", sub: "upserts" })}
+      ${edge({ d: "M1455 292 V385" })}
+      <rect class="frame solid" x="290" y="385" width="1280" height="150" rx="18"/>
+      <text class="ft" x="312" y="415">Feature store · Apache Iceberg tables</text>
+      ${pill({ x: 520, y: 470, t: "BT4 · BI4  transactions", w: 300 })}
+      ${pill({ x: 830, y: 470, t: "P  prices", w: 190 })}
+      ${pill({ x: 1080, y: 470, t: "RT4  training rows", w: 250 })}
+      ${pill({ x: 1370, y: 470, t: "BIR4  inference rows", w: 270 })}
+      ${node({ x: 20, y: 610, w: 240, k: "ext", i: "globe", t: "Yahoo Finance" })}
+      ${edge({ d: "M260 646 H290" })}
+      ${node({ x: 290, y: 610, w: 240, k: "compute", i: "fargate", t: "yahoo-connect", sub: "daily prices" })}
+      ${edge({ d: "M410 610 V535" })}
+      ${node({ x: 575, y: 610, w: 230, k: "compute", i: "fargate", t: "target", sub: "rows and label" })}
+      ${edge({ d: "M690 610 V535", cls: "flow" })}
+      ${node({ x: 860, y: 610, w: 220, k: "compute", i: "fargate", t: "training", sub: "fits the model" })}
+      ${edge({ d: "M970 535 V610" })}
+      ${node({ x: 1130, y: 610, w: 240, k: "compute", i: "fargate", t: "inference", sub: "scores, orders" })}
+      ${edge({ d: "M1250 535 V610" })}
+      ${node({ x: 860, y: 770, w: 250, k: "store", i: "s3", t: "Model store", sub: "models/ + latest.json" })}
+      ${edge({ d: "M970 682 V770" })}
+      ${edge({ d: "M1110 790 C 1180 790, 1200 740, 1200 682" })}
+      ${node({ x: 1310, y: 770, w: 250, k: "ext", i: "short", t: "Alpaca paper", sub: "short orders" })}
+      ${edge({ d: "M1330 682 C 1380 720, 1420 740, 1430 770" })}
+      ${node({ x: 290, y: 770, w: 520, k: "ci", i: "image", t: "packages/secform4strategy-clients", sub: "every connection to an outside system", mono: true })}
+    </g>`;
+    const PORT_KIND = { Filings: ["ext", "globe"], MessageQueue: ["int", "sqs"], FeatureStore: ["data", "table"], MarketData: ["ext", "globe"], ModelStore: ["store", "s3"], Broker: ["ext", "short"] };
+    const COLX = { svc: 60, port: 450, ad: 790, sys: 1230 };
+    const pa = `<g class="rv" data-s="1" data-u="2">
+      <text class="ft" x="${COLX.svc}" y="266">Service</text>
+      <text class="ft" x="${COLX.port}" y="266">Port (Protocol)</text>
+      <text class="ft" x="${COLX.ad}" y="266">Adapter</text>
+      <text class="ft" x="${COLX.sys}" y="266">Outside system</text>
+      <text class="lbl" x="415" y="304" text-anchor="middle" style="font-size:13.5px;font-style:italic">calls</text>
+      <text class="lbl" x="740" y="304" text-anchor="middle" style="font-size:13.5px;font-style:italic">implemented by</text>
+      <text class="lbl" x="1180" y="304" text-anchor="middle" style="font-size:13.5px;font-style:italic">talks to</text>
+      <rect class="nb" x="${COLX.svc}" y="284" width="320" height="532" rx="20"/>
+      <text x="86" y="334" style="font-size:27px;font-weight:700;letter-spacing:-.02em">Service code</text>
+      <text x="86" y="372" class="lbl">Business logic sees</text>
+      <text x="86" y="398" class="lbl">only the ports.</text>
+      <text x="86" y="438" class="lbl"><tspan class="mono" style="fill:var(--ink)">main.py</tspan> reads the config</text>
+      <text x="86" y="464" class="lbl">and builds the adapters.</text>
+      ${Object.keys(ADAPTERS).map((p, k) => {
+        const y = 284 + k * 92, cy = y + 36, [kk, ic] = PORT_KIND[p];
+        return `<g id="row-${p}">
+          ${edge({ d: `M380 ${cy} H${COLX.port}`, cls: "" })}
+          <rect class="nb" x="${COLX.port}" y="${y}" width="240" height="72" rx="36"/>
+          <text x="${COLX.port + 120}" y="${cy + 7}" text-anchor="middle" class="mono" style="font-size:19px;font-weight:600">${p}</text>
+          <g id="side-${p}" style="transition:opacity .4s">
+            ${edge({ d: `M${COLX.port + 240} ${cy} H${COLX.ad}`, data: { port: p } })}
+            ${node({ id: `ad-${p}`, x: COLX.ad, y, w: 340, h: 72, k: kk, i: ic, t: ADAPTERS[p][0][0], mono: true, tid: `ad-t-${p}` })}
+            ${edge({ d: `M${COLX.ad + 340} ${cy} H${COLX.sys}`, cls: "dashed" })}
+            <rect class="nb" x="${COLX.sys}" y="${y}" width="310" height="72" rx="14" style="fill:var(--panel2)"/>
+            <text id="sys-t-${p}" x="${COLX.sys + 20}" y="${cy + 7}" style="font-size:18px;fill:var(--muted)">${ADAPTERS[p][0][1]}</text>
+          </g>
+        </g>`;
+      }).join("")}
+    </g>`;
+    const card = (x, y, title, lines, opts = {}) => `<g ${opts.id ? `id="${opts.id}"` : ""} class="fg ${opts.cls || ""}"${opts.sys ? ` data-sys="${opts.sys}"` : ""}><rect class="nb" x="${x}" y="${y}" width="380" height="170" rx="16"/>
+      <rect x="${x}" y="${y}" width="8" height="170" rx="4" fill="var(--k-data)"/>
+      <text x="${x + 26}" y="${y + 42}" style="font-size:28px;font-weight:760" class="mono">${title}</text>
+      ${lines.map((l, k) => `<text x="${x + 26}" y="${y + 78 + k * 27}" class="lbl">${l}</text>`).join("")}</g>`;
+    const fg = `<g class="rv" data-s="3">
+      ${card(60, 215, `<tspan class="t-sys">BT4</tspan> · <tspan class="i-sys">BI4</tspan>`, ["one row per transaction", "key: hash of accession, table, position", "written by kafka-to-store"])}
+      ${card(60, 420, "P", ["one row per ticker and day", "key: ticker@date", "adjusted open and close, splits"])}
+      ${edge({ d: "M440 300 C 480 300, 490 395, 525 405" })}
+      ${edge({ d: "M440 505 C 480 505, 490 430, 525 425" })}
+      ${node({ x: 525, y: 380, w: 250, k: "compute", i: "fargate", t: "target", sub: "next print, features" })}
+      ${card(850, 215, "RT4", ["training rows: features + label", "label: pct_change, label_known_at", "key: ticker@next print"], { id: "fg-rt4" })}
+      ${card(850, 420, "BIR4", ["inference rows: features only", "no label", "key: ticker@next print"], { id: "fg-bir4", sys: "i" })}
+      <g data-sys="t">${edge({ d: "M775 405 C 810 405, 810 300, 850 300" })}</g>
+      <g data-sys="i">${edge({ d: "M775 425 C 810 425, 810 505, 850 505" })}</g>
+      <g data-sys="i">${edge({ d: "M960 385 C 930 400, 830 430, 778 418", cls: "dashed", noarrow: false })}</g>
+      <g data-sys="i">${label({ x: 650, y: 486, a: "middle", t: "reads earlier RT4 labels", cls: "warn" })}</g>
+      <g data-sys="t">${edge({ d: "M1230 300 H1300" })}${node({ x: 1300, y: 264, w: 260, k: "compute", i: "fargate", t: "training", sub: "RT4 → model" })}</g>
+      <g data-sys="i">${edge({ d: "M1230 505 H1300" })}${node({ x: 1300, y: 469, w: 260, k: "compute", i: "fargate", t: "inference", sub: "BIR4 → orders" })}</g>
+      ${node({ x: 60, y: 690, w: 450, k: "store", i: "s3", t: "S3 data bucket", sub: "warehouse/ holds the Iceberg files" })}
+      ${node({ x: 575, y: 690, w: 450, k: "data", i: "table", t: "AWS Glue catalog", sub: "database secform4strategy" })}
+      ${node({ x: 1090, y: 690, w: 450, k: "data", i: "logs", t: "Athena workgroup", sub: "SQL on the same tables, 1 GiB cap" })}
+      <text x="800" y="820" text-anchor="middle" class="lbl">Every row has a deterministic key. A rerun upserts the same row, so tables never hold duplicates.</text>
+    </g>`;
+    return services + pa + fg;
+  },
+  html: () => `
+    <div class="w rv" data-s="1" data-u="2" style="left:84px;top:700px"><div class="lab" style="margin-bottom:10px">Backend</div>${seg("s3-env", ["Local", "AWS", "Unit tests"])}</div>
+    <div class="w rv" data-s="3" style="left:1300px;top:366px">${seg("s3-sys", ["Training", "Inference"])}</div>`,
+  init(el) {
+    segOn(el, "s3-env", v => this.env(el, v));
+    segOn(el, "s3-sys", v => this.sys(el, v));
+  },
+  env(el, v) {
+    segSet(el, "s3-env", v);
+    for (const [p, a] of Object.entries(ADAPTERS)) {
+      const pick = a[v], changed = !!pick && v > 0 && (v === 2 || a[0][0] !== a[1][0] || a[0][1] !== a[1][1]);
+      $(`#side-${p}`, el).style.opacity = pick ? 1 : 0.28;
+      $(`#ad-t-${p}`, el).textContent = pick ? pick[0] : "no in-memory fake";
+      $(`#sys-t-${p}`, el).textContent = pick ? pick[1] : "not used in unit tests";
+      $(`#ad-${p}`, el).classList.toggle("hot", changed);
+    }
+  },
+  sys(el, v) {
+    segSet(el, "s3-sys", v);
+    $$("[data-sys]", el).forEach(e => e.classList.toggle("off", e.dataset.sys !== (v ? "i" : "t")));
+    $$(".t-sys", el).forEach(e => e.style.fill = v ? "var(--faint)" : "var(--accent)");
+    $$(".i-sys", el).forEach(e => e.style.fill = v ? "var(--accent)" : "var(--faint)");
+  },
+  step(el, s, r) {
+    if (s === 1) this.env(el, 0);
+    if (s === 2) { this.env(el, 1); r.later(() => stamp(el, 220, 590, "Same code", { rot: -5 }), 800); }
+    if (s === 3) this.sys(el, 0);
+    if (s === 4) this.sys(el, 1);
+  },
+});
+
+/* ===================== 4. Batch pipeline ===================== */
+const STEPS6 = ["master-index", "scraper", "kafka-to-store", "yahoo-connect", "target", "training"];
+section({
+  id: "batch", title: "Batch pipeline and weekly retrain", short: "Batch",
+  h1: "One state machine retrains the model every week",
+  steps: [
+    { cap: "Step Functions machine <code>secform4strategy-retrain</code> runs six steps in order.",
+      notes: ["master-index lists the filings, scraper parses them, kafka-to-store stores them.", "yahoo-connect refreshes prices, target builds labelled rows, training saves a model.", "Each state uses <code>ecs:runTask.sync</code>: Step Functions waits for the task to stop."] },
+    { cap: "Each step is an <strong>ECS task on Fargate ARM64</strong>. EventBridge Scheduler starts the machine on <strong>Saturday 06:00 UTC</strong>.",
+      notes: ["Schedule: <code>cron(0 6 ? * SAT *)</code>, time zone UTC.", "Tasks run in the private subnets with no public IP.", "Retry on <code>States.TaskFailed</code>: wait 600 s, up to 3 attempts. 600 s is longer than the 300 s SQS visibility timeout, so unfinished messages are visible again.", "Fargate has no run-time limit; Lambda stops after 15 minutes. That is why batch is on Fargate."] },
+    { cap: "training writes a new model folder, then points <code>latest.json</code> at it. The newest model always replaces the previous one.",
+      notes: ["Each folder holds <code>model.joblib</code> and <code>model.meta.json</code>.", "<code>latest.json</code> is written last, so a load never pairs a new model with old metadata.", "There is no comparison with the previous model. Earlier folders stay in S3 for audit and rollback."] },
+    { cap: "The first full load is the <strong>same machine</strong>, started once with overrides in its input.",
+      notes: ["The weekly run starts with input <code>{}</code>: master-index uses <code>MODE=recent</code>, <code>DAYS_BACK=7</code>.", "A full load overrides master-index to <code>MODE=historical</code> and raises the scraper to 8 SEC requests per second.", "Every task is incremental: upserts by key, per-ticker start dates. A retry redoes only what failed."] },
+  ],
+  svg: () => `
+    ${node({ s: 0, id: "b-sch", x: 50, y: 210, w: 430, k: "int", i: "sched", t: "EventBridge Scheduler", sub: "cron(0 6 ? * SAT *) · UTC", submono: true })}
+    ${edge({ s: 0, id: "b-e0", d: "M265 282 V400" })}
+    ${frame({ s: 0, x: 40, y: 345, w: 1520, h: 235, t: "Step Functions · secform4strategy-retrain" })}
+    ${STEPS6.map((n, k) => node({ s: 0, dl: k + 1, id: `b-st${k}`, x: 70 + k * 248, y: 400, w: 222, k: "compute", i: "fargate", t: n, sub: "Fargate ARM64" })).join("")}
+    ${STEPS6.slice(0, 5).map((_, k) => edge({ s: 0, id: `b-e${k + 1}`, d: `M${292 + k * 248} 436 H${318 + k * 248}` })).join("")}
+    ${STEPS6.map((_, k) => `<rect class="rv" data-s="0" x="${70 + k * 248}" y="484" width="222" height="6" rx="3" fill="var(--panel2)"/><rect id="b-bar${k}" x="${70 + k * 248}" y="484" width="0" height="6" rx="3" fill="var(--accent)"/>`).join("")}
+    ${label({ s: 0, x: 70, y: 552, t: "Retry on States.TaskFailed: wait 600 s, up to 3 attempts · private subnets · no public IP" })}
+    ${frame({ s: 2, x: 40, y: 615, w: 960, h: 250, t: "S3 · models/" })}
+    ${node({ s: 2, id: "b-old", x: 80, y: 720, w: 400, h: 100, k: "store", i: "s3", t: "<previous trained_at>/", sub: "model.joblib · model.meta.json", mono: true })}
+    ${node({ s: 2, id: "b-new", x: 560, y: 720, w: 400, h: 100, k: "store", i: "s3", t: "<new trained_at>/", sub: "model.joblib · model.meta.json", mono: true })}
+    ${pill({ s: 2, x: 520, y: 652, t: "latest.json", w: 170 })}
+    <path id="b-ptr-old" class="rv edge hot" data-s="2" d="M450 660 C 360 665, 300 690, 290 718" marker-end="url(#ahh)"/>
+    <path id="b-ptr-new" class="rv edge hot" data-s="2" d="M590 660 C 680 665, 740 690, 755 718" marker-end="url(#ahh)"/>
+    ${edge({ s: 2, id: "b-e6", d: "M1421 492 C 1421 585, 900 590, 860 718" })}`,
+  html: () => `
+    <div class="w rv" data-s="0" style="left:520px;top:214px">
+      <div style="display:flex;gap:16px;align-items:center">${seg("b-mode", ["Weekly retrain", "First full load"])}<button class="btn ghost" id="b-run">▶ Run the machine</button></div>
+    </div>
+    <div class="w card rv" data-s="2" style="left:1060px;top:630px;width:500px;height:235px">
+      <div class="lab">Execution input</div>
+      <pre class="code" id="b-input" style="margin-top:10px;font-size:16px"></pre>
+    </div>`,
+  init(el) {
+    segOn(el, "b-mode", v => this.mode(el, v));
+    $("#b-run", el).addEventListener("click", () => { bump(); const r = runner(); this.run(el, r, true); ambient(el, r); });
+    this.mode(el, 0);
+  },
+  mode(el, v) {
+    segSet(el, "b-mode", v);
+    $("#b-input", el).innerHTML = v === 0
+      ? `<span class="c">// weekly: EventBridge Scheduler sends</span>\n{}\n<span class="c">// task definitions: MODE=recent, DAYS_BACK=7,\n// SEC_MAX_RATE=5</span>`
+      : `{<span class="k">"overrides"</span>: {\n  <span class="k">"master-index"</span>: {\n    <span class="k">"MODE"</span>: <span class="s">"historical"</span>, <span class="k">"YEARS"</span>: <span class="s">"5"</span>},\n  <span class="k">"scraper"</span>: {<span class="k">"SEC_MAX_RATE"</span>: <span class="s">"8"</span>}}}`;
+    tog(el, "#b-st0, #b-st1", "hot", v === 1);
+    $("#b-st0 .ns", el).textContent = v ? "MODE=historical" : "Fargate ARM64";
+    $("#b-st1 .ns", el).textContent = v ? "SEC_MAX_RATE=8" : "Fargate ARM64";
+    tog(el, "#b-sch", "off", v === 1);
+  },
+  reset(el, done) {
+    STEPS6.forEach((_, k) => { $(`#b-bar${k}`, el).setAttribute("width", done ? 222 : 0); badge(el, `b-st${k}`, done); });
+    this.pointer(el, done);
+  },
+  pointer(el, isNew) {
+    $("#b-ptr-old", el).style.opacity = isNew ? 0 : ""; $("#b-ptr-new", el).style.opacity = isNew ? "" : 0;
+    tog(el, "#b-new", "off", !isNew);
+    tog(el, "#b-old", "off", isNew);
+  },
+  async run(el, r) {
+    const svg = $("svg.dia", el);
+    this.reset(el, false);
+    tog(el, "#b-st0, #b-st1", "hot", false);
+    if (!await r.travel(svg, ["b-e0"], { speed: 0.35 })) return;
+    for (let k = 0; k < 6; k++) {
+      const st = $(`#b-st${k}`, el), bar = $(`#b-bar${k}`, el);
+      st.classList.add("hot");
+      const t0 = performance.now(), dur = RM.matches ? 0 : 900;
+      await new Promise(res => { const f = now => { if (!r.alive()) return res(); const t = Math.min(1, dur ? (now - t0) / dur : 1); bar.setAttribute("width", 222 * t); t < 1 ? requestAnimationFrame(f) : res(); }; requestAnimationFrame(f); });
+      if (!r.alive()) return;
+      st.classList.remove("hot"); badge(el, `b-st${k}`, true);
+      if (k < 5 && !await r.travel(svg, [`b-e${k + 1}`], { speed: 0.3 })) return;
+    }
+    if (cur.s >= 2) { if (!await r.travel(svg, ["b-e6"], { speed: 0.5, label: "model" })) return; this.pointer(el, true); stamp(el, 905, 700, "Latest", { rot: -8 }); }
+  },
+  step(el, s, r) {
+    if (s === 0) { this.reset(el, false); this.mode(el, 0); }
+    if (s === 1) { this.mode(el, 0); this.run(el, r); }
+    if (s === 2) { this.mode(el, 0); this.reset(el, true); this.pointer(el, false); r.sleep(700).then(ok => ok && r.travel($("svg.dia", el), ["b-e6"], { speed: 0.45, label: "model" }).then(ok2 => ok2 && (this.pointer(el, true), stamp(el, 905, 700, "Latest", { rot: -8 })))); }
+    if (s === 3) { this.reset(el, true); this.mode(el, 1); }
+  },
+});
+
+/* ===================== 5. Live path ===================== */
+const LIVE = [
+  ["l-e1", "l-poll", "<b>scheduler</b> → poller"],
+  ["l-e2", "l-qlf", "<b>poller</b>: 1 new filing"],
+  ["l-e3", "l-scr", "<b>live-filings</b>: 1 msg"],
+  ["l-e4", "l-qlt", "<b>scraper</b>: 2 transactions"],
+  ["l-e5", "l-k2s", "<b>live-transactions</b>: 2"],
+  ["l-e6", "l-qtk", "<b>kafka-to-store</b>: BI4"],
+  ["l-e7", "l-pipe", "<b>live-tickers</b>: [XYZ]"],
+  ["l-e8", "l-yc", "<b>Pipe</b>: start live-score"],
+  ["l-e9", "l-tg", "<b>yahoo-connect</b>: P"],
+  ["l-e10", "l-inf", "<b>target</b>: row → BIR4"],
+  ["l-e11", "l-alp", "<b>inference</b>: −0.07"],
+];
+section({
+  id: "live", thumbStep: 3, title: "Live path", short: "Live path",
+  h1: "The live path: from filing to paper short, serverless",
+  ambientMs: 1100,
+  quiet: [5, 6],
+  steps: [
+    { cap: "EventBridge Scheduler starts the poller every minute. DynamoDB keeps each seen key for 7 days.",
+      notes: ["The poller is master-index in <code>MODE=live</code>: it reads the SEC current-filings feed.", "Table <code>secform4strategy-seen</code> skips filings already sent; TTL deletes each key after 7 days.", "Schedule <code>rate(1 minute)</code>, no retries: the next poll covers a missed one."] },
+    { cap: "SQS <code>live-filings</code> triggers the scraper Lambda: at most 2 at a time, 2.25 SEC requests per second each.",
+      notes: ["2 × 2.25 = 4.5 requests per second for the live path, beside the batch scraper's 5. SEC allows 10 per IP.", "The handler reports partial batch failures: only unfinished messages are delivered again.", "Each queue has a dead-letter queue after 5 receives."] },
+    { cap: "kafka-to-store collects up to 100 transactions for 5 s, so one Iceberg commit serves a burst. It writes <code>BI4</code>.",
+      notes: ["Each Iceberg commit costs seconds, so batching matters more than per-message speed.", "After the commit, the handler sends the batch's tickers to <code>live-tickers</code> as one message."] },
+    { cap: "An <strong>EventBridge Pipe</strong> starts <code>live-score</code>: yahoo-connect → target → inference, then an Alpaca paper short.",
+      notes: ["The Pipe reads up to 10 ticker messages and starts one execution, fire and forget.", "The state machine merges the tickers with JSONata and passes them through three Lambdas.", "Each state retries <code>States.TaskFailed</code> twice, 5 s apart, backoff 2.", "<code>client_order_id</code> = row key, so a retry never doubles an order."] },
+    { cap: "One filing, end to end. <span class=\"tag acc\">simulated run</span>",
+      notes: ["This is an animation, not a recording. Ticker XYZ is a placeholder.", "Section 9 shows the real smoke test with a CRMD filing.", "Press R or the button to replay."] },
+    { cap: "The Lambdas run the <strong>same container images</strong> as the batch tasks, with a different entry point.",
+      notes: ["Batch: ECS runs <code>main.py</code>, a loop until the queue is empty.", "Live: Lambda runs <code>python -m awslambdaric handler.handle</code>; <code>handler.py</code> sits beside <code>main.py</code> and calls the same functions, for example <code>store()</code>.", "One image per service, one build, two runtimes. <code>HOME=/tmp</code> because the image file system is read-only."] },
+    { cap: "ECS injects secrets from SSM. Lambda cannot, so <code>SsmSettings</code> reads them once, at cold start.",
+      notes: ["<code>SSM_PARAMETERS</code> maps a settings field to a parameter name.", "Values stay <code>SecretStr</code> until the adapter hands them to its SDK.", "Parameters are created with the AWS CLI, never in Terraform, so values never enter the state."] },
+  ],
+  svg: () => `<g id="l-dia" style="transition:opacity .6s">
+    ${node({ s: 0, id: "l-sch", x: 40, y: 205, w: 215, k: "int", i: "sched", t: "Scheduler", sub: "rate(1 minute)", submono: true })}
+    ${edge({ s: 0, id: "l-e1", d: "M255 241 H300" })}
+    ${node({ s: 0, id: "l-poll", x: 300, y: 205, w: 255, k: "compute", i: "lambda", t: "poller λ", sub: "master-index · live" })}
+    ${edge({ s: 0, id: "l-edd", d: "M427 277 V352", cls: "dashed" })}
+    ${node({ s: 0, id: "l-ddb", x: 300, y: 352, w: 255, k: "data", i: "ddb", t: "DynamoDB seen", sub: "7-day TTL" })}
+    ${edge({ s: 1, id: "l-e2", d: "M555 241 H600" })}
+    ${node({ s: 1, id: "l-qlf", x: 600, y: 205, w: 215, k: "int", i: "sqs", t: "live-filings", sub: "SQS + DLQ" })}
+    ${edge({ s: 1, id: "l-e3", d: "M815 241 H860" })}
+    ${node({ s: 1, id: "l-scr", x: 860, y: 205, w: 245, k: "compute", i: "lambda", t: "scraper λ", sub: "2 × 2.25 req/s" })}
+    ${edge({ s: 1, id: "l-e4", d: "M1105 241 H1150" })}
+    ${node({ s: 1, id: "l-qlt", x: 1150, y: 205, w: 245, k: "int", i: "sqs", t: "live-transactions", sub: "SQS + DLQ" })}
+    ${edge({ s: 2, id: "l-e5", d: "M1395 241 C 1450 241, 1440 300, 1440 352" })}
+    ${node({ s: 2, id: "l-k2s", x: 1300, y: 352, w: 265, k: "compute", i: "lambda", t: "kafka-to-store λ", sub: "writes BI4 · 100 / 5 s" })}
+    ${edge({ s: 2, id: "l-e6", d: "M1300 388 H1255" })}
+    ${node({ s: 2, id: "l-qtk", x: 1020, y: 352, w: 235, k: "int", i: "sqs", t: "live-tickers", sub: "SQS + DLQ" })}
+    ${edge({ s: 3, id: "l-e7", d: "M1020 388 H975" })}
+    ${node({ s: 3, id: "l-pipe", x: 715, y: 352, w: 260, k: "int", i: "pipe", t: "EventBridge Pipe", sub: "batches of 10" })}
+    ${frame({ s: 3, x: 40, y: 480, w: 960, h: 210, t: "Step Functions · secform4strategy-live-score" })}
+    ${edge({ s: 3, id: "l-e8", d: "M845 424 V530 Q845 542 833 542 H217 Q205 542 205 554 V565" })}
+    ${node({ s: 3, id: "l-yc", x: 70, y: 565, w: 270, k: "compute", i: "lambda", t: "yahoo-connect λ", sub: "prices → P" })}
+    ${edge({ s: 3, id: "l-e9", d: "M340 601 H380" })}
+    ${node({ s: 3, id: "l-tg", x: 380, y: 565, w: 250, k: "compute", i: "lambda", t: "target λ", sub: "rows → BIR4" })}
+    ${edge({ s: 3, id: "l-e10", d: "M630 601 H670" })}
+    ${node({ s: 3, id: "l-inf", x: 670, y: 565, w: 300, k: "compute", i: "lambda", t: "inference λ", sub: "short if < −0.05" })}
+    ${edge({ s: 3, id: "l-e11", d: "M970 601 H1050" })}
+    ${node({ s: 3, id: "l-alp", x: 1050, y: 565, w: 250, k: "ext", i: "short", t: "Alpaca paper", sub: "id = row key" })}
+    ${node({ s: 2, id: "l-lake", x: 40, y: 762, w: 330, k: "data", i: "table", t: "Iceberg tables", sub: "BI4 · P · BIR4 · RT4" })}
+    ${edge({ s: 3, d: "M160 637 V762" })}
+    ${edge({ s: 3, d: "M470 637 C 470 700, 330 720, 300 762" })}
+    ${node({ s: 3, id: "l-mod", x: 410, y: 762, w: 280, k: "store", i: "s3", t: "S3 models/", sub: "latest.json" })}
+    ${edge({ s: 3, d: "M560 762 C 600 720, 760 700, 780 637" })}
+    ${node({ s: 3, id: "l-ssm", x: 730, y: 762, w: 300, k: "sec", i: "key", t: "SSM Parameter Store", sub: "read at cold start" })}
+    ${edge({ s: 3, id: "l-essm", d: "M900 762 V637", cls: "dashed" })}
+  </g>`,
+  html: () => `
+    <div class="w console rv" id="l-con" data-s="4" data-u="4" style="left:1340px;top:470px;width:238px;height:400px;font-size:13px"></div>
+    <div class="w rv" data-s="4" data-u="4" style="left:1060px;top:672px"><button class="btn" id="l-go">▶ Send a filing</button></div>
+    <div class="w rv" data-s="5" data-u="5" style="left:180px;top:200px;width:1240px">
+      <div class="card" style="padding:28px 34px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:stretch">
+          <div style="grid-column:1/3;display:flex;align-items:center;gap:18px;border:2px solid var(--k-ci);border-radius:14px;padding:16px 20px;background:color-mix(in srgb,var(--k-ci) 6%,var(--panel))">
+            <svg width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" rx="12" fill="var(--k-ci)"/><g class="ig" transform="translate(12 12)">${ICON.image}</g></svg>
+            <div><div style="font-size:24px;font-weight:700" class="mono">secform4strategy/&lt;service&gt;</div><div style="font-size:18px;color:var(--muted)">one ECR image per service · linux/arm64 · built once by the images workflow</div></div>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:14px;padding:18px 20px">
+            <div class="tag" style="background:color-mix(in srgb,var(--k-compute) 15%,transparent);color:var(--k-compute)">Batch · ECS Fargate</div>
+            <pre class="code" style="margin-top:12px">python main.py</pre>
+            <p style="font-size:18px;color:var(--muted);margin:12px 0 0;line-height:1.45">Loops until the queue is empty, then exits. Step Functions waits for the task.</p>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:14px;padding:18px 20px">
+            <div class="tag" style="background:color-mix(in srgb,var(--k-compute) 15%,transparent);color:var(--k-compute)">Live · Lambda</div>
+            <pre class="code" style="margin-top:12px">python -m awslambdaric handler.handle</pre>
+            <p style="font-size:18px;color:var(--muted);margin:12px 0 0;line-height:1.45"><code>handler.py</code> sits beside <code>main.py</code> and calls the same functions on one SQS batch or one ticker list.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="w rv" data-s="6" data-u="6" style="left:180px;top:215px;width:1240px">
+      <div class="card" style="padding:28px 34px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px">
+          <div><div class="lab">ECS task</div>
+            <p style="font-size:20px;color:var(--muted);line-height:1.5">The execution role reads <code>/secform4strategy/*</code> from SSM and injects the values as environment variables. The service code has no SSM permission.</p></div>
+          <div><div class="lab">Lambda function</div>
+            <p style="font-size:20px;color:var(--muted);line-height:1.5"><code>SSM_PARAMETERS</code> names the parameters. Settings classes that inherit <code>SsmSettings</code> read them once, at cold start.</p></div>
+        </div>
+        <pre class="code" style="margin-top:18px;font-size:16.5px">SSM_PARAMETERS = {<span class="k">"alpaca_api_key"</span>: <span class="s">"/secform4strategy/alpaca-api-key"</span>,
+                  <span class="k">"alpaca_api_secret"</span>: <span class="s">"/secform4strategy/alpaca-api-secret"</span>}
+<span class="c"># value → pydantic SecretStr → get_secret_value() only at the SDK call</span></pre>
+      </div>
+    </div>`,
+  init(el) {
+    $("#l-go", el).addEventListener("click", () => { bump(); const r = runner(); this.play(el, r); ambient(el, r, 1100); });
+  },
+  clear(el) { LIVE.forEach(([, n]) => { badge(el, n, false); $("#" + n, el).classList.remove("hot"); }); tog(el, "#l-sch, #l-lake", "hot", false); },
+  async play(el, r) {
+    const svg = $("svg.dia", el), con = $("#l-con", el);
+    this.clear(el);
+    con.innerHTML = `<div class="ln on" style="color:var(--faint)">simulated · XYZ · ⏱ <b id="l-sw" style="color:var(--accent)">0.0</b> s</div>` + LIVE.map(([, , m]) => `<div class="ln">${m}</div>`).join("") + `<div class="ln ok"><b>Alpaca: short placed ✓</b></div>`;
+    const lines = $$(".ln", con);
+    const t0 = performance.now(); let fin = false;
+    const tick = () => { if (!r.alive() || fin) return; const sw = $("#l-sw", el); if (sw) sw.textContent = ((performance.now() - t0) / 1000).toFixed(1); requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+    $("#l-sch", el).classList.add("hot");
+    if (!await r.sleep(400)) return;
+    for (let k = 0; k < LIVE.length; k++) {
+      lines[k + 1].classList.add("on");
+      const [e, n] = LIVE[k];
+      if (!await r.travel(svg, [e], { speed: 0.42, label: k < 6 ? "Form 4" : "XYZ" })) return;
+      $("#" + n, el).classList.add("hot"); badge(el, n, true);
+      if (k === 5) $("#l-lake", el).classList.add("hot");
+      if (!await r.sleep(220)) return;
+    }
+    lines[lines.length - 1].classList.add("on"); fin = true;
+    stamp(el, 1175, 528, "Paper short", { rot: -8 });
+  },
+  step(el, s, r) {
+    this.clear(el);
+    $("#l-dia", el).style.opacity = s >= 5 ? 0.1 : 1;
+    if (s === 4) this.play(el, r);
+  },
+});
+
+/* ===================== 6. AWS infrastructure ===================== */
+const MODULES = [
+  ["storage", "store", "s3", "S3 data bucket, Glue database, Athena workgroup, ECR repositories, $5 budget"],
+  ["network", "data", "net", "VPC, 2 public and 2 private subnets, S3 gateway endpoint, switchable NAT"],
+  ["queues", "int", "sqs", "5 SQS queues, each with a dead-letter queue and an email alarm"],
+  ["iam", "sec", "shield", "ECS execution role, one task role and one Lambda role per service"],
+  ["ci", "ci", "git", "GitHub OIDC provider; images, plan and apply roles"],
+  ["tasks", "compute", "fargate", "ECS cluster, Fargate ARM64 task definitions, log groups"],
+  ["retrain", "int", "sfn", "retrain state machine, Saturday 06:00 UTC schedule"],
+  ["live", "compute", "lambda", "6 Lambdas, seen table, Pipe, live-score, 1-minute schedule"],
+];
+section({
+  id: "infra", thumbStep: 2, title: "AWS infrastructure", short: "AWS",
+  h1: "Terraform builds it. Three switches control it.",
+  steps: [
+    { cap: "Root module <code>infra/envs/demo</code> calls eight modules. State lives in S3 with native locking.",
+      notes: ["Region us-east-1, one account; <code>allowed_account_ids</code> rejects any other.", "Terraform owns every AWS resource, including ECR repositories and the CI roles. CI owns the images and the plan and apply runs.", "Secrets are created with the AWS CLI, never in Terraform."] },
+    { cap: "Tasks and Lambdas run in <strong>private subnets</strong>. The S3 gateway endpoint is a free path to S3 and to ECR image layers.",
+      notes: ["Private subnets have no public IP and the security group has no inbound rules: nothing on the internet can open a connection.", "The NAT gateway carries SEC, Yahoo, Alpaca and the AWS APIs other than S3: ECR, SQS, Glue, SSM, Logs.", "NAT: $0.045 per hour plus $0.045 per GB processed. S3 traffic through the gateway endpoint adds no NAT charge.", "Five interface endpoints in two AZs would cost about $73 per month; the NAT is needed for the internet anyway."] },
+    { cap: "<code>switched_on</code> creates the NAT. Each schedule runs only when its own switch is also on.",
+      notes: ["Try the toggles and presets. <strong>Backfill now</strong> is the current <code>switch.auto.tfvars</code>: on, weekly retrain off, live off.", "Weekly schedule = <code>switched_on && weekly_retrain_enabled</code>. Live poll = <code>switched_on && live_enabled</code>.", "Dormant costs about $0 per day: only S3 and ECR storage. Switched on: about $1.20 per day plus usage.", "<code>make switch-on</code> commits the variable; CI applies it after approval."] },
+    { cap: "Failures and cost reach an inbox: dead-letter alarms by email, and a monthly budget.",
+      notes: ["A message that fails 5 receives moves to its dead-letter queue. A CloudWatch alarm on depth > 0 emails through SNS topic <code>secform4strategy-queue-alerts</code>.", "Budget <code>secform4strategy-monthly</code>: $5. Email at 50% of actual cost and 100% of forecast.", "RetryableError: no ack, SQS delivers again after 300 s. PermanentError: logged, then acked."] },
+  ],
+  svg: () => `
+    <g class="rv" data-s="0" data-u="0">
+      ${MODULES.map(([n, k, i, txt], j) => { const x = 60 + (j % 4) * 375, y = 225 + Math.floor(j / 4) * 250; return `<g class="rv" data-s="0" data-u="0" data-d="${j + 1}"><rect class="nb" x="${x}" y="${y}" width="350" height="220" rx="18"/>
+        <rect x="${x + 22}" y="${y + 22}" width="52" height="52" rx="13" fill="var(--k-${k})"/><g class="ig" transform="translate(${x + 36} ${y + 36})">${ICON[i]}</g>
+        <text x="${x + 92}" y="${y + 58}" class="mono" style="font-size:27px;font-weight:700">${n}</text>
+        <foreignObject x="${x + 22}" y="${y + 96}" width="306" height="115"><div xmlns="http://www.w3.org/1999/xhtml" style="font-size:18.5px;line-height:1.42;color:var(--muted)">${txt}</div></foreignObject></g>`; }).join("")}
+      <text x="800" y="760" text-anchor="middle" class="lbl" style="font-size:19px">State: <tspan class="mono" style="fill:var(--ink)">secform4strategy-tfstate-&lt;account&gt;</tspan>, <tspan class="mono" style="fill:var(--ink)">use_lockfile = true</tspan> · default tags on every resource</text>
+    </g>
+    <g class="rv" id="n-net" data-s="1" data-u="2">
+      ${frame({ x: 40, y: 200, w: 1150, h: 670, t: "AWS · us-east-1", solid: true })}
+      ${frame({ x: 65, y: 245, w: 735, h: 605, t: "VPC 10.0.0.0/16" })}
+      <rect x="85" y="285" width="695" height="135" rx="14" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+      <text class="ft" x="100" y="308">Public subnets · 2 AZs</text>
+      <rect x="85" y="440" width="695" height="395" rx="14" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+      <text class="ft" x="100" y="463">Private subnets · no inbound</text>
+      ${node({ id: "n-nat", x: 105, y: 322, w: 320, k: "data", i: "nat", t: "NAT gateway + EIP", sub: "$0.045/h + $0.045/GB" })}
+      ${node({ id: "n-igw", x: 480, y: 322, w: 280, k: "data", i: "globe", t: "Internet gateway" })}
+      ${node({ id: "n-far", x: 105, y: 485, w: 300, k: "compute", i: "fargate", t: "ECS Fargate tasks", sub: "retrain steps", sid: "n-far-s" })}
+      ${node({ id: "n-lam", x: 105, y: 610, w: 300, k: "compute", i: "lambda", t: "Lambda functions", sub: "live path", sid: "n-lam-s" })}
+      ${node({ id: "n-gw", x: 480, y: 735, w: 285, k: "store", i: "s3", t: "S3 gateway endpoint", sub: "free: S3, ECR layers" })}
+      <rect x="95" y="476" width="320" height="216" rx="18" fill="none" stroke="var(--edge)" stroke-dasharray="4 6"/>
+      ${edge({ id: "n-e1", d: "M255 476 V394", data: { nat: 1 } })}
+      <text class="lbl" x="266" y="424" data-nat="1" style="font-size:15px">internet</text>
+      ${edge({ id: "n-e3", d: "M425 358 H480", data: { nat: 1 } })}
+      ${edge({ id: "n-e4", d: "M415 600 C 450 600, 445 771, 480 771" })}
+      <text class="lbl" x="452" y="690" style="font-size:15px">S3</text>
+      ${edge({ id: "n-e6", d: "M765 771 C 810 771, 800 640, 835 640" })}
+      ${node({ id: "n-api", x: 835, y: 322, w: 330, k: "int", i: "cloud", t: "AWS APIs", sub: "ECR · SQS · Glue · SSM · Logs" })}
+      ${edge({ id: "n-e7", d: "M760 358 H835", data: { nat: 1 } })}
+      ${node({ id: "n-s3", x: 835, y: 604, w: 330, k: "store", i: "s3", t: "S3 data bucket", sub: "warehouse/ · models/" })}
+      ${node({ id: "n-wk", x: 835, y: 455, w: 330, k: "int", i: "sched", t: "weekly-retrain", sub: "Sat 06:00 UTC → retrain", sid: "n-wk-s" })}
+      ${node({ id: "n-lv", x: 835, y: 760, w: 330, k: "int", i: "sched", t: "live-poll", sub: "every minute → poller", sid: "n-lv-s" })}
+      ${edge({ id: "n-e8", d: "M620 322 V226 H1200 V268 H1230", data: { nat: 1 } })}
+      ${edge({ id: "n-e9", d: "M1200 268 V356 H1230", data: { nat: 1, noamb: 1 } })}
+      ${edge({ id: "n-e10", d: "M1200 356 V444 H1230", data: { nat: 1, noamb: 1 } })}
+      ${node({ id: "n-sec", x: 1230, y: 232, w: 330, k: "ext", i: "globe", t: "SEC EDGAR", sub: "10 requests/s per IP" })}
+      ${node({ id: "n-yh", x: 1230, y: 320, w: 330, k: "ext", i: "globe", t: "Yahoo Finance" })}
+      ${node({ id: "n-alp", x: 1230, y: 408, w: 330, k: "ext", i: "short", t: "Alpaca paper API" })}
+    </g>
+    <g class="rv" data-s="3">
+      ${node({ x: 60, y: 240, w: 280, k: "int", i: "sqs", t: "5 SQS queues", sub: "visibility 300 s" })}
+      ${edge({ d: "M340 276 H400" })}
+      ${node({ x: 400, y: 240, w: 300, k: "int", i: "sqs", t: "Dead-letter queues", sub: "after 5 receives" })}
+      ${edge({ d: "M700 276 H760" })}
+      ${node({ x: 760, y: 240, w: 300, k: "sec", i: "bell", t: "CloudWatch alarm", sub: "DLQ depth > 0" })}
+      ${edge({ d: "M1060 276 H1120" })}
+      ${node({ x: 1120, y: 240, w: 420, k: "int", i: "bell", t: "SNS queue-alerts", sub: "email to the operator" })}
+      ${node({ x: 60, y: 375, w: 380, k: "sec", i: "dollar", t: "Budget $5 / month", sub: "secform4strategy-monthly" })}
+      ${edge({ d: "M440 411 H500" })}
+      ${node({ x: 500, y: 375, w: 560, k: "int", i: "bell", t: "Email", sub: "at 50% of actual cost, 100% of forecast" })}
+      <g transform="translate(60 525)">
+        <text class="ft" x="0" y="0">Error contract, every service</text>
+        ${[["Success", "ack", "message deleted", "good"], ["RetryableError", "no ack", "delivered again after 300 s", "warn"], ["PermanentError", "log, then ack", "skipped for good", "acc"], ["Crash (a defect)", "no ack", "dead-letter queue after 5 receives", "bad"]].map(([a, b, c, t], k) => `
+          <g transform="translate(0 ${24 + k * 66})"><rect class="nb" width="1480" height="56" rx="12"/>
+          <text x="22" y="36" style="font-size:20px;font-weight:650" class="mono">${a}</text>
+          <text x="420" y="36" class="lbl" style="font-size:19px">${b}</text>
+          <text x="720" y="36" class="lbl ${t}" style="font-size:19px">${c}</text></g>`).join("")}
+      </g>
+    </g>`,
+  html: () => `
+    <div class="w card rv" data-s="2" data-u="2" style="left:1212px;top:495px;width:370px;height:385px;padding:14px 20px">
+      <div class="sw"><code>switched_on</code><button class="toggle" data-k="on" aria-label="switched_on"></button></div>
+      <div class="sw"><code>weekly_retrain_enabled</code><button class="toggle" data-k="wk" aria-label="weekly_retrain_enabled"></button></div>
+      <div class="sw" style="border-bottom:0"><code>live_enabled</code><button class="toggle" data-k="lv" aria-label="live_enabled"></button></div>
+      <div style="display:flex;gap:6px;margin:6px 0 10px;flex-wrap:wrap">
+        <button class="btn ghost" style="padding:6px 10px;font-size:14.5px" data-p="0">Dormant</button>
+        <button class="btn ghost" style="padding:6px 10px;font-size:14.5px" data-p="1">Backfill now</button>
+        <button class="btn ghost" style="padding:6px 10px;font-size:14.5px" data-p="2">Demo</button>
+      </div>
+      <div id="n-cost" style="border-top:1px solid var(--line);padding-top:10px"></div>
+    </div>`,
+  init(el) {
+    this.st = { on: true, wk: false, lv: false };
+    $$(".toggle", el).forEach(b => b.addEventListener("click", () => { this.st[b.dataset.k] = !this.st[b.dataset.k]; this.apply(el); }));
+    const presets = [{ on: false, wk: true, lv: true }, { on: true, wk: false, lv: false }, { on: true, wk: true, lv: true }];
+    $$("[data-p]", el).forEach(b => b.addEventListener("click", () => { this.st = { ...presets[+b.dataset.p] }; this.apply(el); }));
+    this.apply(el);
+  },
+  apply(el) {
+    const { on, wk, lv } = this.st;
+    if (this.lastOn !== undefined && this.lastOn !== on && el.classList.contains("cur") && !RM.matches) {
+      const g = $("#n-net", el); g.classList.remove("powerdown", "powerup"); void g.getBBox(); g.classList.add(on ? "powerup" : "powerdown");
+      $$(".stampfx", el).forEach(x => x.parentNode.removeChild(x));
+      if (!on) stamp(el, 600, 560, "Lights out", { rot: -6, big: true, sub: "≈ $0 per day" });
+    }
+    this.lastOn = on;
+    $$(".toggle", el).forEach(b => b.classList.toggle("on", this.st[b.dataset.k]));
+    $$(".toggle[data-k=wk], .toggle[data-k=lv]", el).forEach(b => b.style.opacity = on ? 1 : .55);
+    tog(el, "#n-nat, #n-api, #n-sec, #n-yh, #n-alp, [data-nat]", "off", !on);
+    tog(el, "#n-far, #n-lam", "off", !on);
+    tog(el, "#n-wk", "off", !(on && wk));
+    tog(el, "#n-lv", "off", !(on && lv));
+    $("#n-far-s", el).textContent = on ? "retrain steps" : "cannot pull images";
+    $("#n-lam-s", el).textContent = on ? "live path" : "no ECR, no SSM";
+    $("#n-wk-s", el).textContent = on && wk ? "Sat 06:00 UTC → retrain" : "schedule DISABLED";
+    $("#n-lv-s", el).textContent = on && lv ? "every minute → poller" : "schedule DISABLED";
+    $("#n-cost", el).innerHTML = on
+      ? `<div style="font-size:30px;font-weight:760">≈ $1.20 <span style="font-size:17px;color:var(--muted);font-weight:500">per day + usage</span></div><div style="font-size:15.5px;color:var(--muted)">NAT $1.08 + Elastic IP $0.12 per day; NAT data $0.045/GB</div>`
+      : `<div style="font-size:30px;font-weight:760">≈ $0 <span style="font-size:17px;color:var(--muted);font-weight:500">per day</span></div><div style="font-size:15.5px;color:var(--muted)">S3 and ECR storage only. No task can run.</div>`;
+  },
+  step(el, s) {
+    if (s === 1) { this.st = { on: true, wk: true, lv: true }; this.apply(el); }
+    if (s === 2) { this.st = { on: true, wk: false, lv: false }; this.apply(el); }
+  },
+});
+
+/* ===================== 7. Engineering and delivery ===================== */
+const GATES = [["ruff", "lint and format"], ["pydoclint", "docstrings"], ["bandit", "security"], ["validate-config", "every spec.yaml"], ["unit tests", "each project in its own env"], ["mypy", "one run per service"]];
+section({
+  id: "delivery", thumbStep: 2, title: "Engineering and delivery", short: "Delivery",
+  h1: "From pull request to AWS, with no stored keys",
+  steps: [
+    { cap: "GitHub Actions: <strong>quality</strong> → <strong>images</strong> → <strong>terraform apply</strong> after a reviewer approves in the <code>aws</code> environment.",
+      notes: ["Pull requests run the quality gate and a read-only <code>terraform plan</code>.", "On master, images build one <code>linux/arm64</code> image per changed service on an ARM runner and push it to ECR.", "The apply job waits for a reviewer in the GitHub environment <code>aws</code>, which admits only master.", "Branch rulesets protect master (GitHub settings, not in the repo)."] },
+    { cap: "Each workflow gets <strong>temporary</strong> AWS credentials through OIDC. GitHub stores no AWS key.",
+      notes: ["GitHub issues a token; AWS STS exchanges it for one role, bound to one repository and one trigger.", "The plan role reads every resource and writes only the lock file, so a pull request cannot change infrastructure.", "The apply role has AdministratorAccess, but only jobs in the <code>aws</code> environment can assume it."] },
+    { cap: "Quality gates run on every commit. Tests use typed in-memory fakes; mocks are banned.",
+      notes: ["<code>make quality-static</code> is also the pre-commit hook: ruff, pydoclint, bandit, validate-config, unit tests.", "In CI, mypy (<code>make type-check</code>, one run per service) is non-blocking for now: <code>continue-on-error: true</code>.", "Fakes implement the same Protocols as the adapters, so mypy checks the tests too."] },
+    { cap: "Lesson learned: a merge during a long run must not break the running execution.",
+      notes: ["A Step Functions execution names exact task-definition revisions.", "A merge mid-run created new revisions and deregistered the old ones, so the next state could not start.", "Fix: <code>skip_destroy = true</code> on the task definitions keeps old revisions active.", "The 5-year backfill now runs safely while code keeps merging."] },
+  ],
+  svg: () => `
+    <g id="d-dia" style="transition:opacity .6s">
+    ${node({ s: 0, id: "d-pr", x: 40, y: 215, w: 220, k: "ci", i: "git", t: "Pull request", sub: "same-repo branch" })}
+    ${edge({ s: 0, id: "d-e1", d: "M260 251 H305" })}
+    ${node({ s: 0, id: "d-q", x: 305, y: 215, w: 255, k: "ci", i: "gate", t: "quality", sub: "make quality-static" })}
+    ${edge({ s: 0, id: "d-e2", d: "M560 251 H605" })}
+    ${node({ s: 0, id: "d-plan", x: 605, y: 215, w: 280, k: "ci", i: "tf", t: "terraform plan", sub: "read-only role" })}
+    ${edge({ s: 0, id: "d-e3", d: "M885 251 H930" })}
+    ${node({ s: 0, id: "d-m", x: 930, y: 215, w: 260, k: "ci", i: "git", t: "Merge to master", sub: "branch rulesets" })}
+    ${edge({ s: 0, id: "d-e4", d: "M1190 251 H1235" })}
+    ${node({ s: 0, id: "d-img", x: 1235, y: 215, w: 325, k: "ci", i: "image", t: "images", sub: "linux/arm64 → ECR" })}
+    ${edge({ s: 0, id: "d-e5", d: "M1400 287 V375" })}
+    ${node({ s: 0, id: "d-ap", x: 1235, y: 375, w: 325, k: "sec", i: "shield", t: "Approval", sub: "environment aws" })}
+    ${edge({ s: 0, id: "d-e6", d: "M1235 411 H1190" })}
+    ${node({ s: 0, id: "d-tf", x: 900, y: 375, w: 290, k: "ci", i: "tf", t: "terraform apply", sub: "apply role" })}
+    ${edge({ s: 0, id: "d-e7", d: "M900 411 H855" })}
+    ${node({ s: 0, id: "d-aws", x: 585, y: 375, w: 270, k: "compute", i: "cloud", t: "AWS us-east-1", sub: "newest images" })}
+    <g class="rv" data-s="1">
+      ${frame({ x: 40, y: 500, w: 1520, h: 125, t: "GitHub OIDC token → AWS STS → one role, temporary credentials" })}
+      ${node({ x: 60, y: 538, w: 480, h: 72, k: "sec", i: "key", t: "github-images", sub: "push to master · ECR push", mono: true })}
+      ${node({ x: 560, y: 538, w: 480, h: 72, k: "sec", i: "key", t: "github-plan", sub: "pull requests · read-only", mono: true })}
+      ${node({ x: 1060, y: 538, w: 480, h: 72, k: "sec", i: "key", t: "github-apply", sub: "environment aws · admin", mono: true })}
+    </g>
+    </g>`,
+  html: () => `
+    <div class="w card rv" data-s="2" data-u="2" style="left:40px;top:650px;width:900px;height:215px;padding:18px 24px">
+      <div class="lab" style="margin-bottom:12px">Quality gate · pre-commit hook and CI</div>
+      <div id="d-gates" style="display:flex;flex-wrap:wrap;gap:10px">${GATES.map(([g, w]) => `<span class="chip"><span class="dot"></span><span class="mono">${g}</span><span style="font-weight:500;color:var(--muted);font-size:15px">${w}</span></span>`).join("")}</div>
+      <div style="font-size:15.5px;color:var(--faint);margin-top:12px">mypy runs in CI as a non-blocking job for now.</div>
+    </div>
+    <div class="w card rv" data-s="2" data-u="2" style="left:960px;top:650px;width:600px;height:215px;padding:18px 24px">
+      <div class="lab" style="margin-bottom:10px">One Protocol, three implementations</div>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:18px;align-items:center">
+        <span class="tag acc">port</span><code>MessageQueue</code>
+        <span class="tag">prod</span><code>SqsQueue · KafkaClient</code>
+        <span class="tag good">tests</span><code>FakeMessageQueue</code>
+      </div>
+      <div style="font-size:15.5px;color:var(--faint);margin-top:10px">unittest.mock and pytest_mock are banned.</div>
+    </div>
+    <div class="w rv" data-s="3" data-u="3" style="left:200px;top:230px;width:1200px">
+      <div class="card" style="padding:30px 36px">
+        <div style="display:grid;grid-template-columns:1fr 60px 1fr;gap:10px;align-items:center">
+          <div style="border:2px solid var(--bad);border-radius:14px;padding:18px 20px;background:var(--bad-soft)">
+            <div class="tag bad">Before</div>
+            <p style="font-size:20px;line-height:1.45;margin:10px 0 0">A merge mid-run made new task-definition revisions. The running execution still named the old ones, and they were gone.</p>
+          </div>
+          <div style="font-size:40px;text-align:center;color:var(--muted)">→</div>
+          <div style="border:2px solid var(--good);border-radius:14px;padding:18px 20px;background:var(--good-soft)">
+            <div class="tag good">After</div>
+            <p style="font-size:20px;line-height:1.45;margin:10px 0 0"><code>skip_destroy = true</code> keeps old revisions active. A running execution can still start its next step.</p>
+          </div>
+        </div>
+        <pre class="code" style="margin-top:22px;font-size:17px">resource <span class="s">"aws_ecs_task_definition"</span> <span class="s">"service"</span> {
+  <span class="c"># A new revision leaves the old one active: running executions name exact revisions</span>
+  <span class="k">skip_destroy</span> = true
+}</pre>
+      </div>
+    </div>`,
+  step(el, s, r) {
+    const svg = $("svg.dia", el);
+    $("#d-dia", el).style.opacity = s === 3 ? 0.1 : 1;
+    if (s === 3) r.later(() => stamp(el, 1330, 252, "Lesson learned", { rot: 6 }), 550);
+    if (s === 2) r.later(() => stamp(el, 950, 652, "No mocks", { rot: -8 }), 2900);
+    const ids = ["d-q", "d-plan", "d-m", "d-img", "d-ap", "d-tf", "d-aws"];
+    ids.forEach(id => badge(el, id, false));
+    $$("#d-gates .chip", el).forEach(c => c.classList.remove("ok"));
+    if (s === 0) r.sleep(500).then(ok => ok && r.travel(svg, ["d-e1", "d-e2", "d-e3", "d-e4", "d-e5", "d-e6", "d-e7"], { speed: 0.4, label: "commit", onHop: k => badge(el, ids[k], true) }));
+    else ids.forEach(id => badge(el, id, true));
+    if (s === 2) $$("#d-gates .chip", el).forEach((c, k) => r.later(() => c.classList.add("ok"), 400 + k * 380));
+  },
+});
+
+/* ===================== 8. Performance ===================== */
+const RACE = [["Sequential", "latency-bound", 1.7, "1.7"], ["Threads + shared rate limiter", "one cap across threads", 3.5, "3.5"], ["12 workers", "retry pause 60 → 5 s", 5.5, "5.5"], ["Send buffer 200", "fewer SQS round trips", 7.5, "7–7.8"]];
+const K2S = b => b / (7 + 0.0047 * b);
+const kx = b => 150 + (Math.log10(b) - 2) / 2 * 800, ky = v => 790 - v / 200 * 500;
+section({
+  id: "performance", thumbStep: 0, title: "Performance", short: "Performance",
+  h1: "Speed under a shared limit",
+  steps: [
+    { cap: "SEC allows <strong>10 requests per second per IP</strong>. Every task and Lambda shares the NAT's one IP.",
+      notes: ["Weekly batch scraper: <code>SEC_MAX_RATE=5</code>. Live: 2 scraper Lambdas × 2.25 = 4.5. Together 9.5.", "The 5-year backfill runs the scraper at 8 per second, so the live poll is off meanwhile.", "The poller has its own cap of 1 per second but makes a request or two per minute.", "An SEC 403 locks the IP out for about 10 minutes, so the cap protects every path at once."] },
+    { cap: "The scraper went from <strong>1.7</strong> to <strong>7–7.8 filings per second</strong> in three changes.",
+      notes: ["Sequential: each request waits about 0.5 s for SEC, so the rate stays far under the cap.", "Threads under one shared rate limiter: requests overlap, and <code>EdgarClient</code> still spaces starts by 1 / SEC_MAX_RATE.", "12 workers and a 5 s retry pause instead of 60 s.", "A send buffer of 200 cuts SQS round trips. Hours are for about 250,000 filings, about one year."] },
+    { cap: "kafka-to-store: <strong>14/s → about 185/s</strong>. Each Iceberg commit costs about 7 s, so bigger batches pay it less often.",
+      notes: ["Throughput = batch ÷ (commit time + processing time).", "At 100 rows per batch, the 7 s commit dominates: about 14 rows per second.", "At 10,000 rows per batch: about 185 rows per second.", "The curve is a two-parameter model fitted to these two measurements, not a benchmark. Drag the slider."] },
+  ],
+  svg: () => `
+    <g class="rv" data-s="0" data-u="0">
+      ${node({ x: 100, y: 560, w: 330, k: "compute", i: "fargate", t: "Batch scraper", sub: "Fargate · SEC_MAX_RATE", id: "p-bs", sid: "p-bs-s" })}
+      ${node({ x: 100, y: 660, w: 330, k: "compute", i: "lambda", t: "Live scraper λ × 2", sub: "2.25 req/s each", id: "p-ls" })}
+      ${node({ x: 100, y: 760, w: 330, k: "compute", i: "lambda", t: "poller λ", sub: "a request or two per minute", id: "p-po" })}
+      ${edge({ d: "M430 596 C 520 596, 540 690, 610 696" })}
+      ${edge({ d: "M430 696 H610", id: "p-le" })}
+      ${edge({ d: "M430 796 C 520 796, 540 700, 610 700", id: "p-pe" })}
+      ${node({ x: 610, y: 660, w: 320, k: "data", i: "nat", t: "NAT gateway", sub: "one Elastic IP" })}
+      ${edge({ d: "M930 696 H1010" })}
+      ${node({ x: 1010, y: 660, w: 330, k: "ext", i: "globe", t: "SEC EDGAR", sub: "10 req/s per IP" })}
+    </g>
+    <g class="rv" data-s="1" data-u="1">
+      ${RACE.map(([t, sub, , lab], k) => { const y = 240 + k * 140; return `
+        <text x="60" y="${y + 38}" style="font-size:23px;font-weight:680">${t}</text>
+        <text x="60" y="${y + 66}" class="lbl">${sub}</text>
+        <rect x="470" y="${y + 30}" width="860" height="14" rx="7" fill="var(--panel2)" stroke="var(--line)"/>
+        <rect id="p-rb${k}" x="470" y="${y + 30}" width="0" height="14" rx="7" fill="var(--k-compute)" opacity=".8"/>
+        <circle id="p-rc${k}" cx="470" cy="${y + 37}" r="13" fill="var(--k-compute)"/>
+        <text x="1360" y="${y + 34}" style="font-size:30px;font-weight:760" class="mono">${lab}<tspan style="font-size:17px;fill:var(--muted)"> /s</tspan></text>
+        <text id="p-rt${k}" x="1360" y="${y + 64}" class="lbl"></text>`; }).join("")}
+      <line x1="1330" y1="250" x2="1330" y2="790" stroke="var(--good)" stroke-width="2.5" stroke-dasharray="6 6"/>
+      <text x="1326" y="242" text-anchor="end" class="lbl good">≈ 250,000 filings</text>
+    </g>
+    <g class="rv" data-s="2" data-u="2">
+      <line x1="150" y1="790" x2="960" y2="790" stroke="var(--edge)" stroke-width="2"/>
+      <line x1="150" y1="290" x2="150" y2="790" stroke="var(--edge)" stroke-width="2"/>
+      ${[0, 50, 100, 150, 200].map(v => `<line x1="150" x2="960" y1="${ky(v)}" y2="${ky(v)}" stroke="var(--line)" stroke-width="1"/><text x="138" y="${ky(v) + 6}" text-anchor="end" class="lbl mono">${v}</text>`).join("")}
+      ${[100, 300, 1000, 3000, 10000].map(b => `<text x="${kx(b)}" y="822" text-anchor="middle" class="lbl mono">${b.toLocaleString("en-US")}</text>`).join("")}
+      <text x="555" y="858" text-anchor="middle" class="lbl">rows per batch (log scale)</text>
+      <text x="150" y="276" class="lbl">rows per second</text>
+      <path class="draw" data-s="2" data-u="2" fill="none" stroke="var(--k-int)" stroke-width="4" d="${Array.from({ length: 81 }, (_, k) => { const b = Math.pow(10, 2 + k / 40); return `${k ? "L" : "M"}${kx(b).toFixed(1)} ${ky(K2S(b)).toFixed(1)}`; }).join(" ")}"/>
+      <circle cx="${kx(100)}" cy="${ky(14)}" r="9" fill="var(--panel)" stroke="var(--ink)" stroke-width="3"/>
+      <text x="${kx(100) + 10}" y="${ky(14) - 46}" style="font-size:20px;font-weight:700">14/s measured</text>
+      <circle cx="${kx(10000)}" cy="${ky(185)}" r="9" fill="var(--panel)" stroke="var(--ink)" stroke-width="3"/>
+      <text x="${kx(10000) - 14}" y="${ky(185) - 18}" text-anchor="end" style="font-size:20px;font-weight:700">≈ 185/s measured</text>
+      <g id="p-kp"><line id="p-kl" y1="290" y2="790" stroke="var(--accent)" stroke-width="2" stroke-dasharray="4 5"/><circle id="p-kc" r="11" fill="var(--accent)"/></g>
+    </g>`,
+  html: () => `
+    <div class="w card rv" data-s="0" data-u="0" style="left:100px;top:225px;width:1460px;height:250px;padding:22px 28px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+        ${seg("p-scn", ["Weekly retrain + live", "5-year backfill now"])}
+        <div id="p-tot" style="font-size:34px;font-weight:760;font-variant-numeric:tabular-nums"></div>
+      </div>
+      <div style="position:relative;height:84px;border-radius:14px;background:var(--panel2);display:flex;overflow:hidden;border:1px solid var(--line)">
+        <div id="p-b1" style="background:var(--k-compute);transition:width .8s cubic-bezier(.2,.7,.2,1);display:flex;align-items:center;padding-left:16px;color:#fff;font-weight:700;font-size:19px;white-space:nowrap;overflow:hidden"></div>
+        <div id="p-b2" style="background:var(--k-int);transition:width .8s cubic-bezier(.2,.7,.2,1);display:flex;align-items:center;padding-left:16px;color:#fff;font-weight:700;font-size:19px;white-space:nowrap;overflow:hidden"></div>
+        <div style="flex:1;display:flex;align-items:center;padding-left:14px;color:var(--muted);font-size:17px;white-space:nowrap" id="p-b3"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:16px;color:var(--muted)" class="mono">${Array.from({ length: 11 }, (_, k) => `<span>${k}</span>`).join("")}</div>
+      <div style="font-size:16px;color:var(--bad);font-weight:650;text-align:right;margin-top:2px">SEC limit: 10 requests/s per IP</div>
+    </div>
+    <div class="w rv" data-s="1" data-u="1" style="left:60px;top:812px"><button class="btn ghost" id="p-race">▶ Replay the race</button></div>
+    <div class="w card rv" data-s="2" data-u="2" style="left:1030px;top:250px;width:530px;height:500px;padding:24px 28px">
+      <div class="lab">Rows per batch</div>
+      <div id="p-bv" style="font-size:52px;font-weight:760;letter-spacing:-.02em;font-variant-numeric:tabular-nums">100</div>
+      <input id="p-bs-sl" type="range" min="2" max="4" step="0.01" value="2" aria-label="Rows per batch">
+      <div class="lab" style="margin-top:22px">Time per batch</div>
+      <div style="display:flex;height:40px;border-radius:10px;overflow:hidden;margin-top:8px;background:var(--panel2)">
+        <div id="p-tc" style="background:var(--k-int);transition:width .2s"></div>
+        <div id="p-tp" style="background:var(--k-compute);transition:width .2s"></div>
+      </div>
+      <div id="p-tl" style="font-size:17px;margin-top:8px;color:var(--muted)"></div>
+      <div class="lab" style="margin-top:24px">Throughput</div>
+      <div id="p-tv" style="font-size:52px;font-weight:760;letter-spacing:-.02em;color:var(--k-int);font-variant-numeric:tabular-nums"></div>
+      <div style="font-size:16px;color:var(--muted);line-height:1.45;margin-top:6px">Model: batch ÷ (7 s + 4.7 ms × batch), fitted to the two measured points.</div>
+    </div>`,
+  init(el) {
+    segOn(el, "p-scn", v => this.scn(el, v));
+    this.scn(el, 0);
+    const sl = $("#p-bs-sl", el);
+    sl.addEventListener("input", () => this.k2s(el, Math.round(Math.pow(10, +sl.value))));
+    this.k2s(el, 100);
+    $("#p-race", el).addEventListener("click", () => { bump(); this.race(el, runner()); });
+  },
+  scn(el, v) {
+    segSet(el, "p-scn", v);
+    const [b, l] = v ? [8, 0] : [5, 4.5];
+    $("#p-b1", el).style.width = b * 10 + "%"; $("#p-b1", el).textContent = v ? "backfill scraper 8/s" : "batch scraper 5/s";
+    $("#p-b2", el).style.width = l * 10 + "%"; $("#p-b2", el).textContent = l ? "live 2 × 2.25 = 4.5/s" : "";
+    $("#p-b3", el).textContent = v ? "live off · headroom 2" : "headroom 0.5";
+    $("#p-tot", el).innerHTML = `${b + l}<span style="font-size:20px;color:var(--muted);font-weight:500"> of 10 req/s</span>`;
+    $("#p-bs-s", el).textContent = v ? "SEC_MAX_RATE=8 (override)" : "SEC_MAX_RATE=5";
+    tog(el, "#p-ls, #p-le, #p-po, #p-pe", "off", v === 1);
+  },
+  k2s(el, b) {
+    const v = K2S(b), proc = 0.0047 * b, tot = 7 + proc;
+    $("#p-bv", el).textContent = b.toLocaleString("en-US");
+    $("#p-tv", el).innerHTML = `${v.toFixed(v < 20 ? 1 : 0)}<span style="font-size:22px;color:var(--muted);font-weight:500"> rows/s</span>`;
+    $("#p-tc", el).style.width = (7 / 54.1 * 100) + "%";
+    $("#p-tp", el).style.width = (proc / 54.1 * 100) + "%";
+    $("#p-tl", el).innerHTML = `<b style="color:var(--k-int)">commit 7 s</b> + <b style="color:var(--k-compute)">rows ${proc < 1 ? proc.toFixed(1) : proc.toFixed(0)} s</b> = ${tot.toFixed(tot < 10 ? 1 : 0)} s per batch`;
+    $("#p-kl", el).setAttribute("x1", kx(b)); $("#p-kl", el).setAttribute("x2", kx(b));
+    $("#p-kc", el).setAttribute("cx", kx(b)); $("#p-kc", el).setAttribute("cy", ky(v));
+  },
+  race(el, r) {
+    RACE.forEach((_, k) => { $(`#p-rb${k}`, el).setAttribute("width", 0); $(`#p-rc${k}`, el).setAttribute("cx", 470); $(`#p-rt${k}`, el).textContent = ""; });
+    const t0 = performance.now(), base = 7000;
+    const f = now => {
+      if (!r.alive()) return;
+      let running = false;
+      RACE.forEach(([, , rate], k) => {
+        const dur = RM.matches ? 1 : base * 1.7 / rate, p = Math.min(1, (now - t0) / dur);
+        if (p < 1) running = true;
+        $(`#p-rb${k}`, el).setAttribute("width", 860 * p); $(`#p-rc${k}`, el).setAttribute("cx", 470 + 860 * p);
+        $(`#p-rt${k}`, el).textContent = p < 1 ? `${Math.round(250000 * p).toLocaleString("en-US")} filings` : `≈ ${Math.round(250000 / rate / 3600)} h`;
+      });
+      if (running) requestAnimationFrame(f); else stamp(el, 960, 808, "4–4.6× faster", { rot: -5 });
+    };
+    requestAnimationFrame(f);
+  },
+  step(el, s, r) {
+    if (s === 0) this.scn(el, 0);
+    if (s === 1) r.sleep(500).then(ok => ok && this.race(el, r));
+    if (s === 2) { $("#p-bs-sl", el).value = 2; this.k2s(el, 100); r.sleep(1400).then(async ok => { if (!ok) return; const sl = $("#p-bs-sl", el); for (let v = 2; v <= 4.0001; v += 0.04) { if (!await r.sleep(30)) return; sl.value = v; this.k2s(el, Math.round(Math.pow(10, v))); } stamp(el, 560, 385, "13× throughput", { rot: -6 }); }); }
+  },
+});
+
+/* ===================== 9. Status and results ===================== */
+const SMOKE = [["live-filings", "filing queued", "ok"], ["scraper λ", "transactions", "ok"], ["kafka-to-store λ", "BI4 upserted", "ok"], ["EventBridge Pipe", "started live-score", "ok"], ["yahoo-connect λ", "prices stored", "ok"], ["target λ", "RT4 table missing", "wait"], ["inference λ", "not reached", "none"]];
+const hx9 = h => 110 + h / 36 * 1380;
+section({
+  id: "status", thumbStep: 1, title: "Status and results", short: "Status",
+  h1: "Where the system stands today",
+  steps: [
+    { cap: "The 1-year full load is done. The 5-year backfill is running and ends after Monday.",
+      notes: ["Execution <code>backfill-5y</code> started 2026-11-20 18:11 UTC, with the scraper at 8 requests per second.", "It takes about 3 to 4 days.", "Meanwhile <code>weekly_retrain_enabled</code> and <code>live_enabled</code> are off, so the backfill has SEC's budget.", "The live poller turns on after the backfill's scraper step is done."] },
+    { cap: "Smoke test with one real filing, ticker <strong>CRMD</strong>: it crossed the whole live path up to <code>target</code>.",
+      notes: ["The live path is deployed: 6 Lambdas, the DynamoDB seen table, 3 live queues, the Pipe and <code>live-score</code>.", "The filing went through the queue, scraper, kafka-to-store (BI4), the Pipe, live-score and yahoo-connect.", "target stopped on the missing RT4 table. The batch target step creates RT4, so this is expected.", "inference was not reached in this test."] },
+    { cap: "Known trade-off: the first call to each Lambda is slow. About 1 GB images hit the 10 s start-up limit.",
+      notes: ["Cold: the scraper took 10 s, kafka-to-store 45 s. Warm calls are fast.", "Provisioned concurrency would remove cold starts, at about $10 per month per function. The owner declined it: a cost trade-off.", "Follow-up: smaller images."] },
+    { cap: "Design decision: the label enters at the <strong>next price print</strong> after disclosure, the 09:30 open or the 16:00 close.",
+      notes: ["Daily bars give two prices a trader can act on each day: the open and the close.", "In session: entry at that day's close. Before the open or after the close: entry at the next open.", "Exit: the first close at least 30 calendar days after the entry day.", "This is a data-availability choice. Intraday prices would tighten the entry; daily bars keep the label honest and reproducible."] },
+    { cap: "1-year holdout: the model does <strong>not yet beat predicting zero</strong> on MAE. Its shorts at −5% still averaged +10.8%.",
+      notes: ["Training: purged walk-forward grid search (32 combinations × 4 folds), then one score on the latest 20% of rows (docs/training.md).", "MAE 0.1216 against 0.1193 for the zero baseline: as a return forecaster, the model is not better than 'no move'.", "At the traded threshold of −5%, 265 holdout shorts captured +10.8% on average. That is one period and a few hundred trades: promising, not proof.", "Baselines: train_mean predicts a constant above −5%, so it never shorts; ticker_history shorts 1,624 rows for +3.7%. The model's shorts are fewer and better.", "Per-fold MAE, model vs zero: 0.152 vs 0.114, 0.117 vs 0.114, 0.135 vs 0.135, 0.132 vs 0.131. The model matches zero at best on MAE.", "Best parameters: absolute_error loss, learning rate 0.03, 15 leaf nodes, min 50 samples per leaf, L2 1.0.", "The 5-year model lands Sunday night and replaces these numbers. Live charts are on the site's Model tab."] },
+  ],
+  svg: () => `
+    <g class="rv board" data-s="1" data-u="1">
+      ${SMOKE.map(([t, sub], k) => node({ cls: k % 2 ? "tilt-b" : "tilt-a", id: `st-n${k}`, x: 40 + (k % 4) * 385, y: 260 + Math.floor(k / 4) * 170, w: 345, h: 84, k: k === 0 || k === 3 ? "int" : k === 6 ? "compute" : "compute", i: k === 0 ? "sqs" : k === 3 ? "pipe" : "lambda", t, sub, sid: `st-s${k}` })).join("")}
+      ${[0, 1, 2].map(k => edge({ id: `st-e${k}`, d: `M${385 + k * 385} 302 H${425 + k * 385}` })).join("")}
+      ${edge({ id: "st-e3", d: "M1347 344 C 1347 400, 212 380, 212 430" })}
+      ${[4, 5].map(k => edge({ id: `st-e${k}`, d: `M${385 + (k - 4) * 385} 472 H${425 + (k - 4) * 385}` })).join("")}
+      <text x="40" y="640" class="lbl big">The batch target step creates RT4. target needs it for <tspan class="mono">avg_target_expanding</tspan>.</text>
+      <text x="40" y="676" class="lbl">Expected stop. It clears once the backfill reaches its target step.</text>
+    </g>
+    <g class="rv" data-s="2" data-u="2">
+      <text x="60" y="250" class="ft">Cold call duration, seconds</text>
+      ${[0, 10, 20, 30, 40, 50].map(v => `<line x1="${300 + v * 20}" x2="${300 + v * 20}" y1="270" y2="520" stroke="var(--line)"/><text x="${300 + v * 20}" y="548" text-anchor="middle" class="lbl mono">${v}</text>`).join("")}
+      <line x1="500" x2="500" y1="262" y2="520" stroke="var(--bad)" stroke-width="2.5" stroke-dasharray="6 5"/>
+      <text x="508" y="262" class="lbl bad">10 s start-up limit</text>
+      <text x="60" y="320" style="font-size:22px;font-weight:650">scraper λ</text>
+      <rect class="cold" x="300" y="292" width="0" height="40" rx="8" fill="var(--k-compute)" data-w="200"/>
+      <text x="510" y="320" class="lbl big cold-l" opacity="0">10 s cold</text>
+      <text x="60" y="400" style="font-size:22px;font-weight:650">kafka-to-store λ</text>
+      <rect class="cold" x="300" y="372" width="0" height="40" rx="8" fill="var(--k-compute)" data-w="900"/>
+      <text x="1210" y="400" class="lbl big cold-l" opacity="0">45 s cold</text>
+      <text x="60" y="480" style="font-size:22px;font-weight:650">warm call</text>
+      <rect class="cold" x="300" y="452" width="0" height="40" rx="8" fill="var(--good)" data-w="16"/>
+      <text x="330" y="480" class="lbl big cold-l" opacity="0">fast</text>
+    </g>
+    <g class="rv" data-s="3" data-u="3">
+      <line x1="110" y1="470" x2="1490" y2="470" stroke="var(--edge)" stroke-width="3"/>
+      ${[0, 6, 12, 18, 24, 30, 36].map(h => `<line x1="${hx9(h)}" x2="${hx9(h)}" y1="460" y2="480" stroke="var(--edge)" stroke-width="2"/><text x="${hx9(h)}" y="505" text-anchor="middle" class="lbl mono">${String(h % 24).padStart(2, "0")}:00</text>`).join("")}
+      <rect x="${hx9(9.5)}" y="452" width="${hx9(16) - hx9(9.5)}" height="36" rx="8" fill="var(--accent-soft)"/>
+      <rect x="${hx9(33.5)}" y="452" width="${hx9(36) - hx9(33.5)}" height="36" rx="8" fill="var(--accent-soft)"/>
+      <text x="${(hx9(9.5) + hx9(16)) / 2}" y="440" text-anchor="middle" class="lbl acc">day 1 session</text>
+      <text x="${hx9(34.7)}" y="440" text-anchor="middle" class="lbl acc">day 2</text>
+      ${[[9.5, "open"], [16, "close"], [33.5, "open"]].map(([h, t]) => `<circle cx="${hx9(h)}" cy="470" r="9" fill="var(--panel)" stroke="var(--ink)" stroke-width="3"/><text x="${hx9(h)}" y="540" text-anchor="middle" style="font-size:18px;font-weight:650">${t} ${h % 24 === 9.5 ? "09:30" : "16:00"}</text>`).join("")}
+      <g id="st-acc" style="transition:transform .3s cubic-bezier(.2,.7,.2,1)"><line x1="0" x2="0" y1="330" y2="470" stroke="var(--warn)" stroke-width="3"/><circle cx="0" cy="470" r="11" fill="var(--warn)"/><text x="0" y="318" text-anchor="middle" class="lbl warn" style="font-size:19px">accepted_at</text></g>
+      <path id="st-arc" fill="none" stroke="var(--good)" stroke-width="3.5" marker-end="url(#ah)" style="transition:d .35s"/>
+      <g id="st-ent" style="transition:transform .35s cubic-bezier(.2,.7,.2,1)"><circle cx="0" cy="470" r="16" fill="var(--good)"/><text x="0" y="590" text-anchor="middle" class="lbl good" style="font-size:20px">entry</text></g>
+    </g>`,
+  html: () => `
+    <div class="w rv" data-s="0" data-u="0" style="left:60px;top:220px;width:1480px;display:grid;grid-template-columns:1fr 1.4fr;gap:26px">
+      <div class="card" style="height:250px">
+        <span class="tag good">done</span>
+        <h3 style="margin-top:14px;font-size:30px">1-year full load</h3>
+        <p>Every step of <code>retrain</code> ran on Fargate.</p>
+        <div style="height:16px;border-radius:8px;background:var(--good);margin-top:30px"></div>
+        <p style="margin-top:10px">100%</p>
+      </div>
+      <div class="card" style="height:250px">
+        <span class="tag acc">running</span>
+        <h3 style="margin-top:14px;font-size:30px">5-year backfill · <code>backfill-5y</code></h3>
+        <p>Started 2026-11-20 18:11 UTC · scraper at 8/s · about 3–4 days</p>
+        <div class="stripes" style="height:16px;border-radius:8px;margin-top:30px;border:1px solid var(--line)"></div>
+        <p style="margin-top:10px">Ends after Monday.</p>
+      </div>
+      <div class="card" style="grid-column:1/3;display:flex;gap:30px;align-items:center;padding:18px 26px">
+        <div class="lab">Switches meanwhile</div>
+        <span class="chip"><span class="dot" style="background:var(--good)"></span><code>switched_on = true</code></span>
+        <span class="chip"><span class="dot"></span><code>weekly_retrain_enabled = false</code></span>
+        <span class="chip"><span class="dot"></span><code>live_enabled = false</code></span>
+      </div>
+    </div>
+    <div class="w card rv" data-s="2" data-u="2" style="left:60px;top:600px;width:1480px;height:215px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px">
+      <div><div class="lab">Option</div><h3 style="margin-top:8px">Provisioned concurrency</h3><p>No cold starts, about <b>$10 per month per function</b>.</p><span class="tag bad">declined</span></div>
+      <div><div class="lab">Chosen</div><h3 style="margin-top:8px">Accept the cold start</h3><p>The first filing after idle waits 10–45 s. Later filings run warm.</p><span class="tag good">cost trade-off</span></div>
+      <div><div class="lab">Follow-up</div><h3 style="margin-top:8px">Smaller images</h3><p>Images are about 1 GB today. Less to load means a faster start.</p><span class="tag acc">next</span></div>
+    </div>
+    <div class="w rv" data-s="3" data-u="3" style="left:110px;top:640px;width:1380px">
+      <div class="lab">Acceptance time (US/Eastern), drag</div>
+      <input id="st-sl" type="range" min="0" max="23.75" step="0.25" value="11" aria-label="Acceptance time">
+      <div id="st-txt" style="font-size:26px;font-weight:650;margin-top:8px"></div>
+      <div style="font-size:19px;color:var(--muted);margin-top:6px">Exit: the first close at least 30 calendar days after the entry day. <code>pct_change</code> = (exit − entry) / entry.</div>
+    </div>
+    <div class="w card rv" data-s="4" data-u="4" style="left:60px;top:220px;width:1480px;padding:26px 32px">
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="lab">Test set: latest 20% of rows, purged split</div><span class="tbd">1-year data · 5-year model due Sunday</span></div>
+      <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:21px">
+        <thead><tr style="text-align:left;color:var(--muted);font-size:17px"><th style="padding:10px 6px">Predictor</th><th>What it predicts</th><th>mae</th><th>short_return</th><th>n_shorts</th></tr></thead>
+        <tbody>
+          ${[["model", "the fitted pipeline", "0.1216", "+10.8%", "265"], ["zero", "no move", "0.1193", "—", "0"], ["train_mean", "mean training label", "0.1218", "—", "0"], ["ticker_history", "avg_target_expanding", "0.1421", "+3.7%", "1,624"]].map(([a, b, ...v], k) => `<tr style="border-top:1px solid var(--line)${k === 0 ? ";font-weight:700" : ""}"><td style="padding:14px 6px" class="mono">${a}</td><td style="color:var(--muted)">${b}</td>${v.map(x => `<td>${x === null ? '<span class="tbd">5-year run</span>' : x}</td>`).join("")}</tr>`).join("")}
+        </tbody>
+      </table>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:22px">
+        <div class="card" style="box-shadow:none;padding:14px 18px"><div class="lab">train_rows</div><div style="margin-top:8px;font-size:24px;font-weight:650">53,747</div></div>
+        <div class="card" style="box-shadow:none;padding:14px 18px"><div class="lab">test_rows</div><div style="margin-top:8px;font-size:24px;font-weight:650">14,639</div></div>
+        <div class="card" style="box-shadow:none;padding:14px 18px"><div class="lab">test_start</div><div style="margin-top:8px;font-size:24px;font-weight:650">2026-06-09</div></div>
+      </div>
+      <p style="font-size:18px;color:var(--muted);margin:16px 0 0">short_return: mean return captured per short, where a predictor shorts every row it predicts below −0.05. Positive is a profit. Live model charts: the site's <strong>Model</strong> tab.</p>
+    </div>`,
+  init(el) {
+    const sl = $("#st-sl", el);
+    sl.addEventListener("input", () => this.entry(el, +sl.value));
+    this.entry(el, 11);
+  },
+  entry(el, h) {
+    const [eh, txt] = h < 9.5 ? [9.5, "Before the open: entry at the same day's open, 09:30."] : h < 16 ? [16, "In session: entry at the same day's close, 16:00."] : [33.5, "After the close: entry at the next day's open, 09:30."];
+    const hh = String(Math.floor(h)).padStart(2, "0"), mm = String(Math.round((h % 1) * 60)).padStart(2, "0");
+    $("#st-acc", el).style.transform = `translateX(${hx9(h)}px)`;
+    $("#st-ent", el).style.transform = `translateX(${hx9(eh)}px)`;
+    const a = hx9(h), b = hx9(eh), mid = (a + b) / 2;
+    $("#st-arc", el).setAttribute("d", `M${a} 455 Q ${mid} ${Math.max(300, 455 - Math.abs(b - a) * 0.45)} ${b - 4} 452`);
+    $("#st-txt", el).innerHTML = `<span class="mono" style="color:var(--warn)">accepted_at ${hh}:${mm}</span> → ${txt}`;
+  },
+  step(el, s, r) {
+    const svg = $("svg.dia", el);
+    SMOKE.forEach((x, k) => { badge(el, `st-n${k}`, false); $(`#st-n${k}`, el).classList.remove("wait", "okk", "off"); });
+    if (s === 0) r.later(() => stamp(el, 1390, 425, "In progress", { rot: -7 }), 650);
+    if (s === 1) {
+      $("#st-n6", el).classList.add("off");
+      const hop = k => { badge(el, `st-n${k + 1}`, true); };
+      badge(el, "st-n0", true);
+      r.sleep(500).then(ok => ok && r.travel(svg, ["st-e0", "st-e1", "st-e2", "st-e3", "st-e4"], { speed: 0.6, label: "CRMD", onHop: k => { if (k < 4) hop(k); else { $("#st-n5", el).classList.add("wait"); stamp(el, 600, 548, "Waiting on RT4", { rot: 5, color: "var(--warn)" }); } } }));
+      if (RM.matches) $("#st-n5", el).classList.add("wait");
+    } else if (s > 1) { SMOKE.forEach((x, k) => badge(el, `st-n${k}`, k < 5)); }
+    $$(".cold", el).forEach(b => b.setAttribute("width", 0)); $$(".cold-l", el).forEach(t => t.setAttribute("opacity", 0));
+    if (s === 2) {
+      r.sleep(400).then(ok => {
+        if (!ok) return;
+        $$(".cold", el).forEach((b, k) => { const W = +b.dataset.w, t0 = performance.now(), dur = RM.matches ? 1 : 500 + W * 1.4; const f = now => { if (!r.alive()) return; const p = Math.min(1, (now - t0) / dur); b.setAttribute("width", W * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(f); else $$(".cold-l", el)[k].setAttribute("opacity", 1); }; requestAnimationFrame(f); });
+      });
+    }
+    if (s === 3) { $("#st-sl", el).value = 11; this.entry(el, 11); r.sleep(900).then(ok => ok && (async () => { for (const h of [17.5, 7.5, 11]) { $("#st-sl", el).value = h; this.entry(el, h); if (!await r.sleep(1300)) return; } })()); }
+  },
+});
+
+/* ===================== 10. Next steps and Q&A ===================== */
+const FAQ = [
+  ["Why Fargate for batch and Lambda for live?", "Lambda stops a run after 15 minutes; the full load runs for days. Lambda starts per event and bills per call, which suits single filings."],
+  ["Why not SageMaker?", "The model is a small scikit-learn pipeline. An endpoint bills every hour it is up. A Lambda loads the model from S3."],
+  ["How do you avoid duplicate orders?", "client_order_id is the row key ticker@next print. Alpaca rejects a second order with the same id."],
+  ["How do you avoid look-ahead?", "Entry is the first print after accepted_at. Values use the close before the acceptance day. The split is chronological and purged."],
+  ["What does it cost?", "Dormant: about $0 per day. Switched on: about $1.20 per day plus usage. A $5 monthly budget emails alerts."],
+  ["Why is the NAT switchable?", "It bills about $1.08 per day with no traffic. Always on, it would cost about $32 per month, over six times the budget."],
+];
+section({
+  id: "next", title: "Next steps and Q&A", short: "Next · Q&A",
+  h1: "Next steps",
+  thumbStep: 0,
+  steps: [
+    { cap: "After the backfill: retrain, read the metrics, then switch the live poller on.",
+      notes: ["Order: backfill finishes → batch target creates RT4 → training saves the 5-year model.", "Then set <code>live_enabled = true</code> and <code>weekly_retrain_enabled = true</code>.", "Smaller images cut the cold start. numpy on the hot path follows the speed goal."] },
+    { cap: "Questions. Click a card for the short answer.",
+      notes: ["The cards are a prompt list for likely questions.", "Deeper answers: docs/presentation/glossary-and-faq.md.", "Close with: honest timing, honest evaluation, and a stack that costs nothing while idle."] },
+  ],
+  svg: () => `
+    <g class="rv" data-s="0" data-u="0">
+      ${[["Backfill finishes", "5 years of filings, scraper at 8/s", "int", "sfn", "running"], ["RT4 created", "batch target step", "data", "table", ""], ["Retrain", "fill in the metrics", "ml", "model", ""], ["Live poller on", "live_enabled = true", "compute", "lambda", ""], ["Smaller images", "faster cold starts", "ci", "image", ""], ["numpy hot path", "pandas only at SDK edges", "compute", "bolt", ""]].map(([t, sub, k, i, tag], j) => {
+        const x = 60 + (j % 3) * 500, y = 250 + Math.floor(j / 3) * 260;
+        return `<g class="rv" data-s="0" data-u="0" data-d="${j + 1}">
+          ${node({ x, y, w: 460, h: 96, k, i, t, sub })}
+          <text x="${x}" y="${y - 16}" class="ft">${String(j + 1).padStart(2, "0")}${tag ? " · " + tag : ""}</text>
+          ${j % 3 < 2 ? `<path class="edge flow" d="M${x + 460} ${y + 48} H${x + 500}" marker-end="url(#ah)"/>` : ""}
+          ${j === 2 ? `<path class="edge flow" d="M${x + 230} ${y + 96} C ${x + 230} ${y + 190}, 290 ${y + 150}, 290 ${y + 255}" marker-end="url(#ah)"/>` : ""}
+        </g>`; }).join("")}
+    </g>`,
+  html: () => `
+    <div class="w rv" data-s="1" data-u="1" style="left:60px;top:230px;width:1480px;display:grid;grid-template-columns:repeat(3,1fr);gap:24px">
+      ${FAQ.map(([q, a]) => `<button class="flip" style="height:280px"><div class="in"><div class="fa"><h4>${q}</h4><div class="hint">click for the answer</div></div><div class="fb"><p>${a}</p></div></div></button>`).join("")}
+    </div>`,
+  init(el) { $$(".flip", el).forEach(f => f.addEventListener("click", () => f.classList.toggle("open"))); },
+  step(el, s, r) { if (s === 1) { $$(".flip", el).forEach(f => f.classList.remove("open")); r.later(() => stamp(el, 1390, 128, "Your questions", { rot: -8 }), 600); } },
+});
+
+/* ---------- app ---------- */
+const stage = $("#stage"), viewport = $("#viewport");
+let cur = { i: 0, s: 0 }, booted = false;
+const startTime = Date.now();
+
+function buildSlide(def, idx) {
+  const el = document.createElement("section");
+  el.className = "slide"; el.dataset.id = def.id;
+  const caps = def.steps.map((st, k) => `<p class="cap rv" data-s="${k}" data-u="${k}">${st.cap}</p>`).join("");
+  el.innerHTML = `${def.bare ? "" : `<div class="head"><div class="kicker">${idx === 0 ? "" : `<span class="kn">${String(idx).padStart(2, "0")}</span>`}${esc(def.title)}</div><h1>${def.h1}</h1><div class="caps">${caps}</div></div>`}
+    <svg class="dia" viewBox="0 0 1600 900" aria-hidden="true">${def.svg ? def.svg() : ""}</svg>${def.html ? def.html() : ""}`;
+  return el;
+}
+function applyStep(root, step) {
+  $$("[data-s],[data-u]", root).forEach(e => {
+    const s = e.dataset.s === undefined ? -1 : +e.dataset.s, u = e.dataset.u === undefined ? 1e9 : +e.dataset.u;
+    e.classList.toggle("on", step >= s && step <= u);
+  });
+  $$("[data-hl]", root).forEach(e => e.classList.toggle("hot", e.dataset.hl.split(",").map(Number).includes(step)));
+}
+function prepDraw(root) { $$("path.draw", root).forEach(p => { const L = Math.ceil(p.getTotalLength()) + 2; p.style.strokeDasharray = L; p.dataset.len = L; p.style.strokeDashoffset = L; }); }
+function syncDraw(root) { $$("path.draw", root).forEach(p => { p.style.strokeDashoffset = p.classList.contains("on") ? 0 : p.dataset.len; }); }
+
+function render() {
+  SECTIONS.forEach((def, i) => { const el = buildSlide(def, i); stage.appendChild(el); def.el = el; applyStep(el, -1); def.init && def.init(el); prepDraw(el); });
+  $("#rail").innerHTML = SECTIONS.map((d, i) => `<button class="rail-item" data-i="${i}" title="${esc(d.title)} (${i === 0 ? "Home" : i % 10})"><b>${i}</b><span>${esc(d.short || d.title)}</span></button>`).join("");
+  $$(".rail-item").forEach(b => b.addEventListener("click", () => { go(+b.dataset.i, 0); b.blur(); }));
+}
+function fit() {
+  const W = viewport.clientWidth, H = viewport.clientHeight, k = Math.min(W / 1600, H / 900);
+  stage.style.transform = `translate(${(W - 1600 * k) / 2}px, ${(H - 900 * k) / 2}px) scale(${k})`;
+}
+function go(i, s, opts = {}) {
+  i = Math.max(0, Math.min(SECTIONS.length - 1, i));
+  const def = SECTIONS[i];
+  s = s === "last" ? def.steps.length - 1 : Math.max(0, Math.min(def.steps.length - 1, s));
+  const before = cur, entered = before.i !== i || !def.el.classList.contains("cur");
+  bump();
+  if (entered) {
+    if (booted && !RM.matches) wipe(i, def);
+    const old = SECTIONS[before.i]; old.leave && old.leave(old.el);
+    SECTIONS.forEach((d, k) => { d.el.classList.toggle("cur", k === i); d.el.classList.toggle("before", k < i); });
+  }
+  cur = { i, s };
+  applyStep(def.el, s); syncDraw(def.el);
+  const r = runner();
+  try { def.step && def.step(def.el, s, r, { entered, from: entered ? -1 : before.s }); } catch (err) { console.error(err); }
+  if (def.ambient !== false && !(def.quiet || []).includes(s)) ambient(def.el, r, def.ambientMs);
+  ui();
+  if (!opts.noHash) { const h = `#${def.id}/${s}`; if (location.hash !== h) history.replaceState(null, "", h); }
+  booted = true;
+}
+function next() { const d = SECTIONS[cur.i]; if (cur.s < d.steps.length - 1) go(cur.i, cur.s + 1); else if (cur.i < SECTIONS.length - 1) go(cur.i + 1, 0); }
+function prev() { if (cur.s > 0) go(cur.i, cur.s - 1); else if (cur.i > 0) go(cur.i - 1, "last"); }
+function ui() {
+  const def = SECTIONS[cur.i];
+  $$(".rail-item").forEach((b, k) => { b.classList.toggle("cur", k === cur.i); b.classList.toggle("done", k < cur.i); });
+  const total = SECTIONS.reduce((a, d) => a + d.steps.length, 0);
+  const done = SECTIONS.slice(0, cur.i).reduce((a, d) => a + d.steps.length, 0) + cur.s + 1;
+  $("#progress").style.width = (100 * done / total) + "%";
+  $("#counter").textContent = `${cur.i === 0 ? "Introduction" : "Chapter " + cur.i + " / " + (SECTIONS.length - 1) + " · " + def.title} · step ${cur.s + 1} of ${def.steps.length}`;
+  $("#stepdots").innerHTML = def.steps.map((_, k) => `<button class="${k === cur.s ? "on" : k < cur.s ? "past" : ""}" data-k="${k}" title="Step ${k + 1}"></button>`).join("");
+  $$("#stepdots button").forEach(b => b.addEventListener("click", () => { go(cur.i, +b.dataset.k); b.blur(); }));
+  const st = def.steps[cur.s];
+  $("#n-title").textContent = `${cur.i === 0 ? "Introduction" : "Chapter " + cur.i + " · " + def.title}`;
+  $("#n-step").textContent = `Step ${cur.s + 1} of ${def.steps.length}`;
+  $("#n-list").innerHTML = (st.notes || []).map(n => `<li>${n}</li>`).join("");
+  $("#n-next").textContent = cur.s < def.steps.length - 1 ? `Next: step ${cur.s + 2} of this section` : cur.i < SECTIONS.length - 1 ? `Next section: ${SECTIONS[cur.i + 1].title}` : "Last step";
+  $$(".ocard").forEach((c, k) => c.classList.toggle("cur", k === cur.i));
+}
+function fromHash() {
+  const m = decodeURIComponent(location.hash).replace(/^#\/?/, "").split("/");
+  if (!m[0]) return false;
+  let i = SECTIONS.findIndex(d => d.id === m[0]);
+  if (i < 0 && /^\d+$/.test(m[0])) i = +m[0] - 1;
+  if (i < 0 || i >= SECTIONS.length) return false;
+  const s = m[1] ? (parseInt(m[1], 10) || 0) : 0;
+  if (i !== cur.i || s !== cur.s || !SECTIONS[i].el.classList.contains("cur")) go(i, s, { noHash: true });
+  return true;
+}
+
+/* overview */
+function buildOverview() {
+  const grid = $("#ogrid");
+  grid.innerHTML = "";
+  SECTIONS.forEach((def, i) => {
+    const b = document.createElement("button"); b.className = "ocard"; b.style.transitionDelay = `${i * 30}ms`;
+    const th = document.createElement("div"); th.className = "othumb";
+    const clone = def.el.cloneNode(true);
+    clone.classList.remove("before"); clone.classList.add("cur");
+    $$("#l-dia, #d-dia", clone).forEach(e => e.style.opacity = 1);
+    $$("[id]", clone).forEach(e => e.removeAttribute("id"));
+    applyStep(clone, def.thumbStep ?? def.steps.length - 1);
+    $$("path.draw", clone).forEach(p => p.style.strokeDashoffset = 0);
+    $$(".tokens", clone).forEach(g => g.replaceChildren());
+    th.appendChild(clone); b.appendChild(th);
+    b.insertAdjacentHTML("beforeend", `<div class="ometa"><b>${i}</b>${esc(def.title)}</div>`);
+    b.addEventListener("click", () => { toggleOverview(false); go(i, 0); });
+    grid.appendChild(b);
+  });
+  requestAnimationFrame(() => $$(".othumb").forEach(th => { const c = th.firstChild; c.style.transformOrigin = "0 0"; c.style.transform = `scale(${th.clientWidth / 1600})`; }));
+  ui();
+}
+function toggleOverview(on) {
+  const o = $("#overview"); on = on ?? !o.classList.contains("open");
+  if (on && !o.classList.contains("open")) buildOverview();
+  o.classList.toggle("open", on); $("#b-over").classList.toggle("on", on);
+}
+function toggleNotes(on) { on = on ?? !document.body.classList.contains("notes"); document.body.classList.toggle("notes", on); $("#b-notes").classList.toggle("on", on); fit(); setTimeout(fit, 470); }
+function toggleHelp(on) { const h = $("#help"); h.classList.toggle("open", on ?? !h.classList.contains("open")); }
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem("sf4-theme", t); } catch (e) { /* storage unavailable */ }
+}
+function toggleTheme() {
+  const t = document.documentElement.dataset.theme;
+  const dark = t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  setTheme(dark ? "light" : "dark");
+}
+function toggleFull() { if (document.fullscreenElement) document.exitFullscreen(); else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {}); }
+
+document.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t.tagName === "INPUT" && t.type === "range" && e.key.startsWith("Arrow")) return;
+  const k = e.key;
+  if (k === "Escape") { toggleOverview(false); toggleHelp(false); return; }
+  if ($("#overview").classList.contains("open") && k !== "o" && k !== "O") return;
+  if (["ArrowRight", "PageDown", "Enter"].includes(k) || (k === " " && !e.shiftKey)) { e.preventDefault(); next(); }
+  else if (["ArrowLeft", "PageUp", "Backspace"].includes(k) || (k === " " && e.shiftKey)) { e.preventDefault(); prev(); }
+  else if (k === "ArrowDown") { e.preventDefault(); go(cur.i + 1, 0); }
+  else if (k === "ArrowUp") { e.preventDefault(); go(cur.i - 1, 0); }
+  else if (k === "Home") go(0, 0);
+  else if (k === "End") go(SECTIONS.length - 1, 0);
+  else if (/^[0-9]$/.test(k)) go(k === "0" ? 10 : +k, 0);
+  else if (k === "l" || k === "L") document.body.classList.toggle("spot");
+  else if (k === "o" || k === "O") toggleOverview();
+  else if (k === "n" || k === "N") toggleNotes();
+  else if (k === "f" || k === "F") toggleFull();
+  else if (k === "t" || k === "T") toggleTheme();
+  else if (k === "r" || k === "R") go(cur.i, cur.s);
+  else if (k === "?") toggleHelp();
+});
+$("#b-over").onclick = e => { toggleOverview(); e.currentTarget.blur(); };
+$("#b-notes").onclick = e => { toggleNotes(); e.currentTarget.blur(); };
+$("#b-theme").onclick = e => { toggleTheme(); e.currentTarget.blur(); };
+$("#b-full").onclick = e => { toggleFull(); e.currentTarget.blur(); };
+$("#b-help").onclick = e => { toggleHelp(); e.currentTarget.blur(); };
+$("#help").onclick = () => toggleHelp(false);
+$("#b-prev").onclick = e => { prev(); e.currentTarget.blur(); };
+$("#b-next").onclick = e => { next(); e.currentTarget.blur(); };
+document.addEventListener("click", e => { const b = e.target.closest(".w button, .w input"); if (b) setTimeout(() => b.blur(), 0); });
+addEventListener("resize", fit);
+addEventListener("mousemove", e => { const sp = $("#spot"); sp.style.setProperty("--mx", e.clientX + "px"); sp.style.setProperty("--my", e.clientY + "px"); });
+$("#tape .run").innerHTML = [...TAPE, ...TAPE].map(([c, t]) => `<span class="${c}">${esc(t)}</span>`).join("");
+addEventListener("hashchange", fromHash);
+document.addEventListener("fullscreenchange", () => setTimeout(fit, 60));
+setInterval(() => { $("#n-clock").textContent = `Elapsed: ${Math.floor((Date.now() - startTime) / 60000)} min`; }, 5000);
+
+try { const t = localStorage.getItem("sf4-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* storage unavailable */ }
+render(); fit();
+if (!fromHash()) go(0, 0);
+</script>
+</body>
+</html>

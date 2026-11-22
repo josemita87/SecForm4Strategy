@@ -40,17 +40,26 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+cloudwatch = [
+    { name = "mypy-boto3-cloudwatch" },
+]
 dynamodb = [
     { name = "mypy-boto3-dynamodb" },
 ]
 s3 = [
     { name = "mypy-boto3-s3" },
 ]
+scheduler = [
+    { name = "mypy-boto3-scheduler" },
+]
 sqs = [
     { name = "mypy-boto3-sqs" },
 ]
 ssm = [
     { name = "mypy-boto3-ssm" },
+]
+stepfunctions = [
+    { name = "mypy-boto3-stepfunctions" },
 ]
 
 [[package]]
@@ -215,6 +224,15 @@ wheels = [
 ]
 
 [[package]]
+name = "mypy-boto3-cloudwatch"
+version = "1.44.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/87/c2abcc3b5d117eabdf9af2735d875d9892ed09c36e829549595e9574729b/mypy_boto3_cloudwatch-1.44.2.tar.gz", hash = "sha256:0756d58755bc7d5ab7fccbd48efd08fb7731b681bd30ee7a08e4e065d225d071", size = 42651, upload-time = "2026-11-13T00:32:45.223Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/2d/315a2a172e9ebdb2556652a6030a2428d528a8fab4f2c447adc45a211282/mypy_boto3_cloudwatch-1.44.2-py3-none-any.whl", hash = "sha256:2b731d6d535dcf9a159177cf5807c94e457d19b82414c9f40c581ab3f2d27ada", size = 52283, upload-time = "2026-11-13T00:32:42.821Z" },
+]
+
+[[package]]
 name = "mypy-boto3-dynamodb"
 version = "1.44.0"
 source = { registry = "https://pypi.org/simple" }
@@ -233,6 +251,15 @@ wheels = [
 ]
 
 [[package]]
+name = "mypy-boto3-scheduler"
+version = "1.44.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/91/7e/6caa3db9730512195ff5164743a03edf69cc23326367ac179321ac93b4b8/mypy_boto3_scheduler-1.44.3.tar.gz", hash = "sha256:8e78db97e22950ec2228525538e31b825513189607a372ee1104a423169db187", size = 18875, upload-time = "2026-11-13T21:35:58.349Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/cc/63398b92121c9e5bda2e490b8e938a243cf442e8c8871788d4e65cd63f84/mypy_boto3_scheduler-1.44.3-py3-none-any.whl", hash = "sha256:c15fef3ca5484b743d50070f62e7daf1165b801a05f7c915761dfca336b8d99c", size = 25167, upload-time = "2026-11-13T21:35:56.435Z" },
+]
+
+[[package]]
 name = "mypy-boto3-sqs"
 version = "1.44.0"
 source = { registry = "https://pypi.org/simple" }
@@ -248,6 +275,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/be/6e/06f434a99efa3537ad7e302146033546aea6da2ccb044b61fafaf926d489/mypy_boto3_ssm-1.44.3.tar.gz", hash = "sha256:d1c26fa323064cae474dec943a68de6db9d626c39af849cf7fbb26d276109039", size = 99198, upload-time = "2026-11-13T21:36:01.426Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c3/d4/a42e19ef230ed34ceea5beddc27fa0bc774dea6ef4917ea58ee2a446c397/mypy_boto3_ssm-1.44.3-py3-none-any.whl", hash = "sha256:b0e1ca222cfb4f1a3d6a88cc822831e83037796e44f509d602ee43d8297cdd17", size = 100877, upload-time = "2026-11-13T21:35:57.632Z" },
+]
+
+[[package]]
+name = "mypy-boto3-stepfunctions"
+version = "1.44.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7c/83/424c7d35ae9e3daa1a0098c22ae704a196c9a91eae970dcf3998c92ec60a/mypy_boto3_stepfunctions-1.44.0.tar.gz", hash = "sha256:347ba2b2806bf7b6e01cfa5d728e00e4ceaf1f44708bc27f2232768d13a1a402", size = 31548, upload-time = "2026-11-10T21:58:52.585Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/da/1b/6c25649987f4312a0b33cf48101fc22c5af90faa742cc8fbdcea262e511d/mypy_boto3_stepfunctions-1.44.0-py3-none-any.whl", hash = "sha256:679658b62059cdffa86c1bf79675c20ec6145f017d2b550884ec28e3de6eee9b", size = 36506, upload-time = "2026-11-10T21:58:49.562Z" },
 ]
 
 [[package]]
@@ -553,7 +589,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "bandit" },
-    { name = "boto3-stubs", extra = ["dynamodb", "s3", "sqs", "ssm"] },
+    { name = "boto3-stubs", extra = ["cloudwatch", "dynamodb", "s3", "scheduler", "sqs", "ssm", "stepfunctions"] },
     { name = "docstring-parser-fork" },
     { name = "mypy" },
     { name = "numpy" },
@@ -575,7 +611,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "bandit", specifier = ">=1.8.6,<2" },
-    { name = "boto3-stubs", extras = ["dynamodb", "s3", "sqs", "ssm"], specifier = ">=1.35,<2" },
+    { name = "boto3-stubs", extras = ["cloudwatch", "dynamodb", "s3", "scheduler", "sqs", "ssm", "stepfunctions"], specifier = ">=1.35,<2" },
     { name = "docstring-parser-fork", specifier = ">=0.0.14" },
     { name = "mypy", specifier = ">=1.17.0,<2" },
     { name = "numpy", specifier = ">=2.3,<2.5" },

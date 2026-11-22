@@ -1,4 +1,4 @@
-"""Amazon S3 model store (a ``ModelStore`` adapter).
+"""Amazon S3 model store (a ``ModelStore`` and ``ModelFiles`` adapter).
 
 Each save writes the same pair as ``LocalModelStore`` (``model.joblib`` + ``model.meta.json``)
 under a folder named after the training time, then points ``latest.json`` at that folder.
@@ -14,13 +14,13 @@ from typing import TYPE_CHECKING, Any
 import boto3
 import joblib
 
-from secform4strategy_clients.aws import RETRIES, classified
+from secform4strategy_clients.aws import RETRIES, classified, read_optional
 from secform4strategy_clients.model_store import METADATA
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
 
-    from secform4strategy_clients.ports import ModelMetadata
+    from secform4strategy_clients.records import ModelMetadata
 
 # The layout under the prefix: one folder per version, and the pointer to the current one
 POINTER = 'latest.json'
@@ -69,10 +69,27 @@ class S3ModelStore:
             The model and its metadata.
         """
         version = json.loads(self._read(POINTER))['version']
-        return (
-            joblib.load(BytesIO(self._read(f'{version}/{MODEL}'))),
-            METADATA.validate_json(self._read(f'{version}/{METADATA_FILE}')),
-        )
+        return joblib.load(BytesIO(self._read(f'{version}/{MODEL}'))), self.metadata(version)
+
+    def latest_version(self) -> str | None:
+        """Return the version ``latest.json`` names, or None when no model was saved.
+
+        Returns:
+            The version, such as ``20261120T210617Z``.
+        """
+        pointer = classified('Read the model pointer', read_optional, self.s3, self.bucket, f'{self.prefix}/{POINTER}')
+        return None if pointer is None else str(json.loads(pointer)['version'])
+
+    def metadata(self, version: str) -> ModelMetadata:
+        """Return a version's validated metadata, without its model.
+
+        Args:
+            version: The version folder.
+
+        Returns:
+            The metadata.
+        """
+        return METADATA.validate_json(self._read(f'{version}/{METADATA_FILE}'))
 
     def _write(self, name: str, body: bytes) -> None:
         """Write one object under the prefix."""

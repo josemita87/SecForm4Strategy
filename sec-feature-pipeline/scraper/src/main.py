@@ -12,11 +12,13 @@ from config import Kafka, Sqs, config
 from parser import parse_filing
 from secform4strategy_clients.edgar import EdgarClient
 from secform4strategy_clients.messaging import KafkaClient
-from secform4strategy_clients.ports import Filing, PermanentError, RetryableError
+from secform4strategy_clients.ports import PermanentError, RetryableError
+from secform4strategy_clients.records import Filing
 from secform4strategy_clients.sqs import SqsQueue
 
 if TYPE_CHECKING:
-    from secform4strategy_clients.ports import Filings, Message, MessageQueue
+    from secform4strategy_clients.ports import Filings, MessageQueue
+    from secform4strategy_clients.records import Message
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(

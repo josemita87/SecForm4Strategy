@@ -1,0 +1,95 @@
+{
+  "generated_at": "2026-11-23T15:01:51Z",
+  "switches": {
+    "stack": true,
+    "live_poller": true,
+    "weekly_retrain": false
+  },
+  "queues": [
+    {
+      "name": "live-filings",
+      "depth": 0,
+      "in_flight": 0,
+      "dlq_depth": 0
+    },
+    {
+      "name": "live-transactions",
+      "depth": 3,
+      "in_flight": 2,
+      "dlq_depth": 0
+    },
+    {
+      "name": "live-tickers",
+      "depth": 0,
+      "in_flight": 1,
+      "dlq_depth": 0
+    },
+    {
+      "name": "filings",
+      "depth": 0,
+      "in_flight": 0,
+      "dlq_depth": 0
+    },
+    {
+      "name": "transactions",
+      "depth": 0,
+      "in_flight": 0,
+      "dlq_depth": 2
+    }
+  ],
+  "lambdas": [
+    {
+      "name": "master-index",
+      "invocations_1h": 60,
+      "errors_1h": 0,
+      "p90_duration_ms": 1850
+    },
+    {
+      "name": "scraper",
+      "invocations_1h": 14,
+      "errors_1h": 0,
+      "p90_duration_ms": 4200
+    },
+    {
+      "name": "kafka-to-store",
+      "invocations_1h": 9,
+      "errors_1h": 0,
+      "p90_duration_ms": 11800
+    },
+    {
+      "name": "yahoo-connect",
+      "invocations_1h": 6,
+      "errors_1h": 1,
+      "p90_duration_ms": 13900
+    },
+    {
+      "name": "target",
+      "invocations_1h": 5,
+      "errors_1h": 0,
+      "p90_duration_ms": 15100
+    },
+    {
+      "name": "inference",
+      "invocations_1h": 5,
+      "errors_1h": 0,
+      "p90_duration_ms": 9600
+    }
+  ],
+  "live_runs_24h": {
+    "succeeded": 41,
+    "failed": 1,
+    "running": 1
+  },
+  "retrain": {
+    "name": "weekly-20261121T060000Z",
+    "status": "SUCCEEDED",
+    "step": "training",
+    "started_at": "2026-11-21T06:00:04Z",
+    "stopped_at": "2026-11-21T07:12:48Z"
+  },
+  "model": {
+    "version": "20261121T071002Z",
+    "trained_at": "2026-11-21T07:10:02Z",
+    "git_sha": "7af238c"
+  }
+}

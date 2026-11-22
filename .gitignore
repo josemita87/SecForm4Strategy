@@ -59,3 +59,9 @@ tfplan
 
 # Internal presentation pack and its PDF
 docs/presentation/
+
+# Site data the publisher writes; previews use site/fixtures
+site/data/
+
+# Built from docs/report/report.md; submitted as a file, not tracked
+docs/report/report.pdf

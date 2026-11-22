@@ -54,20 +54,21 @@ def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
         _context: The Lambda context, unused; Lambda passes it to every handler.
 
     Returns:
-        The tickers, how many rows were scored, and the keys of the rows below the threshold.
+        The tickers, how many rows were scored, the keys of the rows below the threshold, and each scored
+        row's key, ticker, acceptance time and predicted return (the site's live feed reads them).
 
     Raises:
         RetryableError: Orders failed transiently; the state machine retries, and placed orders are not repeated.
     """
     if not (tickers := list(event['tickers'])):
         logger.info('No tickers with rows to score')
-        return {'tickers': tickers, 'scored': 0, 'shorts': []}
+        return {'tickers': tickers, 'scored': 0, 'shorts': [], 'predictions': []}
     rows = store.read(FeatureGroup.BIR4, where={Col.TICKER: tickers})
     since = datetime.now(UTC) - timedelta(minutes=config.max_signal_age_minutes)
     fresh = rows[pd.to_datetime(rows[Col.ACCEPTED_AT], utc=True) > since]
     if fresh.empty:
         logger.info(f'No rows of {tickers} accepted since {since:%Y-%m-%d %H:%M} UTC')
-        return {'tickers': tickers, 'scored': 0, 'shorts': []}
+        return {'tickers': tickers, 'scored': 0, 'shorts': [], 'predictions': []}
     model, features = pipeline.load_model()
     predictions = score(model, features, fresh)
     shorts = predictions.loc[predictions[Col.PREDICTIONS] < config.prediction_threshold, Col.KEY].tolist()
@@ -78,4 +79,12 @@ def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
         OrderSpec(config.qty, config.side, config.order_type, config.time_in_force),
     ):
         raise RetryableError(f'Orders left for a retry: {retry_later}')
-    return {'tickers': tickers, 'scored': len(predictions), 'shorts': shorts}
+    scored = predictions[[Col.KEY, Col.TICKER, Col.ACCEPTED_AT, Col.PREDICTIONS]].assign(
+        **{Col.ACCEPTED_AT: pd.to_datetime(predictions[Col.ACCEPTED_AT], utc=True).dt.strftime('%Y-%m-%dT%H:%M:%SZ')}
+    )
+    return {
+        'tickers': tickers,
+        'scored': len(predictions),
+        'shorts': shorts,
+        'predictions': scored.rename(columns={Col.PREDICTIONS: Col.PREDICTION}).to_dict('records'),
+    }

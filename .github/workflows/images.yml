@@ -29,6 +29,7 @@ jobs:
           - { service: target, path: prices-feature-pipeline/target }
           - { service: training, path: training }
           - { service: inference, path: inference }
+          - { service: site-publisher, path: site-publisher }
     steps:
       - uses: actions/checkout@v4
         with:

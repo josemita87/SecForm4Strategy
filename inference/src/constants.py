@@ -20,3 +20,4 @@ class Col(StrEnum):
     TICKER = 'ticker'
     ACCEPTED_AT = 'accepted_at'
     PREDICTIONS = 'predictions'
+    PREDICTION = 'prediction'

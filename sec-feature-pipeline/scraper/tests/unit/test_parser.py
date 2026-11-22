@@ -14,7 +14,8 @@ from form4 import Submission
 from parser import parse_filing
 from pydantic import ValidationError
 from secform4strategy_clients.fakes.filings import FakeFilings
-from secform4strategy_clients.ports import Filing, PermanentError
+from secform4strategy_clients.ports import PermanentError
+from secform4strategy_clients.records import Filing
 from tests.paths import BOTH_HOLDINGS, FOOTNOTE_10B5_1, JOINT_FILING, OWNERSHIP_LINES, STOCK_AND_DERIVATIVE
 from transaction import Trade
 

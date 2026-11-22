@@ -1,4 +1,4 @@
-"""Feature store on Apache Iceberg (a ``FeatureStore`` adapter).
+"""Feature store on Apache Iceberg (a ``FeatureStore`` and ``RecentRows`` adapter).
 
 Infra-only and domain-independent. The caller supplies a catalog mapping its own
 references (e.g. ``"bt4"``) to feature-group specs (``feature_groups``); thereafter it pushes and reads by
@@ -7,19 +7,20 @@ Tables); only pyiceberg's catalog configuration changes.
 """
 
 import functools
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from datetime import datetime
 from typing import TYPE_CHECKING
 
+import pandas as pd
 import pyarrow as pa
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
-from pyiceberg.expressions import AlwaysTrue, And, EqualTo, In
+from pyiceberg.expressions import AlwaysTrue, And, EqualTo, GreaterThanOrEqual, In
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 
 from secform4strategy_clients.ports import RetryableError, is_many
 from secform4strategy_clients.retry import with_backoff
 
 if TYPE_CHECKING:
-    import pandas as pd
     from pyiceberg.catalog import Catalog
 
     from secform4strategy_clients.feature_groups import FeatureGroupSpec
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
 
 
 class IcebergFeatureStore:
-    """Feature groups as Apache Iceberg tables (a ``FeatureStore`` adapter).
+    """Feature groups as Apache Iceberg tables (a ``FeatureStore`` and ``RecentRows`` adapter).
 
     Each catalog reference maps to the table ``<namespace>.<name>_v<version>``. A
     table is created by its first push and its schema is fixed then: later pushes
@@ -76,6 +77,29 @@ class IcebergFeatureStore:
         data: pd.DataFrame = (
             self.catalog.load_table(self._identifier(reference)).scan(row_filter=row_filter).to_pandas()
         )
+        return data
+
+    def read_since(self, reference: str, since: datetime, columns: Iterable[str]) -> pd.DataFrame:
+        """Read the rows whose event time is at or after ``since``, with only ``columns`` (a ``RecentRows`` read).
+
+        Iceberg skips the data files outside the window and the columns not selected.
+
+        Args:
+            reference: A key into the catalog given at construction.
+            since: The earliest event time included.
+            columns: The columns to read.
+
+        Returns:
+            The rows; no rows with the requested columns when the table does not exist yet.
+        """
+        try:
+            table = self.catalog.load_table(self._identifier(reference))
+        except NoSuchTableError:
+            return pd.DataFrame(columns=list(columns))
+        data: pd.DataFrame = table.scan(
+            row_filter=GreaterThanOrEqual(self._specs[reference].event_time, since.isoformat()),
+            selected_fields=tuple(columns),
+        ).to_pandas()
         return data
 
     def push(self, reference: str, data: pd.DataFrame) -> object:

@@ -8,18 +8,20 @@ The AWS deployment runs the same services as the local stack, on serverless AWS 
 
 The batch path runs ECS tasks in the private subnets. The live path runs Lambda functions outside the VPC. Orange dashed outlines and lines exist only while the stack is switched on.
 
-Terraform state is in the bucket `secform4strategy-tfstate-<account>`, which `infra/bootstrap` creates. The backend locks the state with S3 native locking (`use_lockfile = true`). The root module `infra/envs/demo` calls eight modules:
+Terraform state is in the bucket `secform4strategy-tfstate-<account>`, which `infra/bootstrap` creates. The backend locks the state with S3 native locking (`use_lockfile = true`). The root module `infra/envs/demo` calls ten modules:
 
 | Module | Resources |
 | --- | --- |
 | `storage` | Data bucket `secform4strategy-data-<account>`, Glue database `secform4strategy`, Athena workgroup `secform4strategy`, one ECR repository per service, the monthly budget |
 | `network` | VPC, two public and two private subnets, internet gateway, S3 gateway endpoint, security group `secform4strategy-tasks`, and the NAT gateway while switched on |
 | `queues` | Five SQS queues, each with a dead-letter queue and a CloudWatch alarm, and the SNS topic `secform4strategy-queue-alerts` |
-| `iam` | The ECS execution role, one task role per service, and one Lambda role per live-path function |
+| `iam` | The ECS execution role, one task role per service, and one Lambda role per Lambda function |
 | `ci` | The GitHub OIDC provider and the roles `secform4strategy-github-images`, `-plan` and `-apply` |
 | `tasks` | The ECS cluster `secform4strategy`, one task definition per service, one log group per service |
 | `retrain` | The `retrain` state machine and its weekly schedule |
 | `live` | Six Lambda functions, the DynamoDB table `secform4strategy-seen`, the poller schedule, the `live-score` state machine and the EventBridge Pipe that starts it |
+| `dashboard` | The CloudWatch dashboard `secform4strategy` |
+| `site` | The site bucket, CloudFront distribution and password function, and the publisher Lambda with its triggers ([site.md](site.md)) |
 
 The data bucket holds three prefixes:
 
@@ -31,7 +33,7 @@ The bucket blocks all public access and encrypts objects with SSE-S3. Incomplete
 
 The Athena workgroup writes results to `athena-results/` and cancels any query that scans more than 1 GiB.
 
-Each service has an ECR repository `secform4strategy/<service>`: `master-index`, `scraper`, `kafka-to-store`, `yahoo-connect`, `target`, `training` and `inference`. Tags are immutable, ECR scans each image on push, and each repository keeps its 5 newest images.
+Each service has an ECR repository `secform4strategy/<service>`: `master-index`, `scraper`, `kafka-to-store`, `yahoo-connect`, `target`, `training`, `inference` and `site-publisher`. Tags are immutable, ECR scans each image on push, and each repository keeps its 5 newest images.
 
 The budget `secform4strategy-monthly` is $5 per month. It sends an email when actual cost passes 50% of the budget, and when forecast cost passes 100%. The recipient is `alert_email` in the git-ignored `infra/envs/demo/terraform.tfvars`.
 
@@ -77,7 +79,7 @@ One Step Functions state machine, `retrain`, runs six ECS tasks in order:
 5. target builds the labelled rows.
 6. training saves a new model to `models/` in S3.
 
-Each step runs one Fargate ARM64 task in the cluster `secform4strategy`, in the private subnets, and waits for it to stop. The tasks use the `FARGATE` launch type, because Fargate Spot does not run ARM64 tasks. A step whose task fails is retried after 600 seconds, at most 3 times. Each task writes its logs to the log group `/secform4strategy/<service>`, kept 14 days.
+Each step runs one Fargate ARM64 task in the cluster `secform4strategy`, in the private subnets, and waits for it to stop. The tasks use the `FARGATE` launch type (On-Demand). Fargate Spot runs ARM64 tasks too, but a Spot interruption fails the step, and the retry policy allows only 3 attempts, which a multi-day backfill could use up. A step whose task fails is retried after 600 seconds, at most 3 times. Each task writes its logs to the log group `/secform4strategy/<service>`, kept 14 days.
 
 EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC. master-index then runs with `MODE=recent` and `DAYS_BACK=7`: it reads the master indexes of the quarters that the last 7 days touch, and publishes only the filings of those 7 days. The schedule is enabled only while both `switched_on` and `weekly_retrain_enabled` are `true`.
 
@@ -176,9 +178,20 @@ Warm invocations take a few seconds. A filing that arrives after a quiet period 
 
 The private subnets are in the availability zones `use1-az1` and `use1-az2`. Fargate ARM64 is not available in `use1-az3`.
 
+### Why the project has a VPC
+
+The ECS tasks require it. Fargate runs a task only in `awsvpc` mode: each task gets a network interface in a subnet that the caller names, with a security group. The other services need no VPC:
+
+| Component | In the VPC | Reason |
+| --- | --- | --- |
+| ECS Fargate tasks | Yes | Fargate requires a subnet and a security group for every task |
+| Live Lambda functions | No | They read only regional AWS services and internet APIs. Outside the VPC they do not depend on the NAT gateway, so the live path works while the stack is dormant. Their outbound address is not fixed. |
+| Site publisher Lambda | No | It reads only regional AWS services and internet APIs; outside the VPC it does not depend on the NAT gateway ([site.md](site.md#data-path)) |
+| Step Functions, SQS, DynamoDB, S3, EventBridge, CloudFront | Not applicable | Regional or global services: clients reach them through endpoints, and IAM controls each request |
+
 The ECS tasks run in the private subnets. They have no public IP address, and the security group accepts no inbound connections. Nothing on the internet can open a connection to them.
 
-The live Lambda functions run outside the VPC, in the Lambda service's own network. They reach SEC EDGAR, Yahoo Finance, Alpaca and the AWS APIs directly, without the NAT gateway, and accept no inbound connections. Their outbound address is not fixed. They work while the stack is dormant, because they do not depend on the NAT gateway.
+The live Lambda functions run outside the VPC, in the Lambda service's own network. They reach SEC EDGAR, Yahoo Finance, Alpaca and the AWS APIs directly, without the NAT gateway, and accept no inbound connections.
 
 The public subnets hold only the NAT gateway. The NAT gateway gives the private subnets outbound internet access, which the services need for SEC EDGAR, Yahoo Finance and Alpaca. It also carries their calls to the AWS APIs other than S3: ECR, SQS, Glue, SSM, DynamoDB and CloudWatch Logs.
 
@@ -194,9 +207,9 @@ The `iam` module creates three kinds of role:
 | --- | --- | --- | --- |
 | `secform4strategy-execution` | `ecs-tasks.amazonaws.com` | The ECS agent, before the container starts | `AmazonECSTaskExecutionRolePolicy` (pull images from ECR, write CloudWatch logs), plus `ssm:GetParameters` on `/secform4strategy/*` |
 | `secform4strategy-<service>` | `ecs-tasks.amazonaws.com` | The service's code in an ECS task | Only the queues and data that service uses, from `task_access` |
-| `secform4strategy-live-<service>` | `lambda.amazonaws.com` | The service's code in a Lambda function | `AWSLambdaVPCAccessExecutionRolePolicy` (logs, and deletion of the network interfaces of earlier VPC-attached versions), plus the entries in `lambda_access` |
+| `secform4strategy-live-<service>` | `lambda.amazonaws.com` | The service's code in a Lambda function | `AWSLambdaBasicExecutionRole` (CloudWatch Logs), plus the entries in `lambda_access` |
 
-In ECS, the execution role reads the secrets from SSM and injects them as environment variables, so the task roles hold no SSM permission. In Lambda, the function's own role reads them, so the three Lambda roles that use secrets hold the `read-secrets` capability.
+In ECS, the execution role reads the secrets from SSM and injects them as environment variables, so the task roles hold no SSM permission. In Lambda, the function's own role reads them, so the Lambda roles that use secrets hold an SSM capability. master-index and scraper hold `read-secrets`. inference and site-publisher hold `read-alpaca-keys`, which covers only the two Alpaca keys.
 
 ### Access per service
 
@@ -219,7 +232,10 @@ In ECS, the execution role reads the secrets from SSM and injects them as enviro
 | kafka-to-store | `live-tickers` | `live-transactions` | `lakehouse-write` |
 | yahoo-connect | | | `lakehouse-write` |
 | target | | | `lakehouse-write` |
-| inference | | | `lakehouse-read`, `models-read`, `read-secrets` |
+| inference | | | `lakehouse-read`, `models-read`, `read-alpaca-keys` |
+| site-publisher | | | `lakehouse-read`, `models-read`, `read-alpaca-keys` |
+
+The `site` module adds the inline policy `site` to the site-publisher role, as [site.md](site.md#publisher) describes.
 
 Each entry grants these actions:
 
@@ -238,6 +254,7 @@ Each entry grants these actions:
 | `models-write` | `s3:PutObject` | `models/*` |
 | `seen-keys` | `dynamodb:BatchGetItem`, `dynamodb:BatchWriteItem` | The table `secform4strategy-seen` |
 | `read-secrets` | `ssm:GetParameters` | `/secform4strategy/*` |
+| `read-alpaca-keys` | `ssm:GetParameters` | `/secform4strategy/alpaca-api-key` and `/secform4strategy/alpaca-api-secret` |
 
 `glue:CreateDatabase` is part of both lakehouse capabilities because the feature store creates its namespace when it is missing. The SQS trigger of a Lambda function needs `sqs:GetQueueAttributes`.
 
@@ -250,6 +267,7 @@ The `live` and `retrain` modules create their own roles for the services that st
 | `secform4strategy-live-scheduler` | EventBridge Scheduler | `lambda:InvokeFunction` on the master-index function |
 | `secform4strategy-live-score` | Step Functions | `lambda:InvokeFunction` on yahoo-connect, target and inference |
 | `secform4strategy-live-tickers-pipe` | EventBridge Pipes | Receive and delete on `live-tickers`; `states:StartExecution` on `live-score` |
+| `secform4strategy-site-scheduler` | EventBridge Scheduler | `lambda:InvokeFunction` on the site publisher |
 
 ### Credentials in containers
 
@@ -293,13 +311,13 @@ CI and Terraform own different things:
 | Terraform | Every AWS resource, including the ECR repositories and the CI roles |
 | CI | The images in ECR, and the runs of `terraform plan` and `terraform apply` |
 
-Three workflows run in `.github/workflows/`:
+Four workflows run in `.github/workflows/`:
 
 | Workflow | Trigger | Does |
 | --- | --- | --- |
 | `quality.yml` | Pull requests and pushes to master | The quality gate: quality-static and type-check |
 | `images.yml` | A successful `quality` run on a push to master | Builds a `linux/arm64` image for each service whose code changed, tags it with that code's last commit, and pushes it to ECR |
-| `terraform.yml` | Pull requests and pushes to master that change `infra/` | `terraform plan` on pull requests; `terraform apply` on master, after approval |
+| `terraform.yml` | Pull requests and pushes to master that change `infra/` or `site/` | `terraform plan` on pull requests; `terraform apply` on master, after approval |
 
 A merge to master therefore runs `quality`, then `images`, then a `terraform` apply that waits for approval. Approve the apply after `images` succeeds. Terraform reads the newest image of each repository, so an apply before the build deploys the previous image.
 
@@ -314,10 +332,10 @@ Each role trusts the provider only for the audience `sts.amazonaws.com` and one 
 | Role | Trusted subject | Permissions |
 | --- | --- | --- |
 | `secform4strategy-github-images` | `repo:<owner>/SecForm4Strategy:ref:refs/heads/master` | `ecr:GetAuthorizationToken`, and image push and pull on `secform4strategy/*` |
-| `secform4strategy-github-plan` | `repo:<owner>/SecForm4Strategy:pull_request` | `ReadOnlyAccess`, plus `s3:PutObject` and `s3:DeleteObject` on `*.tflock` in the state bucket |
+| `secform4strategy-github-plan` | `repo:<owner>/SecForm4Strategy:pull_request` | `ReadOnlyAccess`, plus `s3:PutObject` and `s3:DeleteObject` on `*.tflock` in the state bucket, minus `cloudfront-keyvaluestore:GetKey` and `ListKeys` |
 | `secform4strategy-github-apply` | `repo:<owner>/SecForm4Strategy:environment:aws` | `AdministratorAccess` |
 
-The plan role can read every resource and the state, and can write only the lock file. A pull request therefore cannot change any resource.
+The plan role can read every resource and the state, and can write only the lock file. A pull request therefore cannot change any resource. The inline policy `deny-site-keys` denies the plan role `cloudfront-keyvaluestore:GetKey` and `cloudfront-keyvaluestore:ListKeys` on all resources. A pull request branch can assume the plan role, and the key-value store `secform4strategy-site-auth` holds the hash of the site password.
 
 ### Approval gate
 
@@ -329,6 +347,8 @@ Only a job that runs in the GitHub environment `aws` can assume `secform4strateg
 | --- | --- | --- |
 | Dormant (`switched_on = false`) | About $0 per day | S3 storage and ECR storage. The VPC, subnets, internet gateway, S3 gateway endpoint, security group, IAM, Glue database, idle SQS queues, idle Lambda functions, the DynamoDB table on demand and the state machines cost nothing. |
 | Switched on (`switched_on = true`) | About $1.20 per day, plus usage | The NAT gateway (about $1.08 per day) and its Elastic IP (about $0.12 per day). Usage: Fargate, Lambda, Step Functions, SQS requests, DynamoDB requests, NAT data processing, Athena scans. |
+
+The site adds the publisher's Lambda cost while switched on, about $0.86 per month for each second a publish takes ([site.md](site.md#cost)).
 
 The $5 monthly budget alerts at 50% of actual cost and at 100% of forecast cost.
 
@@ -368,7 +388,9 @@ Turn `weekly_retrain_enabled` off while a long manual run uses the batch queues.
 
 ### Secrets
 
-The secrets are `SecureString` parameters in SSM Parameter Store: `/secform4strategy/sec-user-agent`, `/secform4strategy/alpaca-api-key` and `/secform4strategy/alpaca-api-secret`. Create or change them with the AWS CLI, never in Terraform, so their values never enter the Terraform state:
+The secrets are `SecureString` parameters in SSM Parameter Store: `/secform4strategy/sec-user-agent`, `/secform4strategy/alpaca-api-key` and `/secform4strategy/alpaca-api-secret`. Create or change them with the AWS CLI, never in Terraform, so their values never enter the Terraform state. The site password is a hash in a CloudFront key-value store, written by `scripts/set_site_password.sh` and never by Terraform ([site.md](site.md#password)).
+
+Create or change a secret:
 
 ```bash
 aws ssm put-parameter --profile secform4 --type SecureString --overwrite --name /secform4strategy/<name> --value '<value>'
@@ -414,6 +436,19 @@ Send one filing to `live-filings`. The message body is `{"accession": ..., "file
 
 To test only `live-score`, send `{"tickers": ["<ticker>"]}` to `live-tickers`. target needs `RT4`, which the batch target step writes, and inference needs a model in `models/`.
 
+## Site
+
+The `site` module serves a password-protected study website from S3 through CloudFront. [site.md](site.md) describes it. The site also uses two resources that other modules create:
+
+- `storage` creates the ECR repository `secform4strategy/site-publisher`.
+- `iam` creates the role `secform4strategy-live-site-publisher`.
+
+The `site` module adds these resources:
+
+- The bucket `secform4strategy-site-<account>` and one object per site file, which Terraform uploads from `site/`.
+- A CloudFront distribution with an origin access control, the cache policies `secform4strategy-site-static` and `secform4strategy-site-data`, the function `secform4strategy-site-auth` and its key-value store.
+- While `site_publisher_enabled` is `true`: the Lambda `secform4strategy-site-publisher`, outside the VPC, its log group, the schedule `secform4strategy-site-publish`, its role `secform4strategy-site-scheduler`, and the EventBridge rule `secform4strategy-site-live-score-finished`.
+
 ## Design decisions
 
 | Decision | Rejected alternative | Reason |
@@ -424,7 +459,7 @@ To test only `live-score`, send `{"tickers": ["<ticker>"]}` to `live-tickers`. t
 | No provisioned concurrency | One warm instance per live function | It costs about $10 per month per function. A cold filing reaches inference about 1 to 2 minutes later. |
 | Lambda secrets read by `SsmSettings` at cold start | Terraform reads them and sets them as environment variables | The values would enter the Terraform state. |
 | `skip_destroy` on task definitions | Terraform deregisters replaced revisions | A running `retrain` run can no longer start tasks from a deregistered revision. |
-| `FARGATE` launch type | Fargate Spot | Fargate Spot does not run ARM64 tasks. |
+| `FARGATE` launch type (On-Demand) | Fargate Spot (`FARGATE_SPOT`, about 70% cheaper, ARM64 supported) | A Spot interruption fails the step, and 3 retries may not cover a multi-day backfill. The saving is a few dollars per week. |
 | NAT gateway only while switched on | An always-on NAT gateway | An always-on NAT gateway costs about $32 per month, more than six times the budget. |
 | S3 gateway endpoint plus NAT gateway | Interface endpoints for ECR (API and Docker), CloudWatch Logs, SQS and SSM | Five interface endpoints in two availability zones cost about $73 per month. The services need the internet for SEC, Yahoo Finance and Alpaca anyway, so the NAT gateway is required. |
 | OIDC roles for CI | An IAM user with access keys stored in GitHub | A stored key lives until someone rotates it, and anyone who reads it can use it. OIDC credentials are temporary and bound to one repository and one trigger. |

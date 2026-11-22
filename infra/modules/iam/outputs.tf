@@ -12,3 +12,8 @@ output "lambda_role_arns" {
   description = "Role each live-path Lambda runs with."
   value       = { for service, role in aws_iam_role.lambda : service => role.arn }
 }
+
+output "lambda_role_names" {
+  description = "Name of the role each Lambda runs with, for modules that add their own policies."
+  value       = { for service, role in aws_iam_role.lambda : service => role.name }
+}

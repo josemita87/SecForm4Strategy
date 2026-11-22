@@ -1,0 +1,33 @@
+# Service spec (format: docs/configuration.md)
+
+# Feature-group catalog: rt4 for the model report, bt4 (batch) and bi4 (live) for the recent sales
+feature_groups:
+  rt4:
+    primary_key: [key]
+    event_time: accepted_at
+  bt4:
+    primary_key: [key]
+    event_time: accepted_at
+  bi4:
+    primary_key: [key]
+    event_time: accepted_at
+
+# Live-path Lambdas reported in health.json, named <name_prefix>-live-<function>
+live_functions: [master-index, scraper, kafka-to-store, yahoo-connect, target, inference]
+# Newest live-score runs listed in live.json
+live_runs: 50
+# Permutation importance on a sample of the holdout
+importance:
+  n_repeats: 3
+  random_state: 42
+  max_rows: 20000
+  top: 15
+# Recent insider sales: the window, the length of each list, and how often explore.json is rebuilt
+explore:
+  days: 7
+  limit: 25
+  every_minutes: 15
+# Alpaca: orders listed, and the equity history's period and resolution
+orders_limit: 100
+equity_period: 1M
+equity_timeframe: 1D

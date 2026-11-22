@@ -5,7 +5,7 @@ Under test:
 """
 
 import pandas as pd
-from secform4strategy_clients.ports import Scores
+from secform4strategy_clients.records import Scores
 from simulation import Shorts, evaluate, threshold_sweep
 
 Y_TRUE = pd.Series([-0.10, 0.04, -0.02, 0.01])

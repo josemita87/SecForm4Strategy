@@ -1589,6 +1589,9 @@ broker = [
     { name = "pydantic" },
     { name = "requests" },
 ]
+cloudwatch = [
+    { name = "boto3" },
+]
 edgar = [
     { name = "httpx" },
 ]
@@ -1610,6 +1613,15 @@ model-store = [
     { name = "joblib" },
     { name = "pydantic" },
 ]
+s3-site = [
+    { name = "boto3" },
+]
+scheduler = [
+    { name = "boto3" },
+]
+stepfunctions = [
+    { name = "boto3" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1621,6 +1633,10 @@ dev = [
 requires-dist = [
     { name = "alpaca-py", marker = "extra == 'broker'", specifier = ">=0.44,<1" },
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.35,<2" },
+    { name = "boto3", marker = "extra == 'cloudwatch'", specifier = ">=1.35,<2" },
+    { name = "boto3", marker = "extra == 's3-site'", specifier = ">=1.35,<2" },
+    { name = "boto3", marker = "extra == 'scheduler'", specifier = ">=1.35,<2" },
+    { name = "boto3", marker = "extra == 'stepfunctions'", specifier = ">=1.35,<2" },
     { name = "confluent-kafka", marker = "extra == 'messaging'", specifier = ">=2.6,<3" },
     { name = "httpx", marker = "extra == 'edgar'", specifier = ">=0.28,<1" },
     { name = "joblib", marker = "extra == 'model-store'", specifier = ">=1.4,<2" },
@@ -1636,7 +1652,7 @@ requires-dist = [
     { name = "requests", marker = "extra == 'broker'", specifier = ">=2.31,<3" },
     { name = "yfinance", marker = "extra == 'market-data'", specifier = ">=0.2.48,<0.3" },
 ]
-provides-extras = ["feature-store", "model-store", "broker", "messaging", "edgar", "aws", "market-data"]
+provides-extras = ["feature-store", "model-store", "broker", "messaging", "edgar", "aws", "stepfunctions", "scheduler", "cloudwatch", "s3-site", "market-data"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -10,7 +10,7 @@ import xxhash
 from main import build_messages, filed_since, publish_new, quarters_between
 from secform4strategy_clients.fakes.messaging import FakeMessageQueue
 from secform4strategy_clients.fakes.seen import FakeSeenKeys
-from secform4strategy_clients.ports import Filing
+from secform4strategy_clients.records import Filing
 
 LIVE = Filing('0001-23-000001', 'edgar/data/1/0001-23-000001.txt', datetime.fromisoformat('2023-03-22T21:52:41-04:00'))
 INDEXED = Filing('0001-23-000002', 'edgar/data/2/0001-23-000002.txt', datetime(2023, 3, 22, tzinfo=UTC))

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-from secform4strategy_clients.ports import Scores
+from secform4strategy_clients.records import Scores
 from sklearn.metrics import mean_absolute_error
 
 if TYPE_CHECKING:

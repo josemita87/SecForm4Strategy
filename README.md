@@ -1,10 +1,12 @@
 # SecForm4Strategy
 
-**A microservice ML system that turns SEC Form 4 insider-trading filings into a short-side equity signal.**
+**A serverless ML system on AWS that turns SEC Form 4 insider-trading filings into a short-side equity signal.**
 
 When a corporate insider sells their own company's stock, they must disclose it to the SEC on a Form 4 within two business days. SecForm4Strategy ingests those filings as they are published, joins each one to the stock's price action *after it became public*, trains a model to predict the return that follows, and shorts the names it expects to fall, paper-traded through Alpaca.
 
-> **Project status: portfolio / research.** An end-to-end systems-and-ML engineering showcase, not a production trading system or investment advice. It runs locally (Docker Compose, Redpanda, an Apache Iceberg feature store on a SQLite catalog) against paper trading; the migration to AWS serverless is the next stage.
+> **Project status: portfolio / research.** An end-to-end systems-and-ML engineering showcase, not a production trading system or investment advice. It runs on AWS (account `100118195151`, region `us-east-1`), defined entirely in Terraform: a weekly batch path on ECS Fargate, a per-minute live path on Lambda, and a password-protected study website on CloudFront. The same services also run locally on Docker Compose. Trading is paper only.
+
+![End-to-end data flow](docs/report/diagrams/data-flow.drawio.svg)
 
 ---
 
@@ -16,27 +18,65 @@ When a corporate insider sells their own company's stock, they must disclose it 
 - **No look-ahead anywhere.** Positions are valued at the last close before the acceptance day; a ticker's past-return feature averages only labels already realised at acceptance, the same rule in training and inference; the holdout and the walk-forward validation folds are split by time and purged.
 - **One row per trading opportunity.** Everything disclosed for a ticker before its next market price is one row, with the cluster of insiders who sold in the preceding 30 days, so several insiders selling together is visible to the model, and no label is counted twice.
 - **Prices that stay honest.** Returns use split- and dividend-adjusted prices; values use the price as it traded that day; an incremental refresh detects when Yahoo has re-based past prices and fetches the history again.
+- **Speed from disclosure.** The live path polls SEC every minute and trades as soon as it scores a filing. A filing reaches an Alpaca paper order within minutes of publication.
+- **One feature implementation.** The live path runs the batch services as Lambda handlers on the same images, so training and live scoring compute features with the same code.
+- **About $0 per day when idle.** Both paths are serverless. One Terraform switch creates the NAT gateway and enables the schedules (about $1.20 per day plus usage) and removes them again.
 - **Clean boundaries, tested.** Each microservice owns one stage; every external system sits behind a typed port in one shared package; unit tests run on real Form 4 submissions and typed fakes, never mocks.
+
+### Result so far
+
+On one year of data, the model does not beat a constant zero prediction on mean absolute error: holdout MAE 0.1216 against 0.1193. Its most negative predictions still rank well: the 265 holdout rows predicted below -5% fell by 10.8% on average, before costs. The project delivers infrastructure that can test the insider-selling hypothesis rigorously, not a proven trading strategy. The full write-up is [docs/report/report.md](docs/report/report.md).
 
 ---
 
-## Architecture
+## Architecture on AWS
 
-![Architecture](docs/diagrams/architecture.svg)
+![AWS architecture](docs/diagrams/aws-architecture.drawio.svg)
 
-Two pipelines feed one feature store, and the same services run as two systems, **training** and **inference**, selected by Compose files and env files:
+The system has two paths. Both share one Iceberg feature store in S3 (Glue catalog) and one model in S3.
 
-- **SEC pipeline:** `master-index` discovers filings (EDGAR's quarterly master index for backfill, its current-filings Atom feed for live), `scraper` turns each into transaction records timed at acceptance, and `kafka-to-store` validates and upserts them, with Redpanda (Kafka) between the stages.
-- **Prices pipeline:** `yahoo_connect` keeps daily bars for every ticker the transactions mention; `target` turns transactions and prices into model rows and labels.
-- **Model:** `training` fits a scikit-learn pipeline on the labelled rows and saves it with its metadata; `inference` scores the newest rows and places short orders.
+| | Batch path | Live path |
+| --- | --- | --- |
+| Work | The first full load of years of filings, then a weekly retrain on the new filings | One filing at a time, as SEC publishes it |
+| Compute | ECS tasks on Fargate ARM64, in private subnets | Lambda functions on the same images, outside the VPC |
+| Trigger | EventBridge Scheduler starts the Step Functions state machine `retrain` every Saturday at 06:00 UTC | EventBridge Scheduler polls every minute; SQS and an EventBridge Pipe start the state machine `live-score` |
+| Steps | master-index → scraper → kafka-to-store → yahoo-connect → target → training | master-index → scraper → kafka-to-store → `live-score`: yahoo-connect → target → inference |
 
-Kafka topics mirror the split: `tmi` / `imi` (training / inference filings) feed `td` / `id` (training / inference transactions).
+Every queue has a dead-letter queue with a CloudWatch alarm that emails through SNS. A $5 monthly budget alerts on actual and forecast cost. The details, including network, identity, messaging and cost, are in [docs/aws.md](docs/aws.md).
+
+### Study website
+
+![Site architecture](docs/diagrams/site-architecture.drawio.svg)
+
+A static site on S3 behind CloudFront shows the project in five pages: Story, Live, Portfolio, Model and Explore. A CloudFront Function checks a password on every request. The `site-publisher` Lambda writes the pages' `data/*.json` every minute and after each `live-score` run. Viewers only read pre-built files: no request reaches the lakehouse, Step Functions or Alpaca. The design and its security are in [docs/site.md](docs/site.md).
+
+### CI/CD
+
+![AWS CI/CD](docs/diagrams/aws-ci-cd.drawio.svg)
+
+GitHub Actions authenticates to AWS with OIDC, so GitHub holds no AWS key. A merge to master runs the quality gate, then builds the `linux/arm64` image of each changed service and pushes it to ECR, then runs a `terraform apply` that waits for a reviewer's approval.
+
+### One code base, two runtimes
+
+![Local and AWS backends](docs/diagrams/local-vs-aws.drawio.svg)
+
+Each service chooses its adapters from environment variables, so the same code runs on Docker Compose and on AWS ([docs/configuration.md](docs/configuration.md#backends-local-or-aws)).
+
+---
+
+## The model
 
 ### A filing's life
 
 ![A filing, from trade to label](docs/diagrams/filing-timeline.drawio.svg)
 
 A filing accepted after the close enters at the next open; one accepted during the session enters at that day's close. Its row is keyed by ticker and that entry moment, carries the insiders of the preceding 30 days, and is valued at the previous close as traded. The label is the return from entry to the first close at least `DELTA_PERIOD` days later, and becomes usable by later rows only once that close has printed. The parsing rules are in [docs/form4-parsing.md](docs/form4-parsing.md).
+
+### Validation
+
+![Walk-forward validation timeline](docs/report/diagrams/validation-timeline.drawio.svg)
+
+Training keeps the latest 20% of rows as a holdout and scores it once. A grid search runs over 4 expanding walk-forward folds of the earlier rows and picks the lowest mean validation MAE. Every split drops the rows whose 30-day label ends inside the period it is scored on. The rules are in [docs/training.md](docs/training.md).
 
 ### The data model
 
@@ -47,19 +87,13 @@ A filing accepted after the close enters at the next open; one accepted during t
 | `RT4` | ticker and next market print | `<ticker>@<next print>` | features, label, `label_known_at` | target | training |
 | `BIR4` | ticker and next market print | `<ticker>@<next print>` | the same features, no label yet | target | inference |
 
-Keys are deterministic, so every redelivery (feed re-polls, Kafka retries, backfill reruns) upserts the same row. Formats and specs are in [docs/configuration.md](docs/configuration.md).
+Keys are deterministic, so every redelivery (feed re-polls, queue retries, backfill reruns) upserts the same row. Formats and specs are in [docs/configuration.md](docs/configuration.md).
 
 ### Ports and adapters
 
 ![Ports and adapters](docs/diagrams/ports-and-adapters.drawio.svg)
 
-Services depend on Protocols (`FeatureStore`, `Filings`, `MarketData`, `Broker`, `ModelStore`), never on concrete clients; each `main.py` is the only place that builds the adapters from config. Moving the feature store from a local catalog to S3 and Glue is a configuration change, and tests substitute typed in-memory fakes.
-
-### On AWS
-
-![AWS architecture](docs/diagrams/aws-architecture.drawio.svg)
-
-The AWS deployment, what is built and what is planned, is described in [docs/aws.md](docs/aws.md).
+Services depend on the Protocols in `secform4strategy_clients.ports`, never on concrete clients. Each `main.py`, or `handler.py` on Lambda, is the only place that builds the adapters from config. Tests substitute typed in-memory fakes.
 
 ---
 
@@ -67,30 +101,35 @@ The AWS deployment, what is built and what is planned, is described in [docs/aws
 
 | Service | Role |
 | --- | --- |
-| **sec-feature-pipeline/master-index** | Discovers Form 4 filings, from the quarterly master index (backfill) or the current-filings Atom feed (live), and publishes one message per filing. |
+| **sec-feature-pipeline/master-index** | Discovers Form 4 filings, from the quarterly master index (backfill) or the current-filings Atom feed (live), and publishes one message per filing. On the live path, DynamoDB records the filings it has already sent. |
 | **sec-feature-pipeline/scraper** | Fetches each submission, reads its acceptance time and Form 4 XML into typed models, and publishes one record per transaction. |
 | **sec-feature-pipeline/kafka-to-store** | Consumes transactions, casts and validates them, and upserts them into `BT4` / `BI4`. |
 | **prices-feature-pipeline/yahoo_connect** | Refreshes daily bars for the transactions' tickers into `P`, never mixing price bases and never storing a provisional close. |
 | **prices-feature-pipeline/target** | Collapses transactions into one row per ticker and next market print, adds insider clusters, company context and values, computes labels, and writes `RT4` / `BIR4`. |
 | **training** | Purged walk-forward grid search with a time holdout ([docs/training.md](docs/training.md)), a scikit-learn pipeline (preprocessing + gradient-boosted regressor), baselines, a short-side simulation; saves the pipeline with its metadata. |
-| **inference** | Loads the saved pipeline, scores the newest `BIR4` rows and places short orders through Alpaca. |
-| **packages/secform4strategy-clients** | The ports, their adapters (EDGAR, Kafka, Iceberg, yfinance, Alpaca, model store) and typed fakes for tests. See its [README](packages/secform4strategy-clients/README.md). |
+| **inference** | Loads the saved pipeline, scores the newest `BIR4` rows and places short orders through Alpaca. On the live path it trades only rows accepted within the last 60 minutes. |
+| **site-publisher** | Reads the runs, queues, lakehouse, model and Alpaca paper account, and writes the study website's `data/*.json`. |
+| **packages/secform4strategy-clients** | The ports, their adapters (EDGAR, SQS, Kafka, Iceberg, DynamoDB, yfinance, Alpaca, local and S3 model stores, SSM settings) and typed fakes for tests. See its [README](packages/secform4strategy-clients/README.md). |
 
 ---
 
 ## Repository layout
 
-```
+```text
 .
 ├── sec-feature-pipeline/                # Form 4 ingestion: master-index, scraper, kafka-to-store
 ├── prices-feature-pipeline/             # yahoo_connect (prices), target (rows and labels)
 ├── training/                            # model training and evaluation
 ├── inference/                           # scoring and order placement
+├── site-publisher/                      # Lambda that writes the study website's data files
+├── site/                                # the static study website
 ├── packages/secform4strategy-clients/   # ports, adapters and fakes shared by every service
-├── docker-compose/                      # Redpanda, the training / inference stacks and the lakehouse summary tool
-├── scripts/                             # lakehouse_summary.py, run in a container by make lakehouse-summary
-├── docs/                                # configuration, development, Form 4 parsing, diagrams
-├── Makefile                             # quality gate, tests and compose entry points
+├── infra/                               # Terraform: bootstrap (state bucket), envs/demo, modules
+├── .github/workflows/                   # quality, images and terraform
+├── docker-compose/                      # Redpanda, the local training / inference stacks and the lakehouse summary tool
+├── scripts/                             # make status, the lakehouse summary and the site password
+├── docs/                                # AWS, site, training, configuration, development, Form 4 parsing, report, diagrams
+├── Makefile                             # quality gate, tests, local stacks, AWS status and switch
 └── pyproject.toml                       # repo-wide ruff, mypy, pydoclint and bandit config
 ```
 
@@ -101,8 +140,10 @@ Each service is its own `uv` project (`pyproject.toml`, `uv.lock`, Dockerfile, `
 ## Tech stack
 
 - **Python 3.14** everywhere, managed with [`uv`](https://docs.astral.sh/uv/) (per-service lockfiles, `uv sync --frozen` in Docker).
-- **Streaming:** Redpanda (Kafka API) via `quixstreams`.
-- **Feature store:** Apache Iceberg via `pyiceberg` (a local SQLite catalog today, S3 + Glue on AWS).
+- **AWS:** ECS Fargate (ARM64), Lambda container images, Step Functions, EventBridge Scheduler and Pipes, SQS, DynamoDB, S3, Glue, Athena, SSM Parameter Store, CloudFront, CloudWatch, SNS, Budgets.
+- **Infrastructure as code:** Terraform with S3 state and native locking; GitHub Actions with OIDC roles and an approval gate.
+- **Messaging:** SQS on AWS; Redpanda (Kafka API) via `quixstreams` locally.
+- **Feature store:** Apache Iceberg via `pyiceberg`, on S3 with a Glue catalog (a SQLite catalog locally).
 - **Filings:** SEC EDGAR over `httpx`, rate-limited; Form 4 XML declared as `pydantic-xml` models.
 - **Market data:** `yfinance`.
 - **ML:** scikit-learn `HistGradientBoostingRegressor` in a `Pipeline` with its preprocessing.
@@ -112,7 +153,29 @@ Each service is its own `uv` project (`pyproject.toml`, `uv.lock`, Dockerfile, `
 
 ---
 
+## Operating the AWS stack
+
+CI applies master; nobody applies Terraform by hand. Three switches in `infra/envs/demo/switch.auto.tfvars` control what runs:
+
+| Switch | While `true` |
+| --- | --- |
+| `switched_on` | The NAT gateway exists, and the schedules below may run. |
+| `weekly_retrain_enabled` | The Saturday `retrain` schedule is enabled, if `switched_on` is `true`. |
+| `live_enabled` | The live poller is enabled, if `switched_on` is `true`. |
+
+```bash
+make switch-on     # from master: sets switched_on = true, commits and pushes; approve the apply in GitHub
+make switch-off    # the same, back to dormant
+make status        # one read-only screen: switches, runs, queues with rates and ETAs, tasks, errors, model
+```
+
+The CloudWatch dashboard `secform4strategy` shows the same metrics as graphs. Secrets live in SSM Parameter Store and never in Terraform. The runbooks (secrets, manual runs, testing the live path with one filing) are in [docs/aws.md](docs/aws.md#operating).
+
+---
+
 ## Running it locally
+
+![Local architecture](docs/diagrams/architecture.svg)
 
 ### Prerequisites
 
@@ -150,7 +213,9 @@ make inference-model     # scores BIR4 with the saved model, places paper orders
 make lakehouse-summary   # row counts, time spans and the latest RT4/BIR4 rows, between any two stages
 ```
 
-The feature store lives in `.lakehouse/` and the model in `.artifacts/` at the repo root (both git-ignored), shared by the containers through volumes; `rm -rf .lakehouse .artifacts` starts from scratch. Run settings sit in the env files next to each Compose file: master-index picks what the training scrape covers (`MODE` in `training-master.env`: the current quarter, the last `YEARS` years, one `YEAR` / `QUARTER`, or the last `DAYS_BACK` days with `recent`; `SHUFFLE=True` publishes in random order, so a scrape stopped early is a random sample), and inference trades `QTY` shares below `PREDICTION_THRESHOLD` (`inference-model.env`). Only the SEC stacks need `SEC_USER_AGENT`, and only `inference-model` needs `.credentials.env`.
+Kafka topics mirror the split: `tmi` / `imi` (training / inference filings) feed `td` / `id` (training / inference transactions). The feature store lives in `.lakehouse/` and the model in `.artifacts/` at the repo root (both git-ignored), shared by the containers through volumes; `rm -rf .lakehouse .artifacts` starts from scratch. Run settings sit in the env files next to each Compose file: master-index picks what the training scrape covers (`MODE` in `training-master.env`: the current quarter, the last `YEARS` years, one `YEAR` / `QUARTER`, or the last `DAYS_BACK` days with `recent`; `SHUFFLE=True` publishes in random order, so a scrape stopped early is a random sample), and inference trades `QTY` shares below `PREDICTION_THRESHOLD` (`inference-model.env`). Only the SEC stacks need `SEC_USER_AGENT`, and only `inference-model` needs `.credentials.env`.
+
+To preview the study website with sample data, run `python3 -m http.server -d site 8000` and open `http://localhost:8000/?fixtures`.
 
 ### Code quality and tests
 
@@ -162,6 +227,21 @@ make type-check       # mypy, one run per service
 ```
 
 Development conventions (tests, fakes, comments, Docker builds) are in [docs/development.md](docs/development.md).
+
+---
+
+## Documentation
+
+| Document | Covers |
+| --- | --- |
+| [docs/report/report.md](docs/report/report.md) | The full project report: hypothesis, data, model, results and cloud design |
+| [docs/aws.md](docs/aws.md) | The AWS deployment: paths, network, identity, messaging, CI/CD, cost, operating |
+| [docs/site.md](docs/site.md) | The study website: architecture, publisher, network, security, rollout |
+| [docs/training.md](docs/training.md) | Validation, grid search, evaluation and the model metadata |
+| [docs/configuration.md](docs/configuration.md) | Settings, backends, feature-group specs |
+| [docs/form4-parsing.md](docs/form4-parsing.md) | How a Form 4 becomes transaction records |
+| [docs/error-handling.md](docs/error-handling.md) | Retryable and permanent errors across the services |
+| [docs/development.md](docs/development.md) | Conventions for code, tests and Docker builds |
 
 ---
 

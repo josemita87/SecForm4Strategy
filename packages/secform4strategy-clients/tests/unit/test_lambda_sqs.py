@@ -7,7 +7,7 @@ Under test:
 import json
 
 from secform4strategy_clients.lambda_sqs import batch_failures, sqs_messages
-from secform4strategy_clients.ports import Message
+from secform4strategy_clients.records import Message
 
 
 def event(*bodies: str) -> dict[str, list[dict[str, str]]]:

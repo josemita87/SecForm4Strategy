@@ -15,7 +15,8 @@ import pytest
 from main import read_filing, scrape
 from secform4strategy_clients.fakes.filings import FakeFilings
 from secform4strategy_clients.fakes.messaging import FakeMessageQueue
-from secform4strategy_clients.ports import Filing, Message, RetryableError
+from secform4strategy_clients.ports import RetryableError
+from secform4strategy_clients.records import Filing, Message
 from tests.paths import FOOTNOTE_10B5_1
 
 if TYPE_CHECKING:

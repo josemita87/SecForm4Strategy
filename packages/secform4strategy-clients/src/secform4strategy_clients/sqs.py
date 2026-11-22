@@ -1,4 +1,4 @@
-"""Amazon SQS client implementing the ``MessageQueue`` port.
+"""Amazon SQS client implementing the ``MessageQueue`` and ``Queues`` ports.
 
 Pure infrastructure: JSON bodies over standard queues addressed by name. A receipt is the
 message's receipt handle. SQS hides a received message for the queue's visibility timeout and
@@ -17,7 +17,8 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import boto3
 
 from secform4strategy_clients.aws import RETRIES, classified
-from secform4strategy_clients.ports import Message, PermanentError, RetryableError
+from secform4strategy_clients.ports import PermanentError, RetryableError
+from secform4strategy_clients.records import Message, QueueDepth
 
 if TYPE_CHECKING:
     from mypy_boto3_sqs import SQSClient
@@ -55,7 +56,7 @@ def raise_failed(failed: Sequence[BatchResultErrorEntryTypeDef], what: str) -> N
 
 
 class SqsQueue:
-    """Send, receive and acknowledge JSON messages on SQS standard queues.
+    """Send, receive and acknowledge JSON messages on SQS standard queues, and report their depths.
 
     Attributes:
         sqs: The SQS client, retrying throttling and server errors in botocore's standard mode.
@@ -147,6 +148,30 @@ class SqsQueue:
                 raise TypeError(f'Not an SqsQueue receipt: {receipt!r}')
             handles.append(receipt.handle)
         self._delete(queue, handles)
+
+    def depths(self, prefix: str) -> dict[str, QueueDepth]:
+        """Return each queue whose name starts with ``prefix``, by name (a ``Queues`` read).
+
+        Args:
+            prefix: The queue-name prefix.
+
+        Returns:
+            Visible and in-flight messages per queue.
+        """
+        urls = classified(f'List queues {prefix}*', self.sqs.list_queues, QueueNamePrefix=prefix).get('QueueUrls', [])
+        return {url.rsplit('/', 1)[1]: self._depth(url) for url in urls}
+
+    def _depth(self, url: str) -> QueueDepth:
+        """Read one queue's approximate counts."""
+        attributes = classified(
+            f'Read queue {url}',
+            self.sqs.get_queue_attributes,
+            QueueUrl=url,
+            AttributeNames=['ApproximateNumberOfMessages', 'ApproximateNumberOfMessagesNotVisible'],
+        )['Attributes']
+        return QueueDepth(
+            int(attributes['ApproximateNumberOfMessages']), int(attributes['ApproximateNumberOfMessagesNotVisible'])
+        )
 
     def _delete(self, queue: str, handles: Sequence[str]) -> None:
         """Delete messages by receipt handle, 10 per call; no handles makes no call.

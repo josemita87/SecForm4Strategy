@@ -18,7 +18,7 @@ from pyiceberg.catalog import load_catalog
 from secform4strategy_clients.feature_groups import load_feature_group_catalog
 from secform4strategy_clients.feature_store import IcebergFeatureStore
 from secform4strategy_clients.model_store import LocalModelStore
-from secform4strategy_clients.ports import ModelMetadata
+from secform4strategy_clients.records import ModelMetadata
 from secform4strategy_clients.s3_model_store import S3ModelStore
 from sklearn.model_selection import GridSearchCV
 
@@ -135,6 +135,7 @@ if __name__ == '__main__':
             prediction_threshold=config.prediction_threshold,
             validation_mae=validation_mae,
             validation_zero_mae=validation_zero_mae,
+            report_thresholds=config.report_thresholds,
         ),
     )
     logger.info(f'Model saved to: {config.model_store}')
