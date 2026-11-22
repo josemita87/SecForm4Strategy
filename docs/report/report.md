@@ -237,7 +237,7 @@ Training saves `model.joblib` and `model.meta.json`. The metadata (`ModelMetadat
 
 ![AWS architecture](../diagrams/aws-architecture.drawio.svg)
 
-*Figure 4: AWS architecture. The batch path (top) runs six ECS Fargate tasks under the `retrain` state machine. The live path (middle) runs six Lambda functions on the same images, chained by SQS queues, an EventBridge Pipe and the `live-score` state machine. Orange dashed elements exist only while the stack is switched on.*
+*Figure 4: AWS architecture. The batch path (top) runs six ECS Fargate tasks under the `retrain` state machine. The live path (middle) runs six Lambda functions on the same images, chained by SQS queues, an EventBridge Pipe and the `live-score` state machine. Orange dashed elements exist only while the stack is switched on. The arrows between the batch tasks and SQS are logical: that traffic passes the NAT gateway, as the note in the private subnets states (Figure 5). No batch task calls Alpaca.*
 
 All resources are in account `100118195151`, region `us-east-1`. Terraform under `infra/` defines all of them. Terraform state is in the bucket `secform4strategy-tfstate-<account>`, which `infra/bootstrap` creates, with S3 native locking (`use_lockfile = true`). The provider's `allowed_account_ids` rejects any other account.
 
@@ -365,7 +365,7 @@ Five SQS standard queues carry the work between services. Each has its own dead-
 
 ![AWS network](../diagrams/aws-network.drawio.svg)
 
-*Figure 5: AWS network. The VPC `10.0.0.0/16` has two public and two private subnets in two availability zones. The Fargate tasks run in the private subnets. S3 traffic uses the free gateway endpoint. All other outbound traffic uses the NAT gateway, which exists only while the stack is switched on.*
+*Figure 5: AWS network. The VPC `10.0.0.0/16` has two public and two private subnets in two availability zones. The Fargate tasks run in the private subnets. S3 traffic uses the free gateway endpoint. All other outbound traffic of the tasks, including SQS, uses the NAT gateway, which exists only while the stack is switched on. No batch task calls Alpaca.*
 
 | Resource | Value |
 | --- | --- |
@@ -387,7 +387,7 @@ Five SQS standard queues carry the work between services. Each has its own dead-
 
 The private subnets avoid `use1-az3`, because Fargate ARM64 is not available there. Nothing in the private subnets has a public IP address, and the security group accepts no inbound connections, so nothing on the internet can open a connection to the tasks. The Lambda functions accept no inbound connections either: only their triggers invoke them, through the Lambda API and IAM.
 
-The NAT gateway gives the private subnets outbound internet access for SEC EDGAR, Yahoo Finance and Alpaca. It also carries their calls to the AWS APIs other than S3: ECR, SQS, Glue, SSM, DynamoDB and CloudWatch Logs. The S3 gateway endpoint carries the Iceberg data, the models and the ECR image layers. It costs nothing, and its traffic adds no NAT data charges. While the stack is dormant, the private subnets reach only S3, and no task can run because it cannot pull its image or read its secrets.
+The batch tasks reach S3 through the S3 gateway endpoint, and SQS, the ECR API, SSM, Glue, CloudWatch Logs, SEC EDGAR and Yahoo Finance through the NAT gateway. No batch task calls Alpaca. The live inference Lambda places the Alpaca orders directly, from outside the VPC, and the site publisher reads the Alpaca account the same way. The S3 gateway endpoint carries the Iceberg data, the models and the ECR image layers. It costs nothing, and its traffic adds no NAT data charges. While the stack is dormant, the private subnets reach only S3, and no task can run because it cannot pull its image or read its secrets.
 
 ### 4.7 Identity and security
 

@@ -142,7 +142,7 @@ The five tables are Iceberg tables with deterministic keys. A transaction's key 
 
 ![AWS architecture](../diagrams/aws-architecture.drawio.svg)
 
-*Figure 2: AWS architecture. The batch path (top) runs six ECS Fargate tasks under the `retrain` state machine (R2). The live path (middle) runs six Lambda functions on the same images (R4), chained by SQS queues, an EventBridge Pipe and the `live-score` state machine (R1, R5). Orange dashed elements exist only while the stack is switched on (R7).*
+*Figure 2: AWS architecture. The batch path (top) runs six ECS Fargate tasks under the `retrain` state machine (R2). The live path (middle) runs six Lambda functions on the same images (R4), chained by SQS queues, an EventBridge Pipe and the `live-score` state machine (R1, R5). Orange dashed elements exist only while the stack is switched on (R7). The arrows between the batch tasks and SQS are logical: that traffic passes the NAT gateway, as the note in the private subnets states (Figure 3). No batch task calls Alpaca.*
 
 ### 4.2 Requirements traceability
 
@@ -340,7 +340,7 @@ The metadata is the model's lineage. It records the training time, the git SHA, 
 
 ![AWS network](../diagrams/aws-network.drawio.svg)
 
-*Figure 3: AWS network. Only Fargate needs the VPC. The tasks run in private subnets with no inbound access (R8). S3 traffic uses the free gateway endpoint, and all other outbound traffic uses the NAT gateway, which exists only while the stack is switched on (R7). Batch SEC traffic leaves from the NAT gateway's Elastic IP (R3).*
+*Figure 3: AWS network. Only Fargate needs the VPC. The tasks run in private subnets with no inbound access (R8). S3 traffic uses the free gateway endpoint, and all other outbound traffic of the tasks, including SQS, uses the NAT gateway, which exists only while the stack is switched on (R7). Batch SEC traffic leaves from the NAT gateway's Elastic IP (R3). No batch task calls Alpaca.*
 
 **Serves:** R3 SEC limit, R7 budget, R8 security.
 
@@ -386,9 +386,9 @@ The metadata is the model's lineage. It records the training time, the git SHA, 
 #### D14. S3 gateway endpoint plus a switched NAT gateway
 
 - **Driven by:** R7.
-- **Decision:** a free S3 gateway endpoint on the private route table carries the Iceberg data, the models and the ECR image layers. The NAT gateway carries the internet traffic (SEC, Yahoo Finance, Alpaca) and the other AWS APIs (ECR API, SQS, Glue, SSM, DynamoDB, CloudWatch Logs). The NAT gateway exists only while switched on.
+- **Decision:** a free S3 gateway endpoint on the private route table carries the Iceberg data, the models and the ECR image layers. The batch tasks reach S3 through the S3 gateway endpoint, and SQS, the ECR API, SSM, Glue, CloudWatch Logs, SEC EDGAR and Yahoo Finance through the NAT gateway. No batch task calls Alpaca. The live inference Lambda places the Alpaca orders directly, from outside the VPC, and the site publisher reads the Alpaca account the same way. The NAT gateway exists only while switched on.
 - **Alternative:** interface endpoints for the ECR API, ECR Docker, CloudWatch Logs, SQS and SSM, with no NAT gateway.
-- **Why it won:** five interface endpoints in two availability zones cost about $73 per month (about $0.01 per hour per endpoint per zone), and the tasks need the internet for the SEC, Yahoo Finance and Alpaca anyway. The NAT gateway costs about $1.08 per day plus its Elastic IP at about $0.12 per day, and only while switched on. S3 traffic through the gateway endpoint adds no NAT data charges. While dormant, the private subnets reach only S3, and no task can run because it cannot pull its image or read its secrets.
+- **Why it won:** five interface endpoints in two availability zones cost about $73 per month (about $0.01 per hour per endpoint per zone), and the tasks need the internet for SEC EDGAR and Yahoo Finance anyway. The NAT gateway costs about $1.08 per day plus its Elastic IP at about $0.12 per day, and only while switched on. S3 traffic through the gateway endpoint adds no NAT data charges. While dormant, the private subnets reach only S3, and no task can run because it cannot pull its image or read its secrets.
 
 ### 5.5 Identity, secrets and security
 

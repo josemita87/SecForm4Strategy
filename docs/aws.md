@@ -6,7 +6,7 @@ The AWS deployment runs the same services as the local stack, on serverless AWS 
 
 ![AWS architecture](diagrams/aws-architecture.drawio.svg)
 
-The batch path runs ECS tasks in the private subnets. The live path runs Lambda functions outside the VPC. Orange dashed outlines and lines exist only while the stack is switched on.
+The batch path runs ECS tasks in the private subnets. The live path runs Lambda functions outside the VPC. Orange dashed outlines and lines exist only while the stack is switched on. The arrows between the batch tasks and SQS are logical: that traffic passes the NAT gateway, as the note in the private subnets states. [Network](#network) shows the routes.
 
 Terraform state is in the bucket `secform4strategy-tfstate-<account>`, which `infra/bootstrap` creates. The backend locks the state with S3 native locking (`use_lockfile = true`). The root module `infra/envs/demo` calls ten modules:
 
@@ -221,7 +221,7 @@ The ECS tasks run in the private subnets. They have no public IP address, and th
 
 The live Lambda functions run outside the VPC, in the Lambda service's own network. They reach SEC EDGAR, Yahoo Finance, Alpaca and the AWS APIs directly, without the NAT gateway, and accept no inbound connections.
 
-The public subnets hold only the NAT gateway. The NAT gateway gives the private subnets outbound internet access, which the services need for SEC EDGAR, Yahoo Finance and Alpaca. It also carries their calls to the AWS APIs other than S3: ECR, SQS, Glue, SSM, DynamoDB and CloudWatch Logs.
+The public subnets hold only the NAT gateway. The NAT gateway gives the private subnets outbound access to the internet and to the AWS APIs other than S3. The batch tasks reach S3 through the S3 gateway endpoint, and SQS, the ECR API, SSM, Glue, CloudWatch Logs, SEC EDGAR and Yahoo Finance through the NAT gateway. No batch task calls Alpaca. The live inference Lambda places the Alpaca orders directly, from outside the VPC, and the site publisher reads the Alpaca account the same way.
 
 The S3 gateway endpoint sits on the private route table. It carries all traffic from the private subnets to S3: the Iceberg data, the models and the image layers that ECR stores in S3. A gateway endpoint costs nothing, and S3 traffic through it does not pass the NAT gateway, so it adds no NAT data charges.
 
@@ -494,5 +494,5 @@ The `site` module adds these resources:
 | `skip_destroy` on task definitions | Terraform deregisters replaced revisions | A running `retrain` run can no longer start tasks from a deregistered revision. |
 | `FARGATE` launch type (On-Demand) | Fargate Spot (`FARGATE_SPOT`, about 70% cheaper, ARM64 supported) | A Spot interruption fails the step, and 3 retries may not cover a multi-day backfill. The saving is a few dollars per week. A Spot design for scraper and kafka-to-store, with an On-Demand fallback in a `Catch`, is planned. |
 | NAT gateway only while switched on | An always-on NAT gateway | An always-on NAT gateway costs about $32 per month, more than six times the budget. |
-| S3 gateway endpoint plus NAT gateway | Interface endpoints for ECR (API and Docker), CloudWatch Logs, SQS and SSM | Five interface endpoints in two availability zones cost about $73 per month. The services need the internet for SEC, Yahoo Finance and Alpaca anyway, so the NAT gateway is required. |
+| S3 gateway endpoint plus NAT gateway | Interface endpoints for ECR (API and Docker), CloudWatch Logs, SQS and SSM | Five interface endpoints in two availability zones cost about $73 per month. The batch tasks need the internet for SEC EDGAR and Yahoo Finance anyway, so the NAT gateway is required. |
 | OIDC roles for CI | An IAM user with access keys stored in GitHub | A stored key lives until someone rotates it, and anyone who reads it can use it. OIDC credentials are temporary and bound to one repository and one trigger. |
