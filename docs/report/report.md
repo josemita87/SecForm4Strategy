@@ -501,7 +501,7 @@ The site is a password-protected study website for the course and the project. I
 | Model | The current model: parameters, validation folds, holdout results and feature importance |
 | Explore | The largest insider sales and the clusters of insider sales of the last 7 days |
 
-The `site` module in `infra/modules/site` defines the AWS resources, `site/` holds the frontend, and `site-publisher/` holds the publisher Lambda. At the time of writing (2026-11-22) the site is complete on the branch `feat/site` and not yet applied to the account.
+The `site` module in `infra/modules/site` defines the AWS resources, `site/` holds the frontend, and `site-publisher/` holds the publisher Lambda. The site is deployed (2026-11-22): CloudFront serves it behind the password, and the publisher writes the five data files every minute.
 
 ### 5.2 Architecture
 

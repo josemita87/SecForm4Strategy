@@ -482,7 +482,7 @@ function node(o) {
     <rect class="nb" width="${w}" height="${h}" rx="14"/>
     <rect class="ni" x="12" y="${iy}" width="${isz}" height="${isz}" rx="11"/>
     <g class="ig" transform="translate(22 ${iy + 10})">${ICON[o.i] || ""}</g>${t}
-    <g class="badge" transform="translate(${w - 4} 4)"><circle r="13"/><path d="M-6 0.5l4 4 7.5-8"/></g>
+    <g transform="translate(${w - 4} 4)"><g class="badge"><circle r="13"/><path d="M-6 0.5l4 4 7.5-8"/></g></g>
   </g></g>`;
 }
 function edge(o) {
@@ -582,7 +582,7 @@ function wipe(i, def) {
   $(".wt2", w).textContent = def.title;
   w.classList.remove("go"); void w.offsetWidth; w.classList.add("go");
 }
-const TAPE = [["up", "▲ scraper 1.7 → 7.8 filings/s"], ["up", "▲ kafka-to-store 14 → 185 rows/s"], ["dn", "▼ short below −0.05"], ["eq", "■ qty 1 · paper"], ["eq", "■ SEC 10 req/s per IP"], ["dn", "▼ NAT $0.045/h"], ["eq", "■ budget $5/month"], ["eq", "■ retrain Sat 06:00 UTC"], ["eq", "■ poll rate(1 minute)"], ["eq", "■ seen keys 7-day TTL"], ["up", "▲ backfill-5y running"], ["up", "✓ smoke test CRMD → target"], ["dn", "▼ cold start 10–45 s"], ["eq", "■ dormant ≈ $0/day"]];
+const TAPE = [["up", "▲ scraper 1.7 → 7.8 filings/s"], ["up", "▲ kafka-to-store 14 → 185 rows/s"], ["dn", "▼ short below −0.05"], ["eq", "■ qty 1 · paper"], ["eq", "■ SEC 10 req/s per client"], ["dn", "▼ NAT $0.045/h"], ["eq", "■ budget $5/month"], ["eq", "■ retrain Sat 06:00 UTC"], ["eq", "■ poll rate(1 minute)"], ["eq", "■ seen keys 7-day TTL"], ["up", "▲ backfill-5y running"], ["up", "✓ smoke test CRMD → target"], ["dn", "▼ cold start 10–45 s"], ["eq", "■ dormant ≈ $0/day"]];
 /* ---------- section registry ---------- */
 const SECTIONS = [];
 function section(def) { SECTIONS.push(def); }
@@ -1017,7 +1017,7 @@ section({
     { cap: "EventBridge Scheduler starts the poller every minute. DynamoDB keeps each seen key for 7 days.",
       notes: ["The poller is master-index in <code>MODE=live</code>: it reads the SEC current-filings feed.", "Table <code>secform4strategy-seen</code> skips filings already sent; TTL deletes each key after 7 days.", "Schedule <code>rate(1 minute)</code>, no retries: the next poll covers a missed one."] },
     { cap: "SQS <code>live-filings</code> triggers the scraper Lambda: at most 2 at a time, 2.25 SEC requests per second each.",
-      notes: ["2 × 2.25 = 4.5 requests per second for the live path, beside the batch scraper's 5. SEC allows 10 per IP.", "The handler reports partial batch failures: only unfinished messages are delivered again.", "Each queue has a dead-letter queue after 5 receives."] },
+      notes: ["2 × 2.25 = 4.5 requests per second for the live path, beside the batch scraper's 5. Both send one <code>User-Agent</code>, and SEC allows 10 per client.", "The handler reports partial batch failures: only unfinished messages are delivered again.", "Each queue has a dead-letter queue after 5 receives."] },
     { cap: "kafka-to-store collects up to 100 transactions for 5 s, so one Iceberg commit serves a burst. It writes <code>BI4</code>.",
       notes: ["Each Iceberg commit costs seconds, so batching matters more than per-message speed.", "After the commit, the handler sends the batch's tickers to <code>live-tickers</code> as one message."] },
     { cap: "An <strong>EventBridge Pipe</strong> starts <code>live-score</code>: yahoo-connect → target → inference, then an Alpaca paper short.",
@@ -1137,20 +1137,22 @@ const MODULES = [
   ["storage", "store", "s3", "S3 data bucket, Glue database, Athena workgroup, ECR repositories, $5 budget"],
   ["network", "data", "net", "VPC, 2 public and 2 private subnets, S3 gateway endpoint, switchable NAT"],
   ["queues", "int", "sqs", "5 SQS queues, each with a dead-letter queue and an email alarm"],
-  ["iam", "sec", "shield", "ECS execution role, one task role and one Lambda role per service"],
+  ["iam", "sec", "shield", "ECS execution role, one task role per service, one role per Lambda"],
   ["ci", "ci", "git", "GitHub OIDC provider; images, plan and apply roles"],
   ["tasks", "compute", "fargate", "ECS cluster, Fargate ARM64 task definitions, log groups"],
   ["retrain", "int", "sfn", "retrain state machine, Saturday 06:00 UTC schedule"],
   ["live", "compute", "lambda", "6 Lambdas, seen table, Pipe, live-score, 1-minute schedule"],
+  ["dashboard", "data", "logs", "CloudWatch dashboard: queues, runs, Lambda metrics, errors"],
+  ["site", "store", "globe", "Study website: CloudFront, private S3 bucket, password, publisher Lambda"],
 ];
 section({
   id: "infra", thumbStep: 2, title: "AWS infrastructure", short: "AWS",
   h1: "Terraform builds it. Three switches control it.",
   steps: [
-    { cap: "Root module <code>infra/envs/demo</code> calls eight modules. State lives in S3 with native locking.",
-      notes: ["Region us-east-1, one account; <code>allowed_account_ids</code> rejects any other.", "Terraform owns every AWS resource, including ECR repositories and the CI roles. CI owns the images and the plan and apply runs.", "Secrets are created with the AWS CLI, never in Terraform."] },
-    { cap: "Tasks and Lambdas run in <strong>private subnets</strong>. The S3 gateway endpoint is a free path to S3 and to ECR image layers.",
-      notes: ["Private subnets have no public IP and the security group has no inbound rules: nothing on the internet can open a connection.", "The NAT gateway carries SEC, Yahoo, Alpaca and the AWS APIs other than S3: ECR, SQS, Glue, SSM, Logs.", "NAT: $0.045 per hour plus $0.045 per GB processed. S3 traffic through the gateway endpoint adds no NAT charge.", "Five interface endpoints in two AZs would cost about $73 per month; the NAT is needed for the internet anyway."] },
+    { cap: "Root module <code>infra/envs/demo</code> calls ten modules. State lives in S3 with native locking.",
+      notes: ["Region us-east-1, one account; <code>allowed_account_ids</code> rejects any other.", "Terraform owns every AWS resource, including ECR repositories and the CI roles. CI owns the images and the plan and apply runs.", "<code>site</code> serves the password-protected study website: CloudFront, a private S3 bucket and a publisher Lambda that writes <code>data/*.json</code> every minute and after each <code>live-score</code> run.", "Secrets are created with the AWS CLI, never in Terraform."] },
+    { cap: "ECS tasks run in <strong>private subnets</strong>, behind the NAT and a free S3 gateway endpoint. The Lambdas run <strong>outside the VPC</strong>.",
+      notes: ["Only the ECS tasks need the VPC: Fargate runs a task only in <code>awsvpc</code> mode.", "Private subnets have no public IP and the security group has no inbound rules: nothing on the internet can open a connection.", "The NAT gateway carries the tasks' calls to SEC, Yahoo, Alpaca and the AWS APIs other than S3: ECR, SQS, Glue, SSM, DynamoDB, Logs. The S3 gateway endpoint carries S3 and the ECR image layers.", "The Lambdas run in Lambda's own network. They reach SEC, Yahoo, Alpaca, S3 and the AWS APIs directly, with no NAT and no fixed IP.", "NAT: $0.045 per hour plus $0.045 per GB processed. S3 traffic through the gateway endpoint adds no NAT charge.", "Five interface endpoints in two AZs would cost about $73 per month; the tasks need the NAT for the internet anyway."] },
     { cap: "<code>switched_on</code> creates the NAT. Each schedule runs only when its own switch is also on.",
       notes: ["Try the toggles and presets. <strong>Backfill now</strong> is the current <code>switch.auto.tfvars</code>: on, weekly retrain off, live off.", "Weekly schedule = <code>switched_on && weekly_retrain_enabled</code>. Live poll = <code>switched_on && live_enabled</code>.", "Dormant costs about $0 per day: only S3 and ECR storage. Switched on: about $1.20 per day plus usage.", "<code>make switch-on</code> commits the variable; CI applies it after approval."] },
     { cap: "Failures and cost reach an inbox: dead-letter alarms by email, and a monthly budget.",
@@ -1158,40 +1160,42 @@ section({
   ],
   svg: () => `
     <g class="rv" data-s="0" data-u="0">
-      ${MODULES.map(([n, k, i, txt], j) => { const x = 60 + (j % 4) * 375, y = 225 + Math.floor(j / 4) * 250; return `<g class="rv" data-s="0" data-u="0" data-d="${j + 1}"><rect class="nb" x="${x}" y="${y}" width="350" height="220" rx="18"/>
+      ${MODULES.map(([n, k, i, txt], j) => { const x = 60 + (j % 5) * 300, y = 225 + Math.floor(j / 5) * 250; return `<g class="rv" data-s="0" data-u="0" data-d="${(j % 8) + 1}"><rect class="nb" x="${x}" y="${y}" width="280" height="220" rx="18"/>
         <rect x="${x + 22}" y="${y + 22}" width="52" height="52" rx="13" fill="var(--k-${k})"/><g class="ig" transform="translate(${x + 36} ${y + 36})">${ICON[i]}</g>
         <text x="${x + 92}" y="${y + 58}" class="mono" style="font-size:27px;font-weight:700">${n}</text>
-        <foreignObject x="${x + 22}" y="${y + 96}" width="306" height="115"><div xmlns="http://www.w3.org/1999/xhtml" style="font-size:18.5px;line-height:1.42;color:var(--muted)">${txt}</div></foreignObject></g>`; }).join("")}
+        <foreignObject x="${x + 22}" y="${y + 96}" width="236" height="115"><div xmlns="http://www.w3.org/1999/xhtml" style="font-size:17px;line-height:1.4;color:var(--muted)">${txt}</div></foreignObject></g>`; }).join("")}
       <text x="800" y="760" text-anchor="middle" class="lbl" style="font-size:19px">State: <tspan class="mono" style="fill:var(--ink)">secform4strategy-tfstate-&lt;account&gt;</tspan>, <tspan class="mono" style="fill:var(--ink)">use_lockfile = true</tspan> · default tags on every resource</text>
     </g>
     <g class="rv" id="n-net" data-s="1" data-u="2">
       ${frame({ x: 40, y: 200, w: 1150, h: 670, t: "AWS · us-east-1", solid: true })}
-      ${frame({ x: 65, y: 245, w: 735, h: 605, t: "VPC 10.0.0.0/16" })}
-      <rect x="85" y="285" width="695" height="135" rx="14" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+      ${frame({ x: 65, y: 245, w: 600, h: 605, t: "VPC 10.0.0.0/16" })}
+      <rect x="85" y="285" width="560" height="135" rx="14" fill="none" stroke="var(--line)" stroke-width="1.5"/>
       <text class="ft" x="100" y="308">Public subnets · 2 AZs</text>
-      <rect x="85" y="440" width="695" height="395" rx="14" fill="none" stroke="var(--line)" stroke-width="1.5"/>
-      <text class="ft" x="100" y="463">Private subnets · no inbound</text>
-      ${node({ id: "n-nat", x: 105, y: 322, w: 320, k: "data", i: "nat", t: "NAT gateway + EIP", sub: "$0.045/h + $0.045/GB" })}
-      ${node({ id: "n-igw", x: 480, y: 322, w: 280, k: "data", i: "globe", t: "Internet gateway" })}
+      <rect x="85" y="440" width="560" height="395" rx="14" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+      <text class="ft" x="630" y="463" text-anchor="end">Private subnets · no inbound</text>
+      ${node({ id: "n-nat", x: 105, y: 322, w: 265, k: "data", i: "nat", t: "NAT gateway + EIP", sub: "$0.045/h + $0.045/GB" })}
+      ${node({ id: "n-igw", x: 390, y: 322, w: 240, k: "data", i: "globe", t: "Internet gateway" })}
       ${node({ id: "n-far", x: 105, y: 485, w: 300, k: "compute", i: "fargate", t: "ECS Fargate tasks", sub: "retrain steps", sid: "n-far-s" })}
-      ${node({ id: "n-lam", x: 105, y: 610, w: 300, k: "compute", i: "lambda", t: "Lambda functions", sub: "live path", sid: "n-lam-s" })}
-      ${node({ id: "n-gw", x: 480, y: 735, w: 285, k: "store", i: "s3", t: "S3 gateway endpoint", sub: "free: S3, ECR layers" })}
-      <rect x="95" y="476" width="320" height="216" rx="18" fill="none" stroke="var(--edge)" stroke-dasharray="4 6"/>
-      ${edge({ id: "n-e1", d: "M255 476 V394", data: { nat: 1 } })}
-      <text class="lbl" x="266" y="424" data-nat="1" style="font-size:15px">internet</text>
-      ${edge({ id: "n-e3", d: "M425 358 H480", data: { nat: 1 } })}
-      ${edge({ id: "n-e4", d: "M415 600 C 450 600, 445 771, 480 771" })}
-      <text class="lbl" x="452" y="690" style="font-size:15px">S3</text>
-      ${edge({ id: "n-e6", d: "M765 771 C 810 771, 800 640, 835 640" })}
-      ${node({ id: "n-api", x: 835, y: 322, w: 330, k: "int", i: "cloud", t: "AWS APIs", sub: "ECR · SQS · Glue · SSM · Logs" })}
-      ${edge({ id: "n-e7", d: "M760 358 H835", data: { nat: 1 } })}
-      ${node({ id: "n-s3", x: 835, y: 604, w: 330, k: "store", i: "s3", t: "S3 data bucket", sub: "warehouse/ · models/" })}
-      ${node({ id: "n-wk", x: 835, y: 455, w: 330, k: "int", i: "sched", t: "weekly-retrain", sub: "Sat 06:00 UTC → retrain", sid: "n-wk-s" })}
-      ${node({ id: "n-lv", x: 835, y: 760, w: 330, k: "int", i: "sched", t: "live-poll", sub: "every minute → poller", sid: "n-lv-s" })}
-      ${edge({ id: "n-e8", d: "M620 322 V226 H1200 V268 H1230", data: { nat: 1 } })}
-      ${edge({ id: "n-e9", d: "M1200 268 V356 H1230", data: { nat: 1, noamb: 1 } })}
-      ${edge({ id: "n-e10", d: "M1200 356 V444 H1230", data: { nat: 1, noamb: 1 } })}
-      ${node({ id: "n-sec", x: 1230, y: 232, w: 330, k: "ext", i: "globe", t: "SEC EDGAR", sub: "10 requests/s per IP" })}
+      ${node({ id: "n-gw", x: 340, y: 735, w: 285, k: "store", i: "s3", t: "S3 gateway endpoint", sub: "free: S3, ECR layers" })}
+      ${edge({ id: "n-e1", d: "M240 485 V394", data: { nat: 1 } })}
+      <text class="lbl" x="252" y="434" data-nat="1" style="font-size:15px">internet</text>
+      ${edge({ id: "n-e3", d: "M370 358 H390", data: { nat: 1 } })}
+      ${edge({ id: "n-e4", d: "M300 557 V771 H340" })}
+      <text class="lbl" x="312" y="690" style="font-size:15px">S3</text>
+      ${edge({ id: "n-e6", d: "M625 771 C 760 771, 740 614, 850 614" })}
+      ${node({ id: "n-api", x: 850, y: 322, w: 320, k: "int", i: "cloud", t: "AWS APIs", sub: "ECR · SQS · Glue · SSM · Logs" })}
+      ${edge({ id: "n-e7", d: "M630 358 H850", data: { nat: 1 } })}
+      ${node({ id: "n-lam", x: 850, y: 450, w: 320, k: "compute", i: "lambda", t: "Lambda functions", sub: "live path · outside the VPC", sid: "n-lam-s" })}
+      ${edge({ id: "n-l1", d: "M1010 450 V394", data: { lam: 1 } })}
+      ${edge({ id: "n-l2", d: "M1010 522 V578", data: { lam: 1 } })}
+      ${node({ id: "n-s3", x: 850, y: 578, w: 320, k: "store", i: "s3", t: "S3 data bucket", sub: "warehouse/ · models/" })}
+      ${node({ id: "n-wk", x: 850, y: 690, w: 320, k: "int", i: "sched", t: "weekly-retrain", sub: "Sat 06:00 UTC → retrain", sid: "n-wk-s" })}
+      ${node({ id: "n-lv", x: 850, y: 785, w: 320, k: "int", i: "sched", t: "live-poll", sub: "every minute → poller", sid: "n-lv-s" })}
+      ${edge({ id: "n-e8", d: "M510 322 V215 H1205 V268 H1230", data: { nat: 1 } })}
+      ${edge({ id: "n-l3", d: "M1170 486 H1205 V268 H1230", data: { lam: 1 } })}
+      ${edge({ id: "n-e9", d: "M1205 268 V356 H1230", data: { nat: 1, noamb: 1 } })}
+      ${edge({ id: "n-e10", d: "M1205 356 V444 H1230", data: { nat: 1, noamb: 1 } })}
+      ${node({ id: "n-sec", x: 1230, y: 232, w: 330, k: "ext", i: "globe", t: "SEC EDGAR", sub: "10 requests/s per client" })}
       ${node({ id: "n-yh", x: 1230, y: 320, w: 330, k: "ext", i: "globe", t: "Yahoo Finance" })}
       ${node({ id: "n-alp", x: 1230, y: 408, w: 330, k: "ext", i: "short", t: "Alpaca paper API" })}
     </g>
@@ -1244,12 +1248,13 @@ section({
     this.lastOn = on;
     $$(".toggle", el).forEach(b => b.classList.toggle("on", this.st[b.dataset.k]));
     $$(".toggle[data-k=wk], .toggle[data-k=lv]", el).forEach(b => b.style.opacity = on ? 1 : .55);
-    tog(el, "#n-nat, #n-api, #n-sec, #n-yh, #n-alp, [data-nat]", "off", !on);
-    tog(el, "#n-far, #n-lam", "off", !on);
+    tog(el, "#n-nat, [data-nat]", "off", !on);
+    tog(el, "#n-far", "off", !on);
+    tog(el, "#n-lam, [data-lam]", "off", !(on && lv));
     tog(el, "#n-wk", "off", !(on && wk));
     tog(el, "#n-lv", "off", !(on && lv));
     $("#n-far-s", el).textContent = on ? "retrain steps" : "cannot pull images";
-    $("#n-lam-s", el).textContent = on ? "live path" : "no ECR, no SSM";
+    $("#n-lam-s", el).textContent = on && lv ? "live path · outside the VPC" : "idle: poll schedule off";
     $("#n-wk-s", el).textContent = on && wk ? "Sat 06:00 UTC → retrain" : "schedule DISABLED";
     $("#n-lv-s", el).textContent = on && lv ? "every minute → poller" : "schedule DISABLED";
     $("#n-cost", el).innerHTML = on
@@ -1357,8 +1362,8 @@ section({
   id: "performance", thumbStep: 0, title: "Performance", short: "Performance",
   h1: "Speed under a shared limit",
   steps: [
-    { cap: "SEC allows <strong>10 requests per second per IP</strong>. Every task and Lambda shares the NAT's one IP.",
-      notes: ["Weekly batch scraper: <code>SEC_MAX_RATE=5</code>. Live: 2 scraper Lambdas × 2.25 = 4.5. Together 9.5.", "The 5-year backfill runs the scraper at 8 per second, so the live poll is off meanwhile.", "The poller has its own cap of 1 per second but makes a request or two per minute.", "An SEC 403 locks the IP out for about 10 minutes, so the cap protects every path at once."] },
+    { cap: "SEC allows <strong>10 requests per second per client</strong>. Batch and live send one <code>User-Agent</code>, so they share one budget.",
+      notes: ["SEC identifies a client by its <code>User-Agent</code>. Every service sends the same one, from <code>SEC_USER_AGENT</code>.", "The batch tasks leave through the NAT's Elastic IP. The live Lambdas leave from Lambda's own network, with no fixed IP. The budget is shared all the same.", "Weekly batch scraper: <code>SEC_MAX_RATE=5</code>. Live: 2 scraper Lambdas × 2.25 = 4.5. Together 9.5.", "The 5-year backfill runs the scraper at 8 per second, so the live poll is off meanwhile.", "The poller has its own cap of 1 per second but makes a request or two per minute.", "An SEC rate-limit 403 locks the client out for about 10 minutes, so the shared cap protects both paths at once."] },
     { cap: "The scraper went from <strong>1.7</strong> to <strong>7–7.8 filings per second</strong> in three changes.",
       notes: ["Sequential: each request waits about 0.5 s for SEC, so the rate stays far under the cap.", "Threads under one shared rate limiter: requests overlap, and <code>EdgarClient</code> still spaces starts by 1 / SEC_MAX_RATE.", "12 workers and a 5 s retry pause instead of 60 s.", "A send buffer of 200 cuts SQS round trips. Hours are for about 250,000 filings, about one year."] },
     { cap: "kafka-to-store: <strong>14/s → about 185/s</strong>. Each Iceberg commit costs about 7 s, so bigger batches pay it less often.",
@@ -1366,15 +1371,18 @@ section({
   ],
   svg: () => `
     <g class="rv" data-s="0" data-u="0">
-      ${node({ x: 100, y: 560, w: 330, k: "compute", i: "fargate", t: "Batch scraper", sub: "Fargate · SEC_MAX_RATE", id: "p-bs", sid: "p-bs-s" })}
-      ${node({ x: 100, y: 660, w: 330, k: "compute", i: "lambda", t: "Live scraper λ × 2", sub: "2.25 req/s each", id: "p-ls" })}
-      ${node({ x: 100, y: 760, w: 330, k: "compute", i: "lambda", t: "poller λ", sub: "a request or two per minute", id: "p-po" })}
-      ${edge({ d: "M430 596 C 520 596, 540 690, 610 696" })}
-      ${edge({ d: "M430 696 H610", id: "p-le" })}
-      ${edge({ d: "M430 796 C 520 796, 540 700, 610 700", id: "p-pe" })}
-      ${node({ x: 610, y: 660, w: 320, k: "data", i: "nat", t: "NAT gateway", sub: "one Elastic IP" })}
-      ${edge({ d: "M930 696 H1010" })}
-      ${node({ x: 1010, y: 660, w: 330, k: "ext", i: "globe", t: "SEC EDGAR", sub: "10 req/s per IP" })}
+      ${frame({ x: 70, y: 505, w: 390, h: 365, t: "One client · one User-Agent" })}
+      ${node({ x: 100, y: 552, w: 330, k: "compute", i: "fargate", t: "Batch scraper", sub: "Fargate · SEC_MAX_RATE", id: "p-bs", sid: "p-bs-s" })}
+      ${node({ x: 100, y: 662, w: 330, k: "compute", i: "lambda", t: "Live scraper λ × 2", sub: "2.25 req/s each", id: "p-ls" })}
+      ${node({ x: 100, y: 772, w: 330, k: "compute", i: "lambda", t: "poller λ", sub: "a request or two per minute", id: "p-po" })}
+      ${edge({ d: "M430 588 H560" })}
+      ${node({ x: 560, y: 552, w: 300, k: "data", i: "nat", t: "NAT gateway", sub: "one Elastic IP" })}
+      ${edge({ d: "M860 588 C 960 588, 950 664, 1060 664" })}
+      ${edge({ d: "M430 698 H1060", id: "p-le" })}
+      ${label({ x: 500, y: 686, t: "direct: Lambda network, no fixed IP", id: "p-ll" })}
+      ${edge({ d: "M430 808 C 760 808, 940 732, 1060 732", id: "p-pe" })}
+      ${node({ x: 1060, y: 640, w: 440, h: 116, k: "ext", i: "globe", t: "SEC EDGAR", sub: "10 req/s per client (User-Agent)" })}
+      ${label({ x: 1280, y: 800, a: "middle", t: "", id: "p-sum" })}
     </g>
     <g class="rv" data-s="1" data-u="1">
       ${RACE.map(([t, sub, , lab], k) => { const y = 240 + k * 140; return `
@@ -1414,7 +1422,7 @@ section({
         <div style="flex:1;display:flex;align-items:center;padding-left:14px;color:var(--muted);font-size:17px;white-space:nowrap" id="p-b3"></div>
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:16px;color:var(--muted)" class="mono">${Array.from({ length: 11 }, (_, k) => `<span>${k}</span>`).join("")}</div>
-      <div style="font-size:16px;color:var(--bad);font-weight:650;text-align:right;margin-top:2px">SEC limit: 10 requests/s per IP</div>
+      <div style="font-size:16px;color:var(--bad);font-weight:650;text-align:right;margin-top:2px">SEC limit: 10 requests/s per client · one User-Agent for batch and live</div>
     </div>
     <div class="w rv" data-s="1" data-u="1" style="left:60px;top:812px"><button class="btn ghost" id="p-race">▶ Replay the race</button></div>
     <div class="w card rv" data-s="2" data-u="2" style="left:1030px;top:250px;width:530px;height:500px;padding:24px 28px">
@@ -1443,11 +1451,12 @@ section({
     segSet(el, "p-scn", v);
     const [b, l] = v ? [8, 0] : [5, 4.5];
     $("#p-b1", el).style.width = b * 10 + "%"; $("#p-b1", el).textContent = v ? "backfill scraper 8/s" : "batch scraper 5/s";
-    $("#p-b2", el).style.width = l * 10 + "%"; $("#p-b2", el).textContent = l ? "live 2 × 2.25 = 4.5/s" : "";
+    $("#p-b2", el).style.width = l * 10 + "%"; $("#p-b2", el).textContent = l ? "live 2 × 2.25 = 4.5/s" : ""; $("#p-b2", el).style.display = l ? "flex" : "none";
     $("#p-b3", el).textContent = v ? "live off · headroom 2" : "headroom 0.5";
     $("#p-tot", el).innerHTML = `${b + l}<span style="font-size:20px;color:var(--muted);font-weight:500"> of 10 req/s</span>`;
     $("#p-bs-s", el).textContent = v ? "SEC_MAX_RATE=8 (override)" : "SEC_MAX_RATE=5";
-    tog(el, "#p-ls, #p-le, #p-po, #p-pe", "off", v === 1);
+    tog(el, "#p-ls, #p-le, #p-ll, #p-po, #p-pe", "off", v === 1);
+    $("#p-sum", el).textContent = v ? "one budget: 8 + 0 = 8 of 10 req/s" : "one budget: 5 + 4.5 = 9.5 of 10 req/s";
   },
   k2s(el, b) {
     const v = K2S(b), proc = 0.0047 * b, tot = 7 + proc;
@@ -1489,8 +1498,8 @@ section({
   id: "status", thumbStep: 1, title: "Status and results", short: "Status",
   h1: "Where the system stands today",
   steps: [
-    { cap: "The 1-year full load is done. The 5-year backfill is running and ends after Monday.",
-      notes: ["Execution <code>backfill-5y</code> started 2026-11-20 18:11 UTC, with the scraper at 8 requests per second.", "It takes about 3 to 4 days.", "Meanwhile <code>weekly_retrain_enabled</code> and <code>live_enabled</code> are off, so the backfill has SEC's budget.", "The live poller turns on after the backfill's scraper step is done."] },
+    { cap: "The 1-year full load is done. The 5-year backfill is running and ends <strong>Sunday night</strong>, 22 November.",
+      notes: ["Execution <code>backfill-5y</code> started 2026-11-20 18:11 UTC, with the scraper at 8 requests per second.", "It ends Sunday night, 2026-11-22. Then target and training run by hand, and the 5-year results arrive the same night.", "Meanwhile <code>weekly_retrain_enabled</code> and <code>live_enabled</code> are off, so the backfill has SEC's budget.", "The live poller turns on after the backfill's scraper step is done."] },
     { cap: "Smoke test with one real filing, ticker <strong>CRMD</strong>: it crossed the whole live path up to <code>target</code>.",
       notes: ["The live path is deployed: 6 Lambdas, the DynamoDB seen table, 3 live queues, the Pipe and <code>live-score</code>.", "The filing went through the queue, scraper, kafka-to-store (BI4), the Pipe, live-score and yahoo-connect.", "target stopped on the missing RT4 table. The batch target step creates RT4, so this is expected.", "inference was not reached in this test."] },
     { cap: "Known trade-off: the first call to each Lambda is slow. About 1 GB images hit the 10 s start-up limit.",
@@ -1507,7 +1516,7 @@ section({
       ${edge({ id: "st-e3", d: "M1347 344 C 1347 400, 212 380, 212 430" })}
       ${[4, 5].map(k => edge({ id: `st-e${k}`, d: `M${385 + (k - 4) * 385} 472 H${425 + (k - 4) * 385}` })).join("")}
       <text x="40" y="640" class="lbl big">The batch target step creates RT4. target needs it for <tspan class="mono">avg_target_expanding</tspan>.</text>
-      <text x="40" y="676" class="lbl">Expected stop. It clears once the backfill reaches its target step.</text>
+      <text x="40" y="676" class="lbl">Expected stop. It clears once target runs after the backfill, Sunday night, and creates RT4.</text>
     </g>
     <g class="rv" data-s="2" data-u="2">
       <text x="60" y="250" class="ft">Cold call duration, seconds</text>
@@ -1548,9 +1557,9 @@ section({
       <div class="card" style="height:250px">
         <span class="tag acc">running</span>
         <h3 style="margin-top:14px;font-size:30px">5-year backfill · <code>backfill-5y</code></h3>
-        <p>Started 2026-11-20 18:11 UTC · scraper at 8/s · about 3–4 days</p>
+        <p>Started 2026-11-20 18:11 UTC · scraper at 8/s</p>
         <div class="stripes" style="height:16px;border-radius:8px;margin-top:30px;border:1px solid var(--line)"></div>
-        <p style="margin-top:10px">Ends after Monday.</p>
+        <p style="margin-top:10px">Ends Sunday night, 2026-11-22.</p>
       </div>
       <div class="card" style="grid-column:1/3;display:flex;gap:30px;align-items:center;padding:18px 26px">
         <div class="lab">Switches meanwhile</div>
@@ -1571,7 +1580,7 @@ section({
       <div style="font-size:19px;color:var(--muted);margin-top:6px">Exit: the first close at least 30 calendar days after the entry day. <code>pct_change</code> = (exit − entry) / entry.</div>
     </div>
     <div class="w card rv" data-s="4" data-u="4" style="left:60px;top:220px;width:1480px;padding:26px 32px">
-      <div style="display:flex;justify-content:space-between;align-items:center"><div class="lab">Test set: latest 20% of rows, purged split</div><span class="tbd">1-year data · 5-year model due Sunday</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="lab">Test set: latest 20% of rows, purged split</div><span class="tbd">1-year data · 5-year results due Sunday night</span></div>
       <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:21px">
         <thead><tr style="text-align:left;color:var(--muted);font-size:17px"><th style="padding:10px 6px">Predictor</th><th>What it predicts</th><th>mae</th><th>short_return</th><th>n_shorts</th></tr></thead>
         <tbody>
@@ -1636,13 +1645,13 @@ section({
   thumbStep: 0,
   steps: [
     { cap: "After the backfill: retrain, read the metrics, then switch the live poller on.",
-      notes: ["Order: backfill finishes → batch target creates RT4 → training saves the 5-year model.", "Then set <code>live_enabled = true</code> and <code>weekly_retrain_enabled = true</code>.", "Smaller images cut the cold start. numpy on the hot path follows the speed goal."] },
+      notes: ["Order: the backfill ends Sunday night → target, run by hand, creates RT4 → training, run by hand, saves the 5-year model.", "Then set <code>live_enabled = true</code> and <code>weekly_retrain_enabled = true</code>.", "Smaller images cut the cold start. numpy on the hot path follows the speed goal."] },
     { cap: "Questions. Click a card for the short answer.",
       notes: ["The cards are a prompt list for likely questions.", "Deeper answers: docs/presentation/glossary-and-faq.md.", "Close with: honest timing, honest evaluation, and a stack that costs nothing while idle."] },
   ],
   svg: () => `
     <g class="rv" data-s="0" data-u="0">
-      ${[["Backfill finishes", "5 years of filings, scraper at 8/s", "int", "sfn", "running"], ["RT4 created", "batch target step", "data", "table", ""], ["Retrain", "fill in the metrics", "ml", "model", ""], ["Live poller on", "live_enabled = true", "compute", "lambda", ""], ["Smaller images", "faster cold starts", "ci", "image", ""], ["numpy hot path", "pandas only at SDK edges", "compute", "bolt", ""]].map(([t, sub, k, i, tag], j) => {
+      ${[["Backfill ends", "Sunday night, 2026-11-22", "int", "sfn", "running"], ["RT4 created", "target, run by hand", "data", "table", ""], ["Retrain", "training by hand · 5-year metrics", "ml", "model", ""], ["Live poller on", "live_enabled = true", "compute", "lambda", ""], ["Smaller images", "faster cold starts", "ci", "image", ""], ["numpy hot path", "pandas only at SDK edges", "compute", "bolt", ""]].map(([t, sub, k, i, tag], j) => {
         const x = 60 + (j % 3) * 500, y = 250 + Math.floor(j / 3) * 260;
         return `<g class="rv" data-s="0" data-u="0" data-d="${j + 1}">
           ${node({ x, y, w: 460, h: 96, k, i, t, sub })}
