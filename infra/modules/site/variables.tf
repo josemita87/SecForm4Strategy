@@ -8,11 +8,6 @@ variable "name" {
   type        = string
 }
 
-variable "publisher_enabled" {
-  description = "Create the publisher Lambda and its triggers; needs an image in <name>/site-publisher."
-  type        = bool
-}
-
 variable "schedule_enabled" {
   description = "Publish every minute; off, only finished live-score runs publish."
   type        = bool

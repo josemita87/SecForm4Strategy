@@ -233,24 +233,21 @@ resource "aws_iam_role_policy" "publisher" {
 }
 
 resource "aws_cloudwatch_log_group" "publisher" {
-  count             = var.publisher_enabled ? 1 : 0
   name              = "/aws/lambda/${var.name}-site-publisher"
   retention_in_days = 14
 }
 
 data "aws_ecr_image" "publisher" {
-  count           = var.publisher_enabled ? 1 : 0
   repository_name = "${var.name}/site-publisher"
   most_recent     = true
 }
 
 # The account's concurrency limit is 10, the minimum unreserved, so no function can reserve concurrency
 resource "aws_lambda_function" "publisher" {
-  count         = var.publisher_enabled ? 1 : 0
   function_name = "${var.name}-site-publisher"
   role          = var.publisher_role_arn
   package_type  = "Image"
-  image_uri     = data.aws_ecr_image.publisher[0].image_uri
+  image_uri     = data.aws_ecr_image.publisher.image_uri
   architectures = ["arm64"]
   memory_size   = 1536
   timeout       = 300
@@ -275,14 +272,13 @@ resource "aws_lambda_function" "publisher" {
 
   logging_config {
     log_format = "Text"
-    log_group  = aws_cloudwatch_log_group.publisher[0].name
+    log_group  = aws_cloudwatch_log_group.publisher.name
   }
 }
 
 # Both triggers invoke asynchronously: drop an event a minute old instead of queueing publishes behind a slow one
 resource "aws_lambda_function_event_invoke_config" "publisher" {
-  count                        = var.publisher_enabled ? 1 : 0
-  function_name                = aws_lambda_function.publisher[0].function_name
+  function_name                = aws_lambda_function.publisher.function_name
   maximum_event_age_in_seconds = 60
   maximum_retry_attempts       = 0
 }
@@ -303,28 +299,24 @@ data "aws_iam_policy_document" "scheduler_trust" {
 }
 
 resource "aws_iam_role" "scheduler" {
-  count              = var.publisher_enabled ? 1 : 0
   name               = "${var.name}-site-scheduler"
   assume_role_policy = data.aws_iam_policy_document.scheduler_trust.json
 }
 
 data "aws_iam_policy_document" "invoke_publisher" {
-  count = var.publisher_enabled ? 1 : 0
   statement {
     actions   = ["lambda:InvokeFunction"]
-    resources = [aws_lambda_function.publisher[0].arn]
+    resources = [aws_lambda_function.publisher.arn]
   }
 }
 
 resource "aws_iam_role_policy" "scheduler" {
-  count  = var.publisher_enabled ? 1 : 0
   name   = "invoke-publisher"
-  role   = aws_iam_role.scheduler[0].id
-  policy = data.aws_iam_policy_document.invoke_publisher[0].json
+  role   = aws_iam_role.scheduler.id
+  policy = data.aws_iam_policy_document.invoke_publisher.json
 }
 
 resource "aws_scheduler_schedule" "publish" {
-  count               = var.publisher_enabled ? 1 : 0
   name                = "${var.name}-site-publish"
   schedule_expression = "rate(1 minute)"
   state               = var.schedule_enabled ? "ENABLED" : "DISABLED"
@@ -334,8 +326,8 @@ resource "aws_scheduler_schedule" "publish" {
   }
 
   target {
-    arn      = aws_lambda_function.publisher[0].arn
-    role_arn = aws_iam_role.scheduler[0].arn
+    arn      = aws_lambda_function.publisher.arn
+    role_arn = aws_iam_role.scheduler.arn
     input    = jsonencode({ mode = "all" })
 
     # The next publish a minute later covers a missed one
@@ -346,7 +338,6 @@ resource "aws_scheduler_schedule" "publish" {
 }
 
 resource "aws_cloudwatch_event_rule" "live_score_finished" {
-  count       = var.publisher_enabled ? 1 : 0
   name        = "${var.name}-site-live-score-finished"
   description = "Publishes live.json when a live-score run ends"
   event_pattern = jsonencode({
@@ -360,16 +351,60 @@ resource "aws_cloudwatch_event_rule" "live_score_finished" {
 }
 
 resource "aws_cloudwatch_event_target" "live_score_finished" {
-  count = var.publisher_enabled ? 1 : 0
-  rule  = aws_cloudwatch_event_rule.live_score_finished[0].name
-  arn   = aws_lambda_function.publisher[0].arn
+  rule  = aws_cloudwatch_event_rule.live_score_finished.name
+  arn   = aws_lambda_function.publisher.arn
   input = jsonencode({ mode = "live" })
 }
 
 resource "aws_lambda_permission" "live_score_finished" {
-  count         = var.publisher_enabled ? 1 : 0
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.publisher[0].function_name
+  function_name = aws_lambda_function.publisher.function_name
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.live_score_finished[0].arn
+  source_arn    = aws_cloudwatch_event_rule.live_score_finished.arn
+}
+
+# The publisher resources had count = 1 while the removed site_publisher_enabled switch was on
+moved {
+  from = aws_cloudwatch_log_group.publisher[0]
+  to   = aws_cloudwatch_log_group.publisher
+}
+
+moved {
+  from = aws_lambda_function.publisher[0]
+  to   = aws_lambda_function.publisher
+}
+
+moved {
+  from = aws_lambda_function_event_invoke_config.publisher[0]
+  to   = aws_lambda_function_event_invoke_config.publisher
+}
+
+moved {
+  from = aws_iam_role.scheduler[0]
+  to   = aws_iam_role.scheduler
+}
+
+moved {
+  from = aws_iam_role_policy.scheduler[0]
+  to   = aws_iam_role_policy.scheduler
+}
+
+moved {
+  from = aws_scheduler_schedule.publish[0]
+  to   = aws_scheduler_schedule.publish
+}
+
+moved {
+  from = aws_cloudwatch_event_rule.live_score_finished[0]
+  to   = aws_cloudwatch_event_rule.live_score_finished
+}
+
+moved {
+  from = aws_cloudwatch_event_target.live_score_finished[0]
+  to   = aws_cloudwatch_event_target.live_score_finished
+}
+
+moved {
+  from = aws_lambda_permission.live_score_finished[0]
+  to   = aws_lambda_permission.live_score_finished
 }

@@ -306,7 +306,6 @@ module "site" {
   source                       = "../../modules/site"
   site_directory               = "${path.root}/../../../site"
   name                         = "secform4strategy"
-  publisher_enabled            = var.site_publisher_enabled
   schedule_enabled             = var.switched_on
   publisher_role_name          = module.iam.lambda_role_names["site-publisher"]
   publisher_role_arn           = module.iam.lambda_role_arns["site-publisher"]

@@ -243,17 +243,16 @@ An API would accept requests from the internet and run code for each one. Each r
 | The password hash has no salt | Someone with read access to the key-value store can test a weak password offline | A long random password | None |
 | No Content-Security-Policy | `Managed-SecurityHeadersPolicy` sends no `Content-Security-Policy` header, so the browser does not restrict where scripts and styles come from | A custom response headers policy with a Content-Security-Policy, tested in browsers against the inline styles that Plotly adds | None |
 | The default `*.cloudfront.net` domain | The address does not name the project | A Route 53 domain with an ACM certificate | About $15 per year for a `.com` domain |
+| Lambda concurrency limit of 10 | The account allows 10 concurrent Lambda executions in total, and AWS keeps all 10 unreserved, so no function can reserve any. In a burst of filings, the live functions and the publisher share the 10, and a throttled `live-score` step fails its run after two retries, so that filing is not scored | A quota increase to the 1,000 default (Service Quotas `L-B99A9384`, requests must be above 1,000), then reserved concurrency for the scoring steps | None |
 
-## Rollout in two phases
+## First deploy of a new image-based Lambda
 
-The publisher Lambda needs an image in `secform4strategy/site-publisher`, and that repository exists only after a Terraform apply. The variable `site_publisher_enabled` in `infra/envs/demo/switch.auto.tfvars` therefore creates the publisher in a second apply.
+A Lambda that runs a container image needs that image in ECR, and the repository exists only after a Terraform apply. The first deploy of the site therefore took two applies:
 
-1. Merge with `site_publisher_enabled = false`, and approve the apply. Terraform creates the bucket, the site files, the distribution, the auth function, the ECR repository and the publisher role. It does not create the publisher Lambda, because the Lambda has `count = var.publisher_enabled ? 1 : 0`.
-2. Wait for `images.yml` to push the `site-publisher` image. Its first run fails if it starts before the apply creates the repository; run `images` again by hand.
-3. Set the password with `scripts/set_site_password.sh` (see "Password").
-4. Set `site_publisher_enabled = true`, merge, and approve the apply. Terraform creates the publisher, its log group, the schedule and the EventBridge rule.
+1. The first apply created the bucket, the site files, the distribution, the auth function, the ECR repository `secform4strategy/site-publisher` and the publisher role. The `images` job for `site-publisher` failed because the repository did not exist yet, and a manual re-run pushed the image.
+2. The second apply created the publisher, its log group, the schedule and the EventBridge rule.
 
-Until step 4, the pages load but find no `data/*.json`.
+A temporary variable gated the publisher resources for this. It is removed; `moved` blocks in `infra/modules/site/main.tf` record the resources' old `[0]` addresses. A future image-based Lambda needs the same two steps.
 
 ## Deploys
 

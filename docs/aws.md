@@ -447,7 +447,7 @@ The `site` module adds these resources:
 
 - The bucket `secform4strategy-site-<account>` and one object per site file, which Terraform uploads from `site/`.
 - A CloudFront distribution with an origin access control, the cache policies `secform4strategy-site-static` and `secform4strategy-site-data`, the function `secform4strategy-site-auth` and its key-value store.
-- While `site_publisher_enabled` is `true`: the Lambda `secform4strategy-site-publisher`, outside the VPC, its log group, the schedule `secform4strategy-site-publish`, its role `secform4strategy-site-scheduler`, and the EventBridge rule `secform4strategy-site-live-score-finished`.
+- The Lambda `secform4strategy-site-publisher`, outside the VPC, its log group, the schedule `secform4strategy-site-publish`, its role `secform4strategy-site-scheduler`, and the EventBridge rule `secform4strategy-site-live-score-finished`.
 
 ## Design decisions
 
