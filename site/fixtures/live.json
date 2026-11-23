@@ -26,6 +26,7 @@
         }
       ],
       "error": null,
+      "skip": null,
       "probability_cutoff": null,
       "filings": []
     },
@@ -59,6 +60,7 @@
         }
       ],
       "error": null,
+      "skip": null,
       "probability_cutoff": 0.55,
       "filings": [
         {
@@ -112,6 +114,7 @@
         }
       ],
       "error": null,
+      "skip": "stale",
       "probability_cutoff": null,
       "filings": []
     },
@@ -132,6 +135,7 @@
         }
       ],
       "error": "yahoo-connect: YFRateLimitError: Too Many Requests. Rate limited. Try after a while.",
+      "skip": null,
       "probability_cutoff": null,
       "filings": []
     },
@@ -164,6 +168,7 @@
         }
       ],
       "error": null,
+      "skip": null,
       "probability_cutoff": 0.55,
       "filings": [
         {
@@ -210,6 +215,7 @@
         }
       ],
       "error": null,
+      "skip": null,
       "probability_cutoff": 0.55,
       "filings": [
         {
@@ -259,6 +265,7 @@
         }
       ],
       "error": null,
+      "skip": "no_sale",
       "probability_cutoff": null,
       "filings": []
     },
@@ -291,6 +298,7 @@
         }
       ],
       "error": null,
+      "skip": null,
       "probability_cutoff": 0.55,
       "filings": [
         {
