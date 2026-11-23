@@ -65,3 +65,6 @@ site/data/
 
 # Built from docs/report/*.md by build_pdf.sh; submitted as files, not tracked
 docs/report/*.pdf
+# The course submission stays local, out of the public repository
+docs/report/submission.md
+docs/report/submission.css
