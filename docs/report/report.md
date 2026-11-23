@@ -889,7 +889,6 @@ Section 10.2 lists the follow-ups, among them an append-then-deduplicate write f
 - **Data gaps.**
   - Market-cap snapshots end in 2024-08.
   - Session times assume a 16:00 close, which is wrong on the few half-days.
-  - Inference drops rows with any missing value.
   - Early stopping holds out random rows, not the latest rows.
 
 The next research steps:

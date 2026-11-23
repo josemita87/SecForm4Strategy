@@ -80,7 +80,15 @@ body.notes #viewport{right:430px}
 .slide{position:absolute;inset:0;opacity:0;visibility:hidden;transition:opacity .6s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1),visibility 0s .7s;transform:translateX(70px)}
 .slide.before{transform:translateX(-70px)}
 .slide.cur{opacity:1;visibility:visible;transform:none;transition:opacity .6s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1),visibility 0s}
-.slide>svg.dia{position:absolute;inset:0;width:1600px;height:900px;overflow:visible}
+.slide>svg.dia,.part>svg.dia{position:absolute;inset:0;width:1600px;height:900px;overflow:visible}
+.part{position:absolute;inset:0;opacity:0;visibility:hidden;transition:opacity .5s,visibility 0s .5s}
+.part.act{opacity:1;visibility:visible;transition:opacity .5s,visibility 0s}
+.ov-sm .nt{font-size:16px}.ov-sm .ns{font-size:12.5px}
+.pill.ws-on rect{fill:var(--accent);stroke:var(--accent)}.pill.ws-on text{fill:#fff}
+.slide.zoomed>.head{z-index:8;background:var(--bg);box-shadow:0 0 0 44px var(--bg)}
+.slide:has(.spotfx) #l-gap{opacity:0}
+.spotfx{position:absolute;left:0;top:0;width:1600px;height:900px;z-index:6;pointer-events:none;animation:spotin .35s ease both}
+@keyframes spotin{from{opacity:0}to{opacity:1}}
 .head{position:absolute;left:44px;top:22px;right:44px;pointer-events:none;z-index:2}
 .kicker{font-size:15px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
 .head h1{margin:4px 0 0;font-size:44px;line-height:1.08;letter-spacing:-.022em;font-weight:760}
@@ -244,7 +252,7 @@ body{font-family:var(--sans);background:var(--bg)}
 #top{background:var(--glass);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid color-mix(in srgb,var(--ink) 9%,transparent)}
 #brand{font-weight:600;font-size:15px;letter-spacing:-.01em}
 #brand i{width:14px;height:14px;border-radius:50%;background:linear-gradient(135deg,var(--g1),var(--g2),var(--g3))}
-.rail-item{font-size:13px;font-weight:500;color:var(--muted);border-radius:999px;padding:6px 11px}
+.rail-item{font-size:13px;font-weight:500;color:var(--muted);border-radius:999px;padding:6px 8px}
 .rail-item b{background:transparent;color:var(--faint);width:auto;height:auto;font-weight:600}
 .rail-item.cur{background:var(--ink);color:var(--bg)}
 .rail-item.cur b{background:transparent;color:var(--bg);opacity:.6}
@@ -545,7 +553,7 @@ function travel(svg, paths, opts = {}, alive = () => true) {
     function step(ts) {
       if (!alive()) { g.remove(); return resolve(false); }
       if (start === null) start = ts;
-      const dur = Math.max(280, L / speed), t = Math.min(1, (ts - start) / dur);
+      const dur = opts.dur || Math.max(280, L / speed), t = Math.min(1, (ts - start) / dur);
       const p = els[i].getPointAtLength(L * (opts.linear ? t : ease(t)));
       g.setAttribute("transform", `translate(${p.x} ${p.y})`);
       if (t >= 1) {
@@ -603,7 +611,7 @@ function section(def) { SECTIONS.push(def); }
 
 /* ===================== Introduction ===================== */
 const NOTE = (k, i) => `<svg width="52" height="52" viewBox="0 0 52 52"><rect width="52" height="52" rx="13" fill="var(--k-${k})"/><g class="ig" transform="translate(14 14)">${ICON[i]}</g></svg>`;
-section({
+const S_COVER = ({
   id: "cover", title: "Introduction", short: "Intro", bare: true, ambient: false,
   steps: [{ cap: "", notes: ["≈15 s. An insider's sale becomes public the moment the SEC accepts the Form 4.", "The three cards are the whole system: a filing, a score, a paper order. XYZ is a placeholder."] }],
   html: () => `
@@ -629,7 +637,7 @@ section({
 });
 
 /* ===================== Business problem ===================== */
-section({
+const P_PROBLEM = ({
   id: "problem", title: "Business problem", short: "Problem",
   h1: "Insiders trade. The SEC publishes. Then the market can react.",
   step(el, s, r) {
@@ -680,96 +688,6 @@ section({
     </g>`,
 });
 
-/* ===================== Setup overview ===================== */
-section({
-  id: "setup", title: "Setup overview", short: "Setup",
-  h1: "From a filing to a paper short",
-  steps: [
-    { cap: "Each new Form 4 becomes <strong>features</strong>: one row per ticker and next market print.",
-      notes: ["≈45 s. Only enough ML to motivate the design.", "One row per ticker and next market print. USD values use the last close before the acceptance day."] },
-    { cap: "A scikit-learn <strong>classifier</strong> gives each row a score for a <strong>short winner</strong>: a drop of more than 5% in 30 days.",
-      notes: ["A <code>HistGradientBoostingClassifier</code> on a purged walk-forward split; the latest 20% of rows is the holdout.", "The outputs are scores, not probabilities: <code>class_weight=balanced</code> pushes them up, so 97% of holdout rows score at least 0.30. A score of 0.70 marks the top of the ranking; its measured precision is 0.60."] },
-    { cap: "The rule: <strong>short</strong> when the score is at least <code>0.70</code>, for insider sales only (<code>acquired_disposed = D</code>).",
-      notes: ["The 0.70 cutoff is chosen on the folds only and saved with the model; a promotion moves both.", "Purchases (A) never trade."] },
-    { cap: "Alpaca receives a paper order: sell 1 share, market, good until cancelled. <code>client_order_id</code> is the row key.",
-      notes: ["Paper account, 1 share.", "The row key is the <code>client_order_id</code>, so a retry never doubles an order (R5)."] },
-  ],
-  svg: () => `
-    ${node({ s: 0, id: "s2-f", x: 40, y: 220, w: 270, k: "ext", i: "doc", t: "Form 4 filing", sub: "SEC EDGAR" })}
-    ${edge({ s: 0, id: "s2-e1", d: "M310 256 H350" })}
-    ${node({ s: 0, dl: 2, id: "s2-x", x: 350, y: 220, w: 270, k: "data", i: "table", t: "Features", sub: "ticker @ next print" })}
-    ${edge({ s: 1, id: "s2-e2", d: "M620 256 H660" })}
-    ${node({ s: 1, id: "s2-m", x: 660, y: 220, w: 270, k: "ml", i: "model", t: "Classifier", sub: "P(short winner)" })}
-    ${edge({ s: 2, id: "s2-e3", d: "M930 256 H970" })}
-    ${node({ s: 2, id: "s2-r", x: 970, y: 220, w: 270, k: "sec", i: "funnel", t: "Rule", sub: "D only, P ≥ 0.70" })}
-    ${edge({ s: 3, id: "s2-e4", d: "M1240 256 H1280" })}
-    ${node({ s: 3, id: "s2-a", x: 1280, y: 220, w: 280, k: "ext", i: "short", t: "Alpaca paper", sub: "sell 1 share" })}
-    ${label({ s: 0, x: 175, y: 330, a: "middle", t: "accepted_at, owner, code" })}
-    ${label({ s: 0, dl: 2, x: 485, y: 330, a: "middle", t: "insiders_recent, tx_value …" })}
-    ${label({ s: 1, x: 795, y: 330, a: "middle", t: "HistGradientBoostingClassifier" })}
-    ${label({ s: 2, x: 1105, y: 330, a: "middle", t: "probability_cutoff, from the model" })}
-    ${label({ s: 3, x: 1420, y: 330, a: "middle", t: "client_order_id = row key" })}`,
-  html: () => `
-    <div class="w card rv" data-s="2" style="left:40px;top:390px;width:1520px;height:380px;padding:26px 34px">
-      <div style="display:flex;gap:40px;align-items:flex-start">
-        <div style="width:420px">
-          <div class="lab">Transaction direction</div>
-          <div style="margin:10px 0 26px">${seg("s2-dir", ["Sale · D", "Purchase · A"])}</div>
-          <div class="lab">Score for a short winner</div>
-          <div id="s2-val" style="font-size:64px;font-weight:760;letter-spacing:-.03em;margin:4px 0 2px;font-variant-numeric:tabular-nums">0.78</div>
-          <input id="s2-sl" type="range" min="0" max="1" step="0.01" value="0.78" aria-label="Score for a short winner">
-        </div>
-        <div style="flex:1">
-          <svg viewBox="0 0 980 210" style="width:100%;height:230px;overflow:visible">
-            <rect x="${20 + 0.7 * 940}" y="70" width="${0.3 * 940}" height="64" rx="10" fill="var(--bad-soft)"/>
-            <text x="${950}" y="58" text-anchor="end" class="lbl bad">short zone</text>
-            <line x1="20" y1="102" x2="960" y2="102" stroke="var(--edge)" stroke-width="3"/>
-            ${[0, 0.2, 0.4, 0.6, 0.8, 1].map(v => { const x = 20 + v * 940; return `<line x1="${x}" y1="94" x2="${x}" y2="110" stroke="var(--edge)" stroke-width="2"/><text x="${x}" y="160" text-anchor="middle" class="lbl mono">${v.toFixed(1)}</text>`; }).join("")}
-            <line x1="${20 + 0.7 * 940}" y1="40" x2="${20 + 0.7 * 940}" y2="140" stroke="var(--bad)" stroke-width="3" stroke-dasharray="6 5"/>
-            <text x="${14 + 0.7 * 940}" y="34" text-anchor="end" class="lbl bad mono">cutoff 0.70</text>
-            <g id="s2-ptr" style="transition:transform .35s cubic-bezier(.2,.7,.2,1)"><circle cy="102" r="15" fill="var(--accent)"/><circle cy="102" r="26" fill="none" stroke="var(--accent)" stroke-width="2" opacity=".4"/></g>
-          </svg>
-          <div id="s2-dec" style="display:flex;align-items:center;gap:16px;margin-top:6px">
-            <span id="s2-chip" class="tag bad" style="font-size:20px;padding:8px 16px">Paper short</span>
-            <span id="s2-why" style="font-size:22px;color:var(--muted)">sell 1 share · market · gtc</span>
-          </div>
-        </div>
-      </div>
-    </div>`,
-  init(el) {
-    const sl = $("#s2-sl", el), self = this;
-    const upd = () => self.decide(el);
-    sl.addEventListener("input", upd);
-    segOn(el, "s2-dir", upd);
-    upd();
-  },
-  decide(el) {
-    const v = +$("#s2-sl", el).value, sale = $("#s2-dir .on", el).dataset.v === "0";
-    $$(".stampfx", el).forEach(x => x.parentNode.removeChild(x));
-    $("#s2-val", el).textContent = v.toFixed(2);
-    $("#s2-ptr", el).style.transform = `translateX(${20 + v * 940}px)`;
-    const short = sale && v >= 0.7;
-    const chip = $("#s2-chip", el), why = $("#s2-why", el);
-    chip.className = "tag " + (short ? "bad" : "");
-    chip.textContent = short ? "Paper short" : "No order";
-    why.textContent = short ? "sell 1 share · market · gtc" : !sale ? "purchases (A) are not traded" : "score is below the 0.70 cutoff";
-    tog(el, "#s2-r", "okk", short); tog(el, "#s2-r", "badk", !short);
-    tog(el, "#s2-a, #s2-e4", "off", !short);
-    return short;
-  },
-  step(el, s, r) {
-    const svg = $("svg.dia", el);
-    if (s < 2) { tog(el, "#s2-r", "okk", false); tog(el, "#s2-r", "badk", false); tog(el, "#s2-a, #s2-e4", "off", false); }
-    else this.decide(el);
-    if (s === 3) {
-      const short = this.decide(el);
-      const path = short ? ["s2-e1", "s2-e2", "s2-e3", "s2-e4"] : ["s2-e1", "s2-e2", "s2-e3"];
-      r.sleep(500).then(ok => ok && r.travel(svg, path, { label: "Form 4", speed: 0.45, onHop: k => badge(el, ["s2-x", "s2-m", "s2-r", "s2-a"][k], true) }).then(ok2 => ok2 && stamp(el, short ? 1420 : 1105, 372, short ? "Paper short" : "No trade", { rot: short ? -9 : 7, color: short ? "" : "var(--faint)" })));
-      ["s2-x", "s2-m", "s2-r", "s2-a"].forEach(id => badge(el, id, false));
-    } else ["s2-x", "s2-m", "s2-r", "s2-a"].forEach(id => badge(el, id, false));
-  },
-});
-
 /* ===================== Constraint → decision ===================== */
 const DECIDE = [
   ["Business", "<b>R1</b> React within minutes of <code>accepted_at</code>", "<b>Lambda + SQS</b> live path; cold starts accepted (D1, D5, D8)"],
@@ -784,7 +702,7 @@ const DECIDE = [
   ["Operations", "<b>R10</b> Operate a multi-day backfill", "DLQ alarms, dashboard, <code>make status</code>; pinned revisions, 5 images (D7, D20)"],
 ];
 const DTAG = { "Business": "acc", "ML": "good", "ML, business": "good", "Data, ML": "", "Data": "", "Constraint": "", "Security": "", "Operations": "" };
-section({
+const S_REQ = ({
   id: "decisions", title: "Requirements → decisions", short: "R1–R10",
   h1: "Ten requirements, each answered on AWS",
   steps: [
@@ -809,7 +727,7 @@ const ADAPTERS = {
   Broker: [["AlpacaClient", "Alpaca paper API"], ["AlpacaClient", "Alpaca paper API"], null],
 };
 const PORT_POS = { Filings: [100, 300, "L"], MessageQueue: [100, 505, "L"], FeatureStore: [100, 710, "L"], MarketData: [1130, 300, "R"], ModelStore: [1130, 505, "R"], Broker: [1130, 710, "R"] };
-section({
+const S_ARCH = ({
   id: "architecture", thumbStep: 0, title: "Architecture", short: "Architecture",
   h1: "Seven services, one image each, one shared clients package",
   steps: [
@@ -909,9 +827,65 @@ section({
   },
 });
 
+/* ===================== Feature store ===================== */
+const P_STORE = ({
+  id: "featurestore", thumbStep: 1, title: "Feature store", short: "Store",
+  h1: "One feature store, two systems: Iceberg on S3 + Glue",
+  steps: [
+    { cap: "The feature store is a set of <strong>Apache Iceberg</strong> tables in S3, with the <strong>AWS Glue</strong> catalog.",
+      notes: ["Training system: BT4 transactions, then RT4 labelled rows, then a model.", "P holds adjusted daily prices per ticker and day.", "Every row has a deterministic key, so a redelivered message or a rerun upserts the same row. No duplicates.", "Why Iceberg: upserts on plain S3 objects, so it costs only storage while idle. RDS would bill every hour.", "Athena can query the same tables; its workgroup cancels any query over 1 GiB."] },
+    { cap: "The inference system uses the same code: BI4 transactions, then BIR4 rows without a label, then scores.",
+      notes: ["<code>SYSTEM_TRAINING</code> or <code>SYSTEM_INFERENCE</code> selects the configuration of kafka-to-store, yahoo-connect and target.", "The target service also reads RT4 in inference: <code>avg_target_expanding</code> uses only labels known before the row's <code>accepted_at</code>.", "One store and one code path for both systems: no skew between training and scoring.", "Click the toggle to switch the highlighted path."] },
+  ],
+  svg: () => {
+    const card = (x, y, title, lines, opts = {}) => `<g ${opts.id ? `id="${opts.id}"` : ""} class="fg ${opts.cls || ""}"${opts.sys ? ` data-sys="${opts.sys}"` : ""}><rect class="nb" x="${x}" y="${y}" width="380" height="170" rx="16"/>
+      <rect x="${x}" y="${y}" width="8" height="170" rx="4" fill="var(--k-data)"/>
+      <text x="${x + 26}" y="${y + 42}" style="font-size:28px;font-weight:760" class="mono">${title}</text>
+      ${lines.map((l, k) => `<text x="${x + 26}" y="${y + 78 + k * 27}" class="lbl">${l}</text>`).join("")}</g>`;
+    return `<g class="rv" data-s="0">
+      ${card(60, 215, `<tspan class="t-sys">BT4</tspan> · <tspan class="i-sys">BI4</tspan>`, ["one row per transaction", "key: hash of accession, table, position", "written by kafka-to-store"])}
+      ${card(60, 420, "P", ["one row per ticker and day", "key: ticker@date", "adjusted open and close, splits"])}
+      ${edge({ d: "M440 300 C 480 300, 490 395, 525 405" })}
+      ${edge({ d: "M440 505 C 480 505, 490 430, 525 425" })}
+      ${node({ x: 525, y: 380, w: 250, k: "compute", i: "fargate", t: "target", sub: "next print, features" })}
+      ${card(850, 215, "RT4", ["training rows: features + label", "label: pct_change, label_known_at", "key: ticker@next print"], { id: "fg-rt4" })}
+      ${card(850, 420, "BIR4", ["inference rows: features only", "no label", "key: ticker@next print"], { id: "fg-bir4", sys: "i" })}
+      <g data-sys="t">${edge({ d: "M775 405 C 810 405, 810 300, 850 300" })}</g>
+      <g data-sys="i">${edge({ d: "M775 425 C 810 425, 810 505, 850 505" })}</g>
+      <g data-sys="i"><path class="edge warnedge" d="M960 385 C 930 400, 830 430, 780 418" marker-end="url(#ahw)"/></g>
+      <g data-sys="i" class="warnpill"><rect x="512" y="470" width="276" height="36" rx="18"/><text x="650" y="494" text-anchor="middle">reads earlier RT4 labels</text></g>
+      <g data-sys="t">${edge({ d: "M1230 300 H1300" })}${node({ x: 1300, y: 264, w: 260, k: "compute", i: "fargate", t: "training", sub: "RT4 → model" })}</g>
+      <g data-sys="i">${edge({ d: "M1230 505 H1300" })}${node({ x: 1300, y: 469, w: 260, k: "compute", i: "fargate", t: "inference", sub: "BIR4 → orders" })}</g>
+      ${node({ x: 60, y: 690, w: 380, k: "store", i: "s3", t: "S3 data bucket", sub: "warehouse/ holds the Iceberg files" })}
+      ${node({ x: 465, y: 690, w: 380, k: "data", i: "table", t: "AWS Glue catalog", sub: "database secform4strategy" })}
+      ${node({ x: 870, y: 690, w: 380, k: "data", i: "logs", t: "Athena workgroup", sub: "SQL on the same tables, 1 GiB cap" })}
+      ${frame({ x: 1225, y: 560, w: 365, h: 220, t: "Live-path state, not features" })}
+      ${node({ x: 1240, y: 600, w: 335, h: 60, k: "compute", i: "lambda", t: "poller λ", sub: "master-index, live" })}
+      ${node({ x: 1240, y: 700, w: 335, h: 64, k: "data", i: "ddb", t: "DynamoDB · on demand", sub: "secform4strategy-seen · 7-day TTL" })}
+      <path class="edge dashed" d="M1360 700 V662" marker-end="url(#ah)"/><text class="lbl" x="1352" y="686" text-anchor="end" style="font-size:14px">reads</text>
+      <path class="edge" d="M1490 660 V698" marker-end="url(#ah)"/><text class="lbl" x="1498" y="686" style="font-size:14px">writes</text>
+      <text x="800" y="812" text-anchor="middle" class="lbl">Every row has a deterministic key. A rerun upserts the same row, so tables never hold duplicates.</text>
+      <text x="800" y="870" text-anchor="middle" class="lbl" style="font-size:16px">DynamoDB on demand in place of an ElastiCache server: billed per request, $0 while idle; items expire after 7 days (SEEN_DAYS), so the table stays small.</text>
+      <text x="800" y="842" text-anchor="middle" class="lbl">Both systems share the tables: no skew between training and scoring, and only storage bills while idle.</text>
+    </g>`;
+  },
+  html: () => `
+    <div class="w rv" data-s="0" style="left:1300px;top:366px">${seg("s3-sys", ["Training", "Inference"])}</div>`,
+  init(el) {
+    segOn(el, "s3-sys", v => this.sys(el, v));
+  },
+  sys(el, v) {
+    segSet(el, "s3-sys", v);
+    $$("[data-sys]", el).forEach(e => e.classList.toggle("off", e.dataset.sys !== (v ? "i" : "t")));
+    $$(".t-sys", el).forEach(e => e.style.fill = v ? "var(--faint)" : "var(--accent)");
+    $$(".i-sys", el).forEach(e => e.style.fill = v ? "var(--accent)" : "var(--faint)");
+  },
+  step(el, s) { this.sys(el, s); },
+});
+
 /* ===================== Batch pipeline ===================== */
 const STEPS6 = ["master-index", "scraper", "kafka-to-store", "yahoo-connect", "target", "training"];
-section({
+const P_BATCH = ({
   id: "batch", title: "Batch pipeline and weekly retrain", short: "Batch",
   h1: "One state machine retrains the model every week",
   steps: [
@@ -925,11 +899,28 @@ section({
   svg: () => `
     ${node({ s: 0, id: "b-sch", x: 50, y: 210, w: 430, k: "int", i: "sched", t: "EventBridge Scheduler", sub: "cron(0 6 ? * SAT *) · UTC", submono: true })}
     ${edge({ s: 0, id: "b-e0", d: "M265 282 V343" })}
-    ${frame({ s: 0, x: 40, y: 345, w: 1520, h: 235, t: "Step Functions · secform4strategy-retrain" })}
+    ${frame({ s: 0, x: 40, y: 345, w: 1520, h: 160, t: "Step Functions · secform4strategy-retrain · Spot: 3 attempts, 600 s apart · then Wait 600 s · On-Demand, 1 retry" })}
     ${STEPS6.map((n, k) => node({ s: 0, dl: k + 1, id: `b-st${k}`, x: 70 + k * 248, y: 400, w: 222, k: "compute", i: "fargate", t: n, sub: "Spot · ARM64" })).join("")}
     ${STEPS6.slice(0, 5).map((_, k) => edge({ s: 0, id: `b-e${k + 1}`, d: `M${292 + k * 248} 436 H${318 + k * 248}` })).join("")}
     ${STEPS6.map((_, k) => `<rect class="rv" data-s="0" x="${70 + k * 248}" y="484" width="222" height="6" rx="3" fill="var(--panel2)"/><rect id="b-bar${k}" x="${70 + k * 248}" y="484" width="0" height="6" rx="3" fill="var(--accent)"/>`).join("")}
-    ${label({ s: 0, x: 70, y: 552, t: "Spot: 3 attempts, 600 s apart · then On-Demand after 600 s, 1 retry · private subnets · no public IP" })}
+    <g class="rv" data-s="0" data-u="1">
+      ${node({ x: 190, y: 560, w: 200, h: 60, k: "int", i: "sqs", t: "filings", sub: "SQS" })}
+      ${node({ x: 440, y: 560, w: 220, h: 60, k: "int", i: "sqs", t: "transactions", sub: "SQS" })}
+      ${edge({ d: "M230 474 V558" })}${edge({ d: "M350 558 V474" })}
+      ${edge({ d: "M500 474 V558" })}${edge({ d: "M600 558 V474" })}
+      ${pill({ x: 290, y: 668, t: "DLQ · after 5 receives", w: 200 })}${pill({ x: 550, y: 668, t: "DLQ · after 5 receives", w: 200 })}
+      <path class="edge dashed" d="M290 620 V650" data-noamb="1"/><path class="edge dashed" d="M550 620 V650" data-noamb="1"/>
+      ${node({ id: "b-sec", x: 40, y: 720, w: 380, h: 64, k: "ext", i: "globe", t: "SEC EDGAR", sub: "≤ 10 requests/s per client" })}
+      ${edge({ d: "M100 720 V474" })}${edge({ d: "M412 720 C 412 640, 425 560, 425 474" })}
+      ${node({ id: "b-yh", x: 795, y: 560, w: 200, h: 60, k: "ext", i: "globe", t: "Yahoo Finance", sub: "daily prices" })}
+      ${edge({ d: "M900 558 V474" })}
+      ${frame({ x: 690, y: 680, w: 895, h: 184, t: "S3 secform4strategy-data-<account> · through the S3 gateway endpoint" })}
+      ${[[705, 170, "BT4", "warehouse/ · Iceberg", "transactions"], [885, 220, "P", "warehouse/ · Iceberg", "daily prices · reads BT4"], [1115, 225, "RT4", "warehouse/ · Iceberg", "features + label · reads BT4 + P"], [1350, 228, "models/<trained_at>/", "model.joblib + .meta.json", "reads RT4 · latest.json: gate"]].map(([x, w, t, a, b], j) => `<g><rect id="b-s3-${j}" x="${x}" y="726" width="${w}" height="86" rx="12" fill="var(--panel)" stroke="var(--k-store)" stroke-width="1.6"/><text x="${x + 12}" y="752" style="font-size:16px;font-weight:700;fill:var(--ink)" class="mono">${t}</text><text x="${x + 12}" y="776" class="lbl" style="font-size:12.5px">${a}</text><text x="${x + 12}" y="798" class="lbl" style="font-size:12.5px">${b}</text></g>`).join("")}
+      <text class="lbl" x="705" y="844" style="font-size:13.5px">Glue catalog tracks each Iceberg table's current metadata file</text>
+      ${edge({ d: "M770 474 V724" })}${edge({ d: "M1030 474 V724" })}${edge({ d: "M1270 474 V724" })}${edge({ d: "M1510 474 V724" })}
+      <text class="lbl" x="40" y="818" style="font-size:15px">Queue arrows are logical: that traffic passes the NAT gateway.</text>
+      <text class="lbl" x="40" y="842" style="font-size:15px">master-index and scraper write no S3, only SQS. No batch task calls Alpaca.</text>
+    </g>
     ${frame({ s: 2, x: 40, y: 605, w: 960, h: 265, t: "S3 · models/" })}
     ${node({ s: 2, id: "b-old", x: 80, y: 650, w: 400, h: 100, k: "store", i: "s3", t: "<previous trained_at>/", sub: "model.joblib · model.meta.json", mono: true })}
     ${node({ s: 2, id: "b-new", x: 560, y: 650, w: 400, h: 100, k: "store", i: "s3", t: "<new trained_at>/", sub: "model.joblib · model.meta.json", mono: true })}
@@ -968,6 +959,8 @@ section({
   },
   reset(el, done) {
     STEPS6.forEach((_, k) => { $(`#b-bar${k}`, el).setAttribute("width", done ? 222 : 0); badge(el, `b-st${k}`, done); });
+    ["b-sec", "b-yh"].forEach(id => { badge(el, id, false); tog(el, "#" + id, "hot", false); });
+    $$("[id^=b-s3-]", el).forEach(b => { b.style.stroke = ""; b.style.strokeWidth = ""; });
     ["b-new", "b-gate"].forEach(id => badge(el, id, false)); tog(el, "#b-gate", "okk", false); tog(el, "[id^=b-st]", "hot", false);
     this.pointer(el, done);
   },
@@ -994,15 +987,20 @@ section({
     for (let k = 0; k < 6; k++) {
       const st = $(`#b-st${k}`, el), bar = $(`#b-bar${k}`, el);
       st.classList.add("hot");
-      const t0 = performance.now(), dur = RM.matches ? 0 : 900;
+      const side = [["b-sec"], ["b-sec"], [], ["b-yh"], [], []][k], box = [null, null, 0, 1, 2, 3][k];
+      side.forEach(id => { tog(el, "#" + id, "hot", true); badge(el, id, true); });
+      if (box !== null) { const b = $(`#b-s3-${box}`, el); if (b) { b.style.stroke = "var(--accent)"; b.style.strokeWidth = "3"; } }
+      const t0 = performance.now(), dur = RM.matches ? 0 : 1600;
       await new Promise(res => { const f = now => { if (!r.alive()) return res(); const t = Math.min(1, dur ? (now - t0) / dur : 1); bar.setAttribute("width", 222 * t); t < 1 ? requestAnimationFrame(f) : res(); }; requestAnimationFrame(f); });
       if (!r.alive()) return;
       st.classList.remove("hot"); badge(el, `b-st${k}`, true);
-      if (k < 5 && !await r.travel(svg, [`b-e${k + 1}`], { speed: 0.3 })) return;
+      side.forEach(id => tog(el, "#" + id, "hot", false));
+      if (k < 5 && !await r.travel(svg, [`b-e${k + 1}`], { dur: 600 })) return;
     }
-    if (cur.s === 2) await this.promote(el, r);
+    if (this.ps === 2) await this.promote(el, r);
   },
   step(el, s, r) {
+    this.ps = s;
     if (s === 0) { this.reset(el, false); this.mode(el, 0); }
     if (s === 1) { this.mode(el, 0); this.run(el, r); }
     if (s === 2) { this.mode(el, 0); this.reset(el, true); this.pointer(el, false); r.sleep(700).then(ok => ok && this.promote(el, r)); }
@@ -1013,22 +1011,31 @@ section({
 /* ===================== Live path ===================== */
 const LIVE = [
   ["l-e1", "l-poll", "<b>scheduler</b> → poller"],
+  [null, "l-sec", "<b>poller</b>: SEC feed"],
+  [null, "l-ddb", "<b>poller</b>: seen read + write"],
   ["l-e2", "l-qlf", "<b>poller</b>: 1 new filing"],
   ["l-e3", "l-scr", "<b>live-filings</b>: 1 msg"],
+  [null, "l-sec", "<b>scraper</b>: SEC filing"],
   ["l-e4", "l-qlt", "<b>scraper</b>: 2 transactions"],
   ["l-e5", "l-k2s", "<b>live-transactions</b>: 2"],
-  ["l-e6", "l-qtk", "<b>kafka-to-store</b>: BI4"],
+  [null, "l-lake", "<b>kafka-to-store</b>: BI4"],
+  ["l-e6", "l-qtk", "<b>kafka-to-store</b>: tickers"],
   ["l-e7", "l-pipe", "<b>live-tickers</b>: [XYZ]"],
   ["l-e8", "l-yc", "<b>Pipe</b>: start live-score"],
-  ["l-e9", "l-tg", "<b>yahoo-connect</b>: P"],
-  ["l-e10", "l-inf", "<b>target</b>: row → BIR4"],
+  [null, "l-yh", "<b>yahoo-connect</b>: Yahoo"],
+  [null, "l-lake", "<b>yahoo-connect</b>: P"],
+  ["l-e9", "l-tg", "<b>target</b>: started"],
+  [null, "l-lake", "<b>target</b>: → BIR4"],
+  ["l-e10", "l-inf", "<b>inference</b>: started"],
+  [null, "l-mod", "<b>inference</b>: latest.json"],
+  [null, "l-ssm", "<b>inference</b>: SSM keys"],
   ["l-e11", "l-alp", "<b>inference</b>: P 0.74 ≥ 0.70"],
 ];
-section({
+const P_LIVE = ({
   id: "live", thumbStep: 3, title: "Live path", short: "Live path",
   h1: "The live path: from filing to paper short, serverless",
   ambientMs: 1100,
-  quiet: [5],
+  quiet: [5, 6],
   steps: [
     { cap: "EventBridge Scheduler starts the poller every minute. DynamoDB keeps each seen key for 7 days.",
       notes: ["≈1½ min. EventBridge Scheduler polls the SEC feed every minute; DynamoDB skips filings already sent.", "Lambda bills per invocation, so an idle minute costs nothing; an always-on container would bill around the clock (D1)."] },
@@ -1037,7 +1044,7 @@ section({
     { cap: "The kafka-to-store service collects up to 100 transactions for 5 s, so one Iceberg commit serves a burst. It writes <code>BI4</code>.",
       notes: ["A 5 s window gathers a burst into one Iceberg commit, because parallel commits to one table conflict."] },
     { cap: "An <strong>EventBridge Pipe</strong> starts <code>live-score</code>: yahoo-connect → target → inference, then an Alpaca paper short.",
-      notes: ["The Pipe starts <code>live-score</code> fire-and-forget: a run that fails after its retries loses its tickers, with no DLQ. Known gap.", "<code>live-score</code> is a Standard workflow, because the site reads its execution history."] },
+      notes: ["The Pipe starts <code>live-score</code> fire-and-forget: a run that fails after its retries loses its tickers, with no DLQ. A known limit.", "<code>live-score</code> is a Standard workflow, because the site reads its execution history."] },
     { cap: "One filing, end to end. <span class=\"tag acc\">simulated run</span>",
       notes: ["An animation, not a recording; XYZ is a placeholder.", "Earlier real runs (AMZN, TGT, DGICA, IMTX) verified this wiring before the classifier was promoted."] },
     { cap: "The Lambdas run the <strong>same container images</strong> as the batch tasks, with a different entry point.",
@@ -1048,7 +1055,7 @@ section({
     ${edge({ s: 0, id: "l-e1", d: "M255 241 H300" })}
     ${node({ s: 0, id: "l-poll", x: 300, y: 205, w: 255, k: "compute", i: "lambda", t: "poller λ", sub: "master-index · live" })}
     ${edge({ s: 0, id: "l-edd", d: "M427 277 V352", cls: "dashed" })}
-    ${node({ s: 0, id: "l-ddb", x: 300, y: 352, w: 255, k: "data", i: "ddb", t: "DynamoDB seen", sub: "7-day TTL" })}
+    ${node({ s: 0, id: "l-ddb", x: 260, y: 352, w: 200, k: "data", i: "ddb", t: "DynamoDB", sub: "seen · 7-day TTL" })}
     ${edge({ s: 1, id: "l-e2", d: "M555 241 H600" })}
     ${node({ s: 1, id: "l-qlf", x: 600, y: 205, w: 215, k: "int", i: "sqs", t: "live-filings", sub: "SQS + DLQ" })}
     ${edge({ s: 1, id: "l-e3", d: "M815 241 H860" })}
@@ -1063,6 +1070,19 @@ section({
     ${edge({ s: 3, id: "l-e7", d: "M1020 388 H975" })}
     ${node({ s: 3, id: "l-pipe", x: 715, y: 352, w: 260, k: "int", i: "pipe", t: "EventBridge Pipe", sub: "batches of 10" })}
     ${frame({ s: 3, x: 40, y: 480, w: 960, h: 210, t: "Step Functions · secform4strategy-live-score" })}
+    <g class="rv" data-s="0">
+      ${node({ id: "l-sec", x: 480, y: 352, w: 210, h: 72, k: "ext", i: "globe", t: "SEC EDGAR", sub: "feed + filings" })}
+      ${edge({ d: "M520 352 V279" })}
+      <path class="edge flow" d="M690 395 H698 Q706 395 706 387 V345 Q706 337 714 337 H866 Q876 337 876 327 V281" marker-end="url(#ah)"/>
+      ${node({ id: "l-yh", x: 40, y: 352, w: 200, h: 72, k: "ext", i: "globe", t: "Yahoo Finance", sub: "daily prices" })}
+    </g>
+    <path class="rv edge flow" data-s="3" d="M52 424 V601 H66" marker-end="url(#ah)"/>
+    ${pill({ s: 1, x: 707, y: 300, t: "DLQ · after 5 receives", w: 196 })}
+    ${pill({ s: 1, x: 1272, y: 300, t: "DLQ · after 5 receives", w: 196 })}
+    ${pill({ s: 2, x: 1137, y: 452, t: "DLQ · after 5 receives", w: 196 })}
+    <g class="rv" data-s="3" id="l-gap">
+      <text class="lbl warn" x="700" y="460" text-anchor="end" style="font-size:15px;font-weight:650">No DLQ: fire-and-forget; a failed run loses its tickers</text>
+    </g>
     ${edge({ s: 3, id: "l-e8", d: "M845 424 V530 Q845 542 833 542 H217 Q205 542 205 554 V565" })}
     ${node({ s: 3, id: "l-yc", x: 70, y: 565, w: 270, k: "compute", i: "lambda", t: "yahoo-connect λ", sub: "prices → P" })}
     ${edge({ s: 3, id: "l-e9", d: "M340 601 H380" })}
@@ -1080,9 +1100,18 @@ section({
     ${edge({ s: 3, id: "l-essm", d: "M900 762 V637", cls: "dashed" })}
   </g>`,
   html: () => `
-    <div class="w console rv" id="l-con" data-s="4" data-u="4" style="left:1340px;top:470px;width:238px;height:400px;font-size:13px"></div>
+    <div class="w console rv" id="l-con" data-s="4" data-u="4" style="left:1330px;top:452px;width:250px;height:420px;font-size:11px;line-height:1.35"></div>
     <div class="w rv" data-s="4" data-u="4" style="left:1060px;top:672px"><button class="btn" id="l-go">▶ Send a filing</button></div>
-    <div class="w rv" data-s="5" data-u="5" style="left:180px;top:200px;width:1240px">
+    <div class="w rv" data-s="6" data-u="6" style="left:160px;top:225px;width:1280px;transform:scale(1.13);transform-origin:top center">
+      <div class="card" style="padding:26px 32px">
+        <div class="lab">Both paths: one error contract on SQS · standard queues, DLQ after 5 receives, visibility 300 s</div>
+        <div style="display:grid;grid-template-columns:1.1fr 1fr 1.2fr 1.5fr;gap:0;margin-top:14px;font-size:19px">
+          ${[["Outcome", "ECS consumer", "Lambda handler", "SQS result"], ["Done", "ack deletes the message", "not in batchItemFailures", "Deleted"], ["RetryableError", "no ack", "in batchItemFailures", "Delivered again after 300 s"], ["PermanentError", "logs it, then acks", "logs it, leaves it out", "Deleted"], ["Crash", "no ack", "the whole batch fails", "Delivered again; after 5 receives, the DLQ"]].map((row, k) => row.map((c, j) => `<div style="padding:11px 12px;border-bottom:1px solid var(--line);${k === 0 ? "font-weight:700;color:var(--muted);font-size:16px;text-transform:uppercase;letter-spacing:.04em" : j === 0 ? "font-weight:650" : ""}" class="${k && j === 0 ? "mono" : ""}">${c}</div>`).join("")).join("")}
+        </div>
+        <p style="font-size:17px;color:var(--muted);margin:14px 0 0">A DLQ does not retry: a message waits there 14 days, with an alarm, for a manual redrive.</p>
+      </div>
+    </div>
+    <div class="w rv" data-s="5" data-u="5" style="left:180px;top:225px;width:1240px;transform:scale(1.16);transform-origin:top center">
       <div class="card" style="padding:28px 34px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:stretch">
           <div style="grid-column:1/3;display:flex;align-items:center;gap:18px;border:2px solid var(--k-ci);border-radius:14px;padding:16px 20px;background:color-mix(in srgb,var(--k-ci) 6%,var(--panel))">
@@ -1101,24 +1130,11 @@ section({
           </div>
         </div>
       </div>
-    </div>
-    <div class="w rv" data-s="6" data-u="6" style="left:180px;top:215px;width:1240px">
-      <div class="card" style="padding:28px 34px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px">
-          <div><div class="lab">ECS task</div>
-            <p style="font-size:20px;color:var(--muted);line-height:1.5">The execution role reads <code>/secform4strategy/*</code> from SSM and injects the values as environment variables. The service code has no SSM permission.</p></div>
-          <div><div class="lab">Lambda function</div>
-            <p style="font-size:20px;color:var(--muted);line-height:1.5"><code>SSM_PARAMETERS</code> names the parameters. Settings classes that inherit <code>SsmSettings</code> read them once, at cold start.</p></div>
-        </div>
-        <pre class="code" style="margin-top:18px;font-size:16.5px">SSM_PARAMETERS = {<span class="k">"alpaca_api_key"</span>: <span class="s">"/secform4strategy/alpaca-api-key"</span>,
-                  <span class="k">"alpaca_api_secret"</span>: <span class="s">"/secform4strategy/alpaca-api-secret"</span>}
-<span class="c"># value → pydantic SecretStr → get_secret_value() only at the SDK call</span></pre>
-      </div>
     </div>`,
   init(el) {
     $("#l-go", el).addEventListener("click", () => { bump(); const r = runner(); this.play(el, r); ambient(el, r, 1100); });
   },
-  clear(el) { LIVE.forEach(([, n]) => { badge(el, n, false); $("#" + n, el).classList.remove("hot"); }); tog(el, "#l-sch, #l-lake", "hot", false); },
+  clear(el) { LIVE.forEach(([, n]) => { badge(el, n, false); tog(el, "#" + n, "hot", false); }); tog(el, "#l-sch, #l-lake", "hot", false); },
   async play(el, r) {
     const svg = $("svg.dia", el), con = $("#l-con", el);
     this.clear(el);
@@ -1129,10 +1145,10 @@ section({
     for (let k = 0; k < LIVE.length; k++) {
       lines[k + 1].classList.add("on");
       const [e, n] = LIVE[k];
-      if (!await r.travel(svg, [e], { speed: 0.42, label: k < 6 ? "Form 4" : "XYZ" })) return;
-      $("#" + n, el).classList.add("hot"); badge(el, n, true);
-      if (k === 5) $("#l-lake", el).classList.add("hot");
-      if (!await r.sleep(220)) return;
+      if (e) { if (!await r.travel(svg, [e], { dur: 1700, label: k < 9 ? "Form 4" : "XYZ" })) return; }
+      else if (!await r.sleep(1300)) return;
+      tog(el, "#" + n, "hot", true); badge(el, n, true);
+      if (!await r.sleep(350)) return;
     }
     lines[lines.length - 1].classList.add("on");
     stamp(el, 1175, 528, "Paper short", { rot: -8 });
@@ -1157,7 +1173,7 @@ const MODULES = [
   ["dashboard", "data", "logs", "CloudWatch dashboard: queues, runs, Lambda metrics, errors"],
   ["site", "store", "globe", "Study website: CloudFront, private S3 bucket, password, publisher Lambda"],
 ];
-section({
+const P_INFRA = ({
   id: "infra", thumbStep: 2, title: "AWS infrastructure", short: "AWS",
   h1: "Terraform builds it. Three switches control it.",
   steps: [
@@ -1224,14 +1240,6 @@ section({
       ${node({ x: 60, y: 375, w: 380, k: "sec", i: "dollar", t: "Budget $10 / month", sub: "1–23 Nov: $8.52, credits" })}
       ${edge({ d: "M440 411 H500" })}
       ${node({ x: 500, y: 375, w: 560, k: "int", i: "bell", t: "Email", sub: "at 50% of actual cost, 100% of forecast" })}
-      <g transform="translate(60 525)">
-        <text class="ft" x="0" y="0">Error contract, every service</text>
-        ${[["Success", "ack", "message deleted", "good"], ["RetryableError", "no ack", "delivered again after 300 s", "warn"], ["PermanentError", "log, then ack", "skipped for good", "acc"], ["Crash (a defect)", "no ack", "dead-letter queue after 5 receives", "bad"]].map(([a, b, c, t], k) => `
-          <g transform="translate(0 ${24 + k * 66})"><rect class="nb" width="1480" height="56" rx="12"/>
-          <text x="22" y="36" style="font-size:20px;font-weight:650" class="mono">${a}</text>
-          <text x="420" y="36" class="lbl" style="font-size:19px">${b}</text>
-          <text x="720" y="36" class="lbl ${t}" style="font-size:19px">${c}</text></g>`).join("")}
-      </g>
     </g>`,
   html: () => `
     <div class="w card rv" data-s="2" data-u="2" style="left:1212px;top:495px;width:370px;height:385px;padding:14px 20px">
@@ -1285,7 +1293,7 @@ section({
 
 /* ===================== Engineering and delivery ===================== */
 const GATES = [["ruff", "lint and format"], ["pydoclint", "docstrings"], ["bandit", "security"], ["validate-config", "every spec.yaml"], ["unit tests", "each project in its own env"], ["mypy", "separate job, non-blocking"]];
-section({
+const S_SEC = ({
   id: "delivery", thumbStep: 1, title: "Security and delivery", short: "Security",
   h1: "From pull request to AWS, with no stored keys",
   steps: [
@@ -1296,32 +1304,43 @@ section({
   ],
   svg: () => `
     <g id="d-dia" style="transition:opacity .6s">
-    ${node({ s: 0, id: "d-pr", x: 40, y: 215, w: 220, k: "ci", i: "git", t: "Pull request", sub: "same-repo branch" })}
+    ${node({ s: 0, id: "d-pr", x: 40, y: 215, w: 220, k: "ci", i: "git", t: "Pull request", sub: "branch" })}
     ${edge({ s: 0, id: "d-e1", d: "M260 251 H305" })}
-    ${node({ s: 0, id: "d-q", x: 305, y: 215, w: 255, k: "ci", i: "gate", t: "quality", sub: "make quality-static" })}
+    ${node({ s: 0, id: "d-q", x: 305, y: 215, w: 255, k: "ci", i: "gate", t: "quality.yml ①", sub: "required check" })}
     ${edge({ s: 0, id: "d-e2", d: "M560 251 H605" })}
-    ${node({ s: 0, id: "d-plan", x: 605, y: 215, w: 280, k: "ci", i: "tf", t: "terraform plan", sub: "PR · read-only role" })}
+    ${node({ s: 0, id: "d-plan", x: 605, y: 215, w: 280, k: "ci", i: "tf", t: "terraform plan", sub: "PR · read-only" })}
     ${edge({ s: 0, id: "d-e3", d: "M885 251 H930" })}
-    ${node({ s: 0, id: "d-m", x: 930, y: 215, w: 260, k: "ci", i: "git", t: "Merge to master", sub: "quality-static required" })}
+    ${node({ s: 0, id: "d-m", x: 930, y: 215, w: 260, k: "ci", i: "git", t: "Merge to master", sub: "ruleset" })}
     ${edge({ s: 0, id: "d-e4", d: "M1190 251 H1235" })}
-    ${node({ s: 0, id: "d-img", x: 1235, y: 215, w: 325, k: "ci", i: "image", t: "images.yml", sub: "after quality · arm64 → ECR" })}
+    ${node({ s: 0, id: "d-img", x: 1235, y: 215, w: 325, k: "ci", i: "image", t: "images.yml ②", sub: "build · scan · push" })}
     ${edge({ s: 0, id: "d-e5", d: "M1060 287 V375" })}
-    ${node({ s: 0, id: "d-sp", x: 930, y: 375, w: 300, k: "sec", i: "tf", t: "Plan of master", sub: "saved · AES-256 · 1 day" })}
+    ${node({ s: 0, id: "d-sp", x: 930, y: 375, w: 300, k: "sec", i: "key", t: "Plan of master", sub: "encrypted · 1 day" })}
     ${edge({ s: 0, id: "d-e6", d: "M930 411 H870" })}
-    ${node({ s: 0, id: "d-ap", x: 600, y: 375, w: 270, k: "sec", i: "shield", t: "Approval", sub: "environment aws" })}
+    ${node({ s: 0, id: "d-ap", x: 600, y: 375, w: 270, k: "sec", i: "shield", t: "Approval", sub: "reviewer · env aws" })}
     ${edge({ s: 0, id: "d-e7", d: "M600 411 H560" })}
-    ${node({ s: 0, id: "d-tf", x: 300, y: 375, w: 260, k: "ci", i: "tf", t: "terraform apply", sub: "exactly that plan" })}
+    ${node({ s: 0, id: "d-tf", x: 300, y: 375, w: 260, k: "ci", i: "tf", t: "terraform apply", sub: "that plan" })}
     ${edge({ s: 0, id: "d-e8", d: "M300 411 H260" })}
     ${node({ s: 0, id: "d-aws", x: 40, y: 375, w: 220, k: "compute", i: "cloud", t: "AWS", sub: "us-east-1" })}
     ${edge({ s: 0, id: "d-e9", d: "M1397 287 V375", cls: "dashed" })}
-    ${node({ s: 0, id: "d-man", x: 1270, y: 375, w: 290, k: "ci", i: "git", t: "Manual terraform", sub: "workflow_dispatch" })}
+    ${node({ s: 0, id: "d-man", x: 1270, y: 375, w: 290, k: "ci", i: "git", t: "Manual terraform", sub: "after images" })}
     ${edge({ s: 0, id: "d-e10", d: "M1270 411 H1232", cls: "dashed" })}
-    ${label({ s: 0, x: 1415, y: 474, a: "middle", t: "code-only merge: run after images" })}
+    
     <g class="rv" data-s="1">
       ${frame({ x: 40, y: 500, w: 1520, h: 125, t: "GitHub OIDC token → AWS STS → one role, temporary credentials" })}
-      ${node({ x: 60, y: 538, w: 480, h: 72, k: "sec", i: "key", t: "github-images", sub: "images.yml · ECR push and pull", mono: true })}
-      ${node({ x: 560, y: 538, w: 480, h: 72, k: "sec", i: "key", t: "github-plan", sub: "PRs + master plan · read-only", mono: true })}
-      ${node({ x: 1060, y: 538, w: 480, h: 72, k: "sec", i: "key", t: "github-apply", sub: "environment aws · admin", mono: true })}
+      <g transform="translate(40 652)">
+        <text class="lbl" x="0" y="0" style="font-size:14px;font-weight:800;fill:var(--muted)">① QUALITY-STATIC · REQUIRED CHECK · FAILS ON HIGH/CRITICAL</text>
+        ${[["gate", "ruff · pydoclint · bandit (SAST)"], ["check", "unit tests vs fakes"], ["shield", "Trivy fs: deps + secrets"], ["tf", "Trivy config infra/"]].map(([i, t], k) => `<g transform="translate(${(k % 2) * 380} ${16 + Math.floor(k / 2) * 46})">${QC(0, 0, 366, t, "ci", 14, i)}</g>`).join("")}
+        <text class="lbl" x="0" y="128" style="font-size:13px">accepted findings: .trivyignore, each with its reason</text>
+      </g>
+      <g transform="translate(830 652)">
+        <text class="lbl" x="0" y="0" style="font-size:14px;font-weight:800;fill:var(--muted)">② IMAGES.YML · PER SERVICE</text>
+        ${QC(0, 16, 200, "build arm64", "ci", 14, "image")}${QC(250, 16, 230, "Trivy image scan", "sec", 14, "shield")}${QC(530, 16, 190, "push to ECR", "ci", 14, "image")}
+        <path class="edge" d="M200 33 H248" marker-end="url(#ah)"/><path class="edge" d="M480 33 H528" marker-end="url(#ah)"/>
+        <text class="lbl" x="0" y="86" style="font-size:13.5px">push only if no HIGH/CRITICAL (fixable); a failing service is held back, the others publish</text>
+      </g>
+      ${node({ x: 60, y: 538, w: 480, h: 72, k: "sec", i: "key", t: "github-images", sub: "ECR", mono: true })}
+      ${node({ x: 560, y: 538, w: 480, h: 72, k: "sec", i: "key", t: "github-plan", sub: "read-only", mono: true })}
+      ${node({ x: 1060, y: 538, w: 480, h: 72, k: "sec", i: "shield", t: "github-apply", sub: "admin · 🔒 env aws + reviewer", mono: true })}
     </g>
     </g>`,
   html: () => `
@@ -1380,7 +1399,7 @@ variable <span class="s">"images_kept"</span> { <span class="k">default</span> =
 /* ===================== Performance ===================== */
 const LEVERS = [["12 fetch workers", "FETCH_WORKERS=12", "downloads overlap while each waits for SEC"], ["One shared rate limiter", "SEC_MAX_RATE", "EdgarClient spaces request starts across all threads"], ["Short retry pause", "RETRY_PAUSE=5", "a failed request waits 5 s"], ["Send buffer of 200", "BUFFER_SIZE=200", "fewer SQS round trips"]];
 const K2S = [["10,000 rows", "0.5 vCPU", 40, "250"], ["10,000 rows", "2 vCPU", 25, "400"], ["30,000 rows", "2 vCPU", 75, "400"]];
-section({
+const P_PERF = ({
   id: "performance", thumbStep: 2, title: "Performance", short: "Performance",
   h1: "Speed under a shared limit, then measure before scaling",
   steps: [
@@ -1391,18 +1410,20 @@ section({
   ],
   svg: () => `
     <g class="rv" data-s="0" data-u="0">
-      ${frame({ x: 70, y: 505, w: 390, h: 365, t: "One client · one User-Agent" })}
-      ${node({ x: 100, y: 552, w: 330, k: "compute", i: "fargate", t: "Batch scraper", sub: "Fargate · SEC_MAX_RATE", id: "p-bs", sid: "p-bs-s" })}
-      ${node({ x: 100, y: 662, w: 330, k: "compute", i: "lambda", t: "Live scraper λ × 2", sub: "2.25 req/s each", id: "p-ls" })}
-      ${node({ x: 100, y: 772, w: 330, k: "compute", i: "lambda", t: "poller λ", sub: "one feed request per minute", id: "p-po" })}
-      ${edge({ d: "M430 588 H560" })}
+      ${frame({ x: 50, y: 505, w: 470, h: 365, t: "One client · one User-Agent" })}
+      ${node({ x: 66, y: 552, w: 440, k: "compute", i: "fargate", t: "Batch scraper", sub: "SEC_MAX_RATE=5 · task def env", id: "p-bs", sid: "p-bs-s", submono: true })}
+      ${node({ x: 66, y: 662, w: 440, k: "compute", i: "lambda", t: "Live scraper λ", sub: "SEC_MAX_RATE=2.25 × 2 · Lambda env", id: "p-ls", submono: true })}
+      ${node({ x: 66, y: 772, w: 440, k: "compute", i: "lambda", t: "poller λ", sub: "SEC_MAX_RATE=1 · Lambda env", id: "p-po", submono: true })}
+      ${edge({ d: "M506 588 H560" })}
       ${node({ x: 560, y: 552, w: 300, k: "data", i: "nat", t: "NAT gateway", sub: "one Elastic IP" })}
       ${edge({ d: "M860 588 C 960 588, 950 664, 1060 664" })}
-      ${edge({ d: "M430 698 H1060", id: "p-le" })}
-      ${label({ x: 500, y: 686, t: "direct: Lambda network, no fixed IP", id: "p-ll" })}
-      ${edge({ d: "M430 808 C 760 808, 940 732, 1060 732", id: "p-pe" })}
+      ${edge({ d: "M506 698 H1060", id: "p-le" })}
+      ${label({ x: 600, y: 686, t: "direct: Lambda network, no fixed IP", id: "p-ll" })}
+      ${edge({ d: "M506 808 C 760 808, 940 732, 1060 732", id: "p-pe" })}
       ${node({ x: 1060, y: 640, w: 440, h: 116, k: "ext", i: "globe", t: "SEC EDGAR", sub: "10 req/s per client (User-Agent)" })}
       ${label({ x: 1280, y: 800, a: "middle", t: "", id: "p-sum" })}
+      <text class="lbl" x="1035" y="842" text-anchor="middle" style="font-size:15.5px">Each client's cap is an environment variable set in Terraform; EdgarClient spaces requests</text>
+      <text class="lbl" x="1035" y="864" text-anchor="middle" style="font-size:15.5px">at least 1 / SEC_MAX_RATE seconds apart.</text>
     </g>
     <g class="rv" data-s="1" data-u="1">
       ${LEVERS.map(([t, code, sub], k) => { const y = 240 + k * 135; return `<g class="rv" data-s="1" data-u="1" data-d="${k + 1}">
@@ -1467,7 +1488,7 @@ section({
     $("#p-b2", el).style.width = l * 10 + "%"; $("#p-b2", el).textContent = l ? "live 2 × 2.25 = 4.5/s" : ""; $("#p-b2", el).style.display = l ? "flex" : "none";
     $("#p-b3", el).textContent = v ? "live off · headroom 2" : "headroom 0.5";
     $("#p-tot", el).innerHTML = `${b + l}<span style="font-size:20px;color:var(--muted);font-weight:500"> of 10 req/s</span>`;
-    $("#p-bs-s", el).textContent = v ? "SEC_MAX_RATE=8 (override)" : "SEC_MAX_RATE=5";
+    $("#p-bs-s", el).textContent = v ? "SEC_MAX_RATE=8 · run-input override" : "SEC_MAX_RATE=5 · task def env";
     tog(el, "#p-ls, #p-le, #p-ll, #p-po, #p-pe", "off", v === 1);
     $("#p-sum", el).textContent = v ? "one budget: 8 + 0 = 8 of 10 req/s" : "one budget: 5 + 4.5 = 9.5 of 10 req/s";
   },
@@ -1486,56 +1507,11 @@ section({
   },
 });
 
-/* ===================== Operations: the 5-year backfill ===================== */
-const OPS_SF = [["o-mi", "master-index", "5 years of filings queued", "okk"], ["o-sc", "scraper", "every filing processed", "okk"], ["o-rt", "scraper retries", "CannotPullContainerError", "badk"]];
-const OPS_HAND = [["o-k2s", "kafka-to-store", "2 vCPU · 30,000 rows", "okk", "done"], ["o-yc", "yahoo-connect", "160 batches → P", "okk", "done · 2 h 25 min"], ["o-tg", "target", "215,273 rows → RT4", "okk", "done · rebuilt"], ["o-tr", "training", "PROMOTE=never", "okk", "classifier · 16 min"], ["o-pr", "promote", "20261122T224917Z", "okk", "done · by hand"]];
-section({
-  id: "ops", thumbStep: 0, title: "Operations: the 5-year backfill", short: "Ops",
-  h1: "Operations: the 5-year backfill",
-  steps: [
-    { cap: "<code>backfill-5y</code> scraped every filing, then <strong>failed</strong>. Every step is now <strong>done</strong> on 5 years of data.",
-      notes: ["≈1 min. <code>backfill-5y</code> started on 2026-11-20 at 18:11 UTC with the full-load input.", "The scraper finished its work but exited non-zero: its exit flag stays set after a redelivery succeeds. The retries hit <code>CannotPullContainerError</code>.", "The remaining steps ran on the latest revisions; training saved the classifier <code>20261122T224917Z</code> in about 16 minutes on 16 vCPU."] },
-    { cap: "Cause: ECR deleted the pinned revision's image. Upserts by key let the remaining steps run afterwards, with nothing repeated.",
-      notes: ["The pinned revision's image was gone: ECR kept 2 images. Each repository now keeps 5 (D7).", "Upserts by key and a 4-day queue retention let the rest run, with nothing repeated.", "Measure before scaling: one full vCPU helped kafka-to-store; more tasks and bigger batches did not."] },
-  ],
-  svg: () => `
-    ${frame({ s: 0, x: 40, y: 215, w: 1520, h: 150, t: "Step Functions · backfill-5y · started 2026-11-20 18:11 UTC" })}
-    ${OPS_SF.map(([id, t, sub, c], k) => node({ s: 0, dl: k + 1, id, cls: c, x: 70 + k * 400, y: 262, w: 360, h: 80, k: "compute", i: "fargate", t, sub, submono: k === 2 })).join("")}
-    ${[0, 1].map(k => edge({ s: 0, id: `o-e${k}`, d: `M${430 + k * 400} 302 H${470 + k * 400}` })).join("")}
-    <g class="rv" data-s="0"><rect x="1270" y="280" width="270" height="44" rx="22" fill="var(--bad-soft)" stroke="var(--bad)" stroke-width="1.5"/><text x="1405" y="309" text-anchor="middle" class="lbl bad" style="font-size:19px">run FAILED</text></g>
-    ${frame({ s: 0, x: 40, y: 395, w: 1520, h: 180, t: "Remaining steps · latest revisions" })}
-    ${OPS_HAND.map(([id, t, sub, c, tag], k) => `${node({ s: 0, dl: k + 3, id, cls: c, x: 60 + k * 300, y: 440, w: 280, h: 80, k: k < 4 ? "compute" : "ml", i: k < 4 ? "fargate" : "model", t, sub, submono: k > 2 })}${label({ s: 0, dl: k + 3, x: 200 + k * 300, y: 553, a: "middle", t: tag, cls: c === "okk" ? "good" : c === "wait" ? "warn" : "" })}`).join("")}
-    ${[0, 1, 2, 3].map(k => edge({ s: 0, id: `o-h${k}`, d: `M${340 + k * 300} 480 H${360 + k * 300}` })).join("")}`,
-  html: () => `
-    <div class="w rv" data-s="0" data-u="0" style="left:40px;top:600px;width:1520px;display:grid;grid-template-columns:1fr 1fr;gap:24px">
-      <div class="card" style="padding:20px 26px">
-        <div class="lab">Before the 5-year run</div>
-        <p style="margin-top:10px">The 1-year runs on AWS were <b>stopped by hand</b>. The 1-year model was trained <b>locally</b>, on a 16-core laptop, with the merged training code.</p>
-      </div>
-      <div class="card" style="padding:20px 26px">
-        <div class="lab">Switches on master · live path on, batch path dormant</div>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;align-items:flex-start">
-          <span class="chip"><span class="dot" style="background:var(--good)"></span><code>live_enabled = true</code> · <code>weekly_retrain_enabled = true</code></span>
-          <span class="chip"><span class="dot"></span><code>switched_on = false</code>: no NAT; the retrain runs only while it is on</span>
-        </div>
-      </div>
-    </div>
-    <div class="w rv" data-s="1" data-u="1" style="left:40px;top:600px;width:1520px;display:grid;grid-template-columns:repeat(3,1fr);gap:24px">
-      <div class="card" style="padding:20px 24px;height:215px"><span class="tag bad">lesson 1</span><h3 style="margin-top:12px">A pinned revision depends on its image</h3><p><code>skip_destroy</code> kept the revision, but ECR (keeping 2) deleted its image. ECR now keeps <b>5</b>.</p></div>
-      <div class="card" style="padding:20px 24px;height:215px"><span class="tag good">lesson 2</span><h3 style="margin-top:12px">Incremental steps make a failed run recoverable</h3><p>Upserts by key and a 4-day queue retention let the remaining steps run afterwards: no work repeated, no duplicate rows.</p></div>
-      <div class="card" style="padding:20px 24px;height:215px"><span class="tag acc">lesson 3</span><h3 style="margin-top:12px">Measure before scaling</h3><p>One full core helped kafka-to-store; more tasks and bigger batches did not. Container Insights now shows CPU and memory.</p></div>
-    </div>`,
-  step(el, s, r) {
-    ["o-mi", "o-sc", "o-k2s", "o-yc", "o-tg", "o-tr", "o-pr"].forEach(id => badge(el, id, false));
-    r.later(() => ["o-mi", "o-sc", "o-k2s", "o-yc", "o-tg", "o-tr", "o-pr"].forEach((id, k) => r.later(() => badge(el, id, true), k * 250)), 700);
-  },
-});
-
 /* ===================== Results ===================== */
 const SMOKE = [["poller λ", "new filing"], ["scraper λ", "transactions"], ["kafka-to-store λ", "BI4 upserted"], ["EventBridge Pipe", "started live-score"], ["yahoo-connect λ", "prices → P"], ["target λ", "row → BIR4"], ["inference λ", "scored, order sent"], ["Alpaca paper", "placed, then cancelled"]];
 const hx9 = h => 110 + h / 36 * 1380;
 const SWEEP = [["0.30", 41650, 0.27], ["0.35", 40059, 0.29], ["0.40", 36227, 0.39], ["0.45", 29790, 0.62], ["0.50", 21350, 0.94], ["0.55", 12141, 2.01], ["0.60", 5653, 2.93], ["0.65", 1647, 6.99], ["0.70", 314, 9.89], ["0.75", 52, 16.36]];
-section({
+const P_RESULTS = ({
   id: "results", thumbStep: 3, title: "Results", short: "Results",
   h1: "Results: the system works end to end",
   steps: [
@@ -1592,7 +1568,7 @@ section({
       <div id="st-txt" style="font-size:26px;font-weight:650;margin-top:8px"></div>
       <div style="font-size:19px;color:var(--muted);margin-top:6px">Exit: the first close at least 30 calendar days after the entry day. <code>pct_change</code> = (exit − entry) / entry. A short winner has <code>pct_change</code> below −0.05.</div>
     </div>
-    <div class="w card rv" data-s="3" data-u="3" style="left:60px;top:215px;width:1480px;padding:20px 28px">
+    <div class="w card rv" data-s="3" data-u="3" style="left:60px;top:225px;width:1480px;padding:24px 30px;font-size:110%">
       <div style="display:flex;justify-content:space-between;align-items:center"><div class="lab">Holdout: latest 20% of rows, 43,055 rows from 2025-10-24 · shorts at P ≥ 0.70</div><span style="font-size:16px;color:var(--muted)">base rate 0.338 = share of short winners = AP of a constant</span></div>
       <table style="width:100%;border-collapse:collapse;font-size:21px;margin-top:6px">
         <thead><tr style="text-align:left;color:var(--muted);font-size:15px"><th style="padding:6px">Predictor</th><th>AP</th><th>Precision</th><th>Shorts</th><th>Mean</th><th>Median</th><th>5% trimmed</th></tr></thead>
@@ -1618,7 +1594,7 @@ section({
           </svg>
         </div>
       </div>
-      <p style="font-size:16px;color:var(--muted);margin:6px 0 0">Captured return = −pct_change; positive means the shorted stock fell. Before borrow fees, slippage and commissions. Short SPY over the same windows: −1.33% per trade. 0.80: 1 short, not shown. Model 20261122T224917Z. It replaced the 5-year regressor, which never beat predicting zero on MAE.</p>
+      <p style="font-size:16px;color:var(--muted);margin:6px 0 0">Captured return = −pct_change; positive means the shorted stock fell. Before borrow fees, slippage and commissions; 314 overlapping trades in one holdout year. Short SPY over the same windows: −1.33% per trade. 0.80: 1 short, not shown. Model 20261122T224917Z. It replaced the 5-year regressor, which never beat predicting zero on MAE.</p>
     </div>`,
   init(el) {
     const sl = $("#st-sl", el);
@@ -1666,37 +1642,859 @@ const FAQ = [
   ["What about the Lambda concurrency limit of 10?", "maximum_concurrency 2 on each SQS trigger keeps the queue consumers inside the quota. A burst can still throttle a live-score step, and a failed run loses its tickers (the Pipe starts it fire-and-forget); an increase to 1,000 was requested on 23 November, and a Catch to a queue is the other follow-up."],
   ["Why one IAM role per service?", "A compromised service can do only its own job. Among task and Lambda roles, only inference and the site publisher read the Alpaca keys; training cannot place orders. On ECS the shared execution role injects secrets per task definition."],
 ];
-section({
-  id: "next", title: "Limitations and Q&A", short: "Limits",
-  h1: "Limitations and next steps",
-  thumbStep: 0,
+const S_QA = ({
+  id: "questions", title: "Questions", short: "Q&A",
+  h1: "Questions",
   steps: [
-    { cap: "The evidence is <strong>modest</strong>, and two cloud gaps have known fixes.",
-      notes: ["≈30 s, then questions.", "Model: costs and borrow, a small overlapping sample, and one holdout year that was reused. The next untouched period is the real test.", "Cloud: catch failed <code>live-score</code> runs and alarm on <code>ExecutionsFailed</code>; clear the scraper's exit flag; smaller images.", "Close: the platform is the deliverable. It keeps scoring live filings and can test the next untouched period at almost no standing cost."] },
     { cap: "Click a card for the short answer.",
-      notes: ["Click a card for the short answer. Deeper answers: docs/presentation/glossary-and-faq.md.", "Close with: honest timing, honest evaluation, and a batch path that costs nothing while switched off."] },
+      notes: ["≈30 s, then open questions. The cards prompt the likely ones.", "Deeper answers: docs/presentation/glossary-and-faq.md."] },
   ],
-  svg: () => `
-    <g class="rv" data-s="0" data-u="0">
-      ${[["Costs and borrow", "returns before fees · hard-to-borrow names", "ml", "model", "limit"], ["Small, overlapping sample", "314 shorts in one holdout year", "data", "table", "limit"], ["Holdout reused", "next untouched period is the test", "sec", "gate", "limit"], ["Catch failed live-score runs", "Catch to a queue · alarm on ExecutionsFailed", "int", "sched", "next"], ["Smaller images", "faster in-session cold starts", "ci", "image", "next"]].map(([t, sub, k, i, tag], j, all) => {
-        const x = 60 + (j % 3) * 500, y = 250 + Math.floor(j / 3) * 260;
-        return `<g class="rv" data-s="0" data-u="0" data-d="${j + 1}">
-          ${node({ x, y, w: 460, h: 96, k, i, t, sub, cls: tag === "done" ? "okk" : "" })}
-          <text x="${x}" y="${y - 16}" class="ft">${String(j + 1).padStart(2, "0")}${tag ? " · " + tag : ""}</text>
-          ${j % 3 < 2 && j < all.length - 1 ? `<path class="edge flow" d="M${x + 460} ${y + 48} H${x + 500}" marker-end="url(#ah)"/>` : ""}
-          ${j === 2 ? `<path class="edge flow" d="M${x + 230} ${y + 96} C ${x + 230} ${y + 190}, 290 ${y + 150}, 290 ${y + 255}" marker-end="url(#ah)"/>` : ""}
-        </g>`; }).join("")}
-    </g>`,
   html: () => `
-    <div class="w rv" data-s="1" data-u="1" style="left:60px;top:215px;width:1480px;display:grid;grid-template-columns:repeat(6,1fr);gap:16px">
+    <div class="w rv" data-s="0" style="left:60px;top:215px;width:1480px;display:grid;grid-template-columns:repeat(6,1fr);gap:16px">
       ${FAQ.map(([q, a]) => `<button class="flip faq" style="height:300px"><div class="in"><div class="fa"><h4>${q}</h4><div class="hint">click for the answer</div></div><div class="fb"><p>${a}</p></div></div></button>`).join("")}
     </div>`,
   init(el) { $$(".flip", el).forEach(f => f.addEventListener("click", () => f.classList.toggle("open"))); },
   step(el, s, r) {
-    $(".head h1", el).textContent = s === 1 ? "Questions" : "Limitations and next steps";
-    if (s === 1) { $$(".flip", el).forEach(f => f.classList.remove("open")); r.later(() => stamp(el, 1390, 128, "Your questions", { rot: -8 }), 600); }
+    $$(".flip", el).forEach(f => f.classList.remove("open")); r.later(() => stamp(el, 1390, 128, "Your questions", { rot: -8 }), 600);
   },
 });
+
+/* ===================== New parts: compute and the study website ===================== */
+const LANE_STRIP = (y, label, blocks, ticks, idle) => `
+      <text class="lbl" x="60" y="${y + 18}" style="font-size:15px;font-weight:650">${label}</text>
+      <rect x="200" y="${y}" width="1340" height="24" rx="6" fill="var(--panel2)" stroke="var(--line)"/>
+      ${blocks.map(([a, w]) => `<rect x="${200 + a * 1340}" y="${y}" width="${Math.max(3, w * 1340)}" height="24" rx="3" fill="var(--k-compute)"/>`).join("")}
+      ${ticks.map(([a, t]) => `<text class="lbl" x="${200 + a * 1340}" y="${y + 44}" text-anchor="middle" style="font-size:13px">${t}</text>`).join("")}
+      ${idle.map(([a, t]) => `<text class="lbl" x="${200 + a * 1340}" y="${y - 8}" text-anchor="middle" style="font-size:14px;fill:var(--good)">${t}</text>`).join("")}`;
+const P_COMPUTE = ({
+  id: "compute-lanes",
+  svg: () => `
+    <g transform="translate(0 -312)">
+    ${frame({ s: 0, x: 30, y: 530, w: 1540, h: 300, t: "Batch (R2, D2, D6) · Fargate Spot · per second while running · no time limit" })}
+    ${[["Saturday schedule", "06:00 UTC", "sched", "int"], ["Step Functions", "retrain", "sfn", "int"], ["Fargate Spot task", "per step · On-Demand fallback", "fargate", "compute"], ["Runs for hours", "5-year scrape 37–49 h", "fargate", "compute"], ["Task stops", "idle until next week", "check", "store"]].map(([t, sub, i, k], j) => node({ s: 0, dl: j + 7, x: 50 + j * 302, y: 574, w: 282, h: 72, k, i, t, sub })).join("")}
+    ${[0, 1, 2, 3].map(j => edge({ s: 0, d: `M${332 + j * 302} 610 H${352 + j * 302}` })).join("")}
+    ${label({ s: 0, x: 1065, y: 672, a: "middle", t: "training ≈16 min at 16 vCPU" })}
+    <g class="rv" data-s="0" data-d="12">${LANE_STRIP(720, "One week", [[0.7738, 0.06]], [[0.0714, "Mon"], [0.2143, "Tue"], [0.3571, "Wed"], [0.5, "Thu"], [0.6429, "Fri"], [0.7857, "Sat"], [0.9286, "Sun"]], [[0.36, "idle = $0"], [0.8, "retrain"]])}</g>
+    </g>
+    <g transform="translate(0 326)">
+    ${frame({ s: 0, x: 30, y: 218, w: 1540, h: 286, t: "Live (R1, D1) · Lambda · per invocation · 15-min limit" })}
+    ${[["Filing accepted", "accepted_at", "doc", "ext"], ["Scheduler poll", "every minute", "sched", "int"], ["Lambda per event", "cold 10–45 s · warm a few s", "lambda", "compute"], ["Scores the filing", "within ~1–2 min", "model", "ml"], ["Stops", "nothing bills until next filing", "check", "store"]].map(([t, sub, i, k], j) => node({ s: 0, dl: j + 1, x: 50 + j * 302, y: 262, w: 282, h: 72, k, i, t, sub })).join("")}
+    ${[0, 1, 2, 3].map(j => edge({ s: 0, d: `M${332 + j * 302} 298 H${352 + j * 302}` })).join("")}
+    <g class="rv" data-s="0" data-d="6">${LANE_STRIP(410, "One trading day", [[0.06, 0.003], [0.11, 0.003], [0.13, 0.003], [0.24, 0.003], [0.31, 0.003], [0.33, 0.003], [0.47, 0.003], [0.52, 0.003], [0.61, 0.003], [0.66, 0.003], [0.68, 0.003], [0.79, 0.003], [0.88, 0.003], [0.93, 0.003]], [[0, "00:00"], [0.25, "06:00"], [0.5, "12:00"], [0.75, "18:00"], [1, "24:00"]], [[0.18, "idle = $0"], [0.4, "idle = $0"], [0.84, "idle = $0"]])}</g>
+    </g>
+    ${label({ s: 0, x: 800, y: 868, a: "middle", t: "Both run ARM64 (Graviton), about 20% below x86_64 (D4).", cls: "big" })}`,
+});
+
+const P_SITE = ({
+  id: "site-dia",
+  svg: () => `
+    ${node({ s: 0, dl: 1, id: "w-user", x: 50, y: 250, w: 250, k: "ext", i: "person", t: "Client browser", sub: "password" })}
+    ${edge({ s: 0, d: "M300 286 H370" })}
+    ${frame({ s: 0, x: 370, y: 205, w: 560, h: 190, t: "CloudFront · edge" })}
+    ${node({ s: 0, dl: 2, id: "w-auth", x: 395, y: 250, w: 250, k: "sec", i: "key", t: "Basic auth", sub: "hash in KeyValueStore" })}
+    ${edge({ s: 0, d: "M645 286 H680" })}
+    ${node({ s: 0, dl: 3, id: "w-cf", x: 680, y: 250, w: 225, k: "data", i: "globe", t: "Distribution", sub: "HTTPS · cache" })}
+    ${edge({ s: 0, d: "M930 286 H1010" })}
+    ${label({ s: 1, x: 970, y: 270, a: "middle", t: "OAC", cls: "acc" })}
+    ${node({ s: 0, dl: 4, id: "w-s3", x: 1010, y: 250, w: 300, k: "store", i: "s3", t: "Private S3 bucket", sub: "static files + data/*.json" })}
+    ${node({ s: 0, dl: 5, id: "w-pub", x: 1010, y: 520, w: 300, k: "compute", i: "lambda", t: "site-publisher λ", sub: "every minute · after live-score" })}
+    ${edge({ s: 0, d: "M1160 520 V322" })}
+    ${label({ s: 0, x: 1175, y: 430, t: "writes data/*.json" })}
+    ${node({ s: 0, dl: 6, x: 50, y: 470, w: 420, k: "data", i: "table", t: "Lakehouse and models", sub: "read only" })}
+    ${node({ s: 0, dl: 7, x: 50, y: 560, w: 420, k: "int", i: "sfn", t: "Step Functions · SQS · CloudWatch", sub: "run history, queues, metrics" })}
+    ${node({ s: 0, dl: 8, x: 50, y: 650, w: 420, k: "ext", i: "short", t: "Alpaca paper account", sub: "read endpoints only" })}
+    ${edge({ s: 0, d: "M470 506 C 760 506, 760 556, 1010 556" })}
+    ${edge({ s: 0, d: "M470 596 C 760 596, 760 556, 1010 556" })}
+    ${edge({ s: 0, d: "M470 686 C 760 686, 760 556, 1010 556" })}
+    ${label({ s: 0, x: 800, y: 790, a: "middle", t: "No API: the browser fetches only static files, so no code runs per internet request (D21).", cls: "big" })}
+    ${label({ s: 1, x: 640, y: 440, a: "middle", t: "D23: the password hash stays out of the code and the Terraform state", cls: "acc" })}
+    ${label({ s: 1, x: 1160, y: 230, a: "middle", t: "D22: the bucket admits only this distribution", cls: "acc" })}`,
+  step(el, s, r) { if (s === 1) r.later(() => stamp(el, 1380, 640, "No public API", { rot: -6 }), 600); },
+});
+
+const OVL = (x, y, t, a = "start") => `<text class="lbl" x="${x}" y="${y}" text-anchor="${a}" style="font-size:14px">${t}</text>`;
+const QC = (x, y, w, t, k = "int", fs = 13, ic = "sqs") => `<g><rect x="${x}" y="${y}" width="${w}" height="34" rx="9" fill="var(--panel)" stroke="var(--k-${k})" stroke-width="1.8"/><rect x="${x + 5}" y="${y + 5}" width="24" height="24" rx="6" fill="var(--k-${k})"/><g class="ig" transform="translate(${x + 9} ${y + 9}) scale(0.67)">${ICON[ic]}</g><text x="${x + 17 + w / 2}" y="${y + 22}" text-anchor="middle" style="font-size:${fs}px;font-weight:650;fill:var(--ink)">${t}</text></g>`;
+const XL = d => `<path class="edge" d="${d}" style="stroke:var(--faint);stroke-dasharray:1 5;stroke-linecap:round" marker-end="url(#ah)"/>`;
+const P_OVERVIEW = ({
+  id: "overview-dia",
+  svg: () => `<g transform="translate(25 248) scale(0.95)" class="ov-sm">
+    <g class="rv" data-s="0">
+      ${frame({ x: 137, y: 0, w: 1501, h: 100, t: "" })}${ICO(152, 9, "sfn", "int", 24)}<text class="ft" x="184" y="27">Batch path · Step Functions retrain runs the six ECS Fargate tasks in order</text>
+      ${frame({ x: 137, y: 470, w: 1501, h: 100, t: "Live path · Lambda" })}
+      <rect x="937" y="496" width="699" height="70" rx="12" fill="none" stroke="var(--k-int)" stroke-width="1.6" stroke-dasharray="6 5"/>
+      ${ICO(1404, 473, "sfn", "int", 22)}<text class="lbl" x="1630" y="490" text-anchor="end" style="font-size:13px;fill:var(--k-int);font-weight:650">Step Functions · live-score</text>
+      ${frame({ x: 715, y: 175, w: 923, h: 220, t: "" })}
+      ${ICO(735, 248, "s3", "store", 26)}${ICO(767, 248, "table", "data", 26)}<text class="ft" x="735" y="296">Iceberg tables</text><text class="ft" x="735" y="316">on S3 + Glue</text>
+      ${QC(-14, 45, 150, "Sched. · Sat 06:00", "int", 11, "sched")}${QC(-14, 515, 150, "Sched. · 1 min", "int", 11, "sched")}
+      ${[["mi", 145, 180, "master-index", "lists filings"], ["sc", 430, 160, "scraper", "parses Form 4"], ["ks", 725, 195, "kafka-to-store", "upserts"], ["yc", 945, 190, "yahoo-connect", "daily prices"], ["tg", 1160, 180, "target", "features + label"], ["tr", 1460, 170, "training", "fits, saves"]].map(([id, x, w, t, sub]) => node({ id: `ob-${id}`, x, y: 36, w, h: 52, k: "compute", i: "fargate", t, sub })).join("")}
+      ${[["po", 145, 180, "poller", "every minute"], ["sc", 430, 160, "scraper", "parses Form 4"], ["ks", 725, 195, "kafka-to-store", "upserts"], ["yc", 945, 190, "yahoo-connect", "daily prices"], ["tg", 1160, 180, "target", "features, no label"], ["in", 1460, 170, "inference", "scores, orders"]].map(([id, x, w, t, sub]) => node({ id: `ol-${id}`, x, y: 506, w, h: 52, k: "compute", i: "lambda", t, sub })).join("")}
+      ${QC(316, 112, 108, "filings")}${QC(586, 112, 136, "transactions", "int", 12)}
+      <path class="edge" d="M300 88 V129 H328" marker-end="url(#ah)"/><path class="edge" d="M420 129 H452 V90" marker-end="url(#ah)"/>
+      <path class="edge" d="M570 88 V129 H598" marker-end="url(#ah)"/><path class="edge" d="M715 129 H745 V90" marker-end="url(#ah)"/>
+      ${QC(333, 515, 90, "live-filings", "int", 9.5)}${QC(598, 515, 120, "live-trans.", "int", 11)}
+      ${QC(752, 588, 124, "live-tickers", "int", 12)}${QC(888, 588, 92, "Pipe", "int", 13, "pipe")}
+      ${QC(150, 588, 160, "DynamoDB seen", "data", 13, "ddb")}${QC(1470, 588, 160, "Alpaca paper", "ext", 13, "short")}
+      ${[[130, 143], [325, 428], [590, 723], [920, 943], [1135, 1158], [1340, 1458]].map(([a, b]) => edge({ d: `M${a} 62 H${b}` })).join("")}
+      ${[[130, 143], [325, 333], [420, 428], [590, 598], [715, 723], [1135, 1158], [1340, 1458]].map(([a, b]) => edge({ d: `M${a} 532 H${b}` })).join("")}
+      ${edge({ d: "M822 558 V586" })}${edge({ d: "M875 605 H888" })}${edge({ d: "M955 588 V560" })}
+      <path class="edge dashed" d="M235 558 V588" data-noamb="1"/>${edge({ d: "M1547 558 V586" })}
+      ${node({ x: 0, y: 250, w: 130, h: 50, k: "ext", i: "globe", t: "SEC", sub: "EDGAR" })}
+      ${node({ x: 520, y: 250, w: 160, h: 50, k: "ext", i: "globe", t: "Yahoo", sub: "Finance" })}
+      ${XL("M40 250 V160 H200 V90")}${XL("M80 250 V172 H470 V90")}${XL("M40 300 V420 H200 V504")}${XL("M80 300 V440 H470 V504")}
+      ${XL("M600 250 V160 H955 V90")}${XL("M600 300 V452 H960 V504")}
+    </g>
+    ${node({ s: 0, x: 735, y: 190, w: 170, h: 46, k: "data", i: "table", t: "BT4", sub: "batch transactions" })}
+    ${node({ s: 0, x: 735, y: 335, w: 170, h: 46, k: "data", i: "table", t: "BI4", sub: "live transactions" })}
+    <g data-hl="1">${node({ s: 0, x: 960, y: 190, w: 150, h: 191, k: "data", i: "table", t: "P", sub: "prices" })}</g>
+    <g data-hl="1">${node({ s: 0, x: 1170, y: 190, w: 150, h: 191, k: "data", i: "table", t: "RT4", sub: "labelled rows" })}</g>
+    ${node({ s: 0, x: 1340, y: 335, w: 112, h: 46, k: "data", i: "table", t: "BIR4" })}
+    <g data-hl="1">${node({ s: 0, x: 1470, y: 190, w: 155, h: 191, k: "store", i: "s3", t: "models/", sub: "latest.json" })}</g>
+    <g class="rv" data-s="0">
+      <path class="edge" d="M822 88 V188" marker-end="url(#ah)"/>
+      <path class="edge dashed" d="M900 190 L978 92" marker-end="url(#ah)"/>
+      <path class="edge" d="M1060 88 V188" marker-end="url(#ah)"/><path class="edge dashed" d="M1010 190 V92" marker-end="url(#ah)"/>${OVL(1068, 142, "upserts")}
+      <path class="edge dashed" d="M905 196 L1166 95" marker-end="url(#ah)"/><path class="edge dashed" d="M1105 190 L1180 95" marker-end="url(#ah)"/>${OVL(1186, 140, "reads")}
+      <path class="edge" d="M1250 88 V188" marker-end="url(#ah)"/>
+      <path class="edge dashed" d="M1318 195 L1478 92" marker-end="url(#ah)"/>
+      <path class="edge" d="M1547 88 V188" marker-end="url(#ah)"/>
+      <path class="edge" d="M822 506 V383" marker-end="url(#ah)"/>
+      <path class="edge" d="M1060 506 V383" marker-end="url(#ah)"/><path class="edge dashed" d="M1010 381 V504" marker-end="url(#ah)"/>${OVL(1068, 452, "upserts")}
+      <path class="edge dashed" d="M905 377 L1166 502" marker-end="url(#ah)"/><path class="edge dashed" d="M1105 381 L1180 502" marker-end="url(#ah)"/>${OVL(1110, 480, "reads", "end")}
+      <path class="edge dashed" d="M1215 381 V504" marker-end="url(#ah)"/>${OVL(1223, 470, "past labels")}
+      <path class="edge" d="M1325 506 L1392 383" marker-end="url(#ah)"/>
+      <path class="edge dashed" d="M1430 381 L1490 504" marker-end="url(#ah)"/>
+      <path class="edge dashed" d="M1590 381 V504" marker-end="url(#ah)"/>${OVL(1582, 452, "latest.json", "end")}
+    </g>
+    <g class="rv" data-s="0" transform="translate(0 640)">
+      <line x1="0" y1="0" x2="40" y2="0" stroke="var(--edge)" stroke-width="2.2"/>${OVL(48, 5, "writes")}
+      <line x1="120" y1="0" x2="160" y2="0" stroke="var(--edge)" stroke-width="2.2" stroke-dasharray="4 6"/>${OVL(168, 5, "reads")}
+      ${QC(240, -17, 72, "SQS")}${OVL(308, 5, "queue (every SQS queue has a DLQ)")}
+      <rect x="560" y="-14" width="44" height="28" rx="8" fill="none" stroke="var(--k-int)" stroke-width="1.6" stroke-dasharray="6 5"/>${OVL(612, 5, "Step Functions")}
+      <line x1="740" y1="0" x2="780" y2="0" stroke="var(--faint)" stroke-width="2.2" stroke-dasharray="1 5" stroke-linecap="round"/>${OVL(788, 5, "external (SEC EDGAR, Yahoo Finance, Alpaca)")}
+    </g>
+    ${label({ s: 1, x: 330, y: 205, a: "middle", t: "Where the paths meet:", cls: "acc" })}${label({ s: 1, x: 330, y: 231, a: "middle", t: "P, RT4 and models/", cls: "acc" })}
+  </g>`,
+  step(el, s, r) { if (s === 1) r.later(() => stamp(el, 340, 520, "Shared", { rot: -6 }), 500); },
+});
+
+
+const ICO = (x, y, i, k, sz = 40, dim = false) => `<g opacity="${dim ? 0.35 : 1}"><rect x="${x}" y="${y}" width="${sz}" height="${sz}" rx="${sz / 4}" fill="var(--k-${dim ? "ext" : k})"/><g class="ig" transform="translate(${x + sz * 0.23} ${y + sz * 0.23}) scale(${sz / 44})">${ICON[i]}</g></g>`;
+const RS_COLS = [["sqs", "int", "SQS"], ["table", "data", "lakehouse"], ["s3", "store", "models/"], ["key", "sec", "Alpaca keys"], ["short", "ext", "Alpaca API"]];
+const RS_ROWS = [["fargate", "scraper task", ["y", "x", "x", "x", "x"]], ["fargate", "training", ["x", "y", "y", "x", "x"]], ["lambda", "inference", ["x", "y", "y", "y", "y"]], ["lambda", "site publisher", ["y", "y", "y", "g", "g"]]];
+const P_RUNSEC = ({
+  id: "runtime-security",
+  svg: () => `
+    <g class="rv" data-s="0">
+      ${frame({ x: 30, y: 214, w: 960, h: 520, t: "One role per service (D15)" })}
+      ${RS_COLS.map(([i, k, t], c) => `${ICO(328 + c * 128, 250, i, k, 40)}<text class="lbl" x="${348 + c * 128}" y="310" text-anchor="middle" style="font-size:14px;font-weight:650">${t}</text>`).join("")}
+      ${RS_ROWS.map(([i, t, cells], r) => `
+        ${node({ x: 50, y: 334 + r * 96, w: 230, h: 64, k: "compute", i, t })}${t === "site publisher" ? `<rect x="580" y="${398 + r * 96}" width="380" height="24" rx="12" fill="var(--warn)"/><text x="770" y="${415 + r * 96}" text-anchor="middle" style="font-size:12.5px;font-weight:800;fill:#fff">trade-capable keys · read-only by code, not IAM</text>` : ""}
+        ${cells.map((v, c) => { const x = 328 + c * 128, y = 346 + r * 96; return v === "x"
+          ? `${ICO(x, y, RS_COLS[c][0], RS_COLS[c][1], 40, true)}<text x="${x + 34}" y="${y + 44}" style="font-size:22px;font-weight:900;fill:var(--bad)">✕</text>`
+          : `<path class="edge" d="M282 ${366 + r * 96} H${x - 4}" style="opacity:.0"/>${ICO(x, y, RS_COLS[c][0], RS_COLS[c][1], 40)}<text x="${x + 32}" y="${y + 6}" style="font-size:20px;font-weight:900;fill:var(--good)">✓</text>`; }).join("")}`).join("")}
+    </g>
+    <g class="rv" data-s="0">
+      ${frame({ x: 1010, y: 214, w: 560, h: 520, t: "Secrets: SSM SecureString (D16)" })}
+      ${node({ x: 1030, y: 256, w: 220, h: 64, k: "sec", i: "key", t: "SSM", sub: "3 parameters" })}
+      ${["sec-user-agent", "alpaca-api-key", "alpaca-api-secret"].map((t, k) => `${ICO(1270, 252 + k * 30, "key", "sec", 24)}<text class="lbl mono" x="1302" y="${269 + k * 30}" style="font-size:13px">${t}</text>`).join("")}
+      ${node({ x: 1030, y: 380, w: 260, h: 64, k: "sec", i: "shield", t: "ECS execution role", sub: "injects at task start" })}
+      <rect x="1030" y="452" width="400" height="22" rx="11" fill="var(--warn)"/><text x="1230" y="467" text-anchor="middle" style="font-size:12px;font-weight:800;fill:#fff">can read all /secform4strategy/* · task definition limits it</text>
+      ${node({ x: 1330, y: 380, w: 220, h: 64, k: "compute", i: "fargate", t: "inference task", sub: "only Alpaca keys" })}
+      ${edge({ d: "M1140 320 V378" })}${edge({ d: "M1290 412 H1328" })}
+      ${node({ x: 1030, y: 520, w: 260, h: 64, k: "compute", i: "lambda", t: "Lambda", sub: "reads at cold start" })}
+      <path class="edge" d="M1090 320 C 1000 420, 1000 500, 1060 518" marker-end="url(#ah)"/>
+      <text class="lbl mono" x="1300" y="558" style="font-size:13px">SSM_PARAMETERS</text>
+      ${node({ x: 1030, y: 620, w: 260, h: 64, k: "ci", i: "tf", t: "Terraform state", sub: "plain text" })}
+      <g transform="translate(1320 630)"><rect width="200" height="44" rx="22" fill="var(--bad-soft)" stroke="var(--bad)" stroke-width="1.6"/><text x="100" y="28" text-anchor="middle" style="font-size:15px;font-weight:800;fill:var(--bad)">✕ no secrets</text></g>
+    </g>
+    <g class="rv" data-s="0">
+      <text class="lbl" x="40" y="776" style="font-size:16px"><tspan style="font-weight:800;fill:var(--muted)">NETWORK</tspan>  no public IP · no inbound rules · Lambdas: no inbound</text>
+    </g>`,
+});
+
+
+const P_COST = ({
+  id: "cost-detail",
+  html: () => `
+    <div class="w card rv" data-s="0" data-u="0" style="left:40px;top:212px;width:1010px;padding:18px 22px">
+      <div class="lab">Cost states</div>
+      <div style="display:grid;grid-template-columns:260px 240px 1fr;font-size:20px;margin-top:8px">
+        ${[["State", "Cost", "What bills"],
+           ["Dormant<br><span style='color:var(--muted)'>all switches off</span>", "about $0 per day", "S3 and ECR storage only"],
+           ["Batch path on<br><span class='mono' style='font-size:13px'>switched_on = true</span>", "about $1.20 per day plus usage", "NAT gateway $1.08 + Elastic IP $0.12 per day, plus Fargate Spot, NAT data and Athena"], ["Live only <span class='tag acc'>today</span><br><span class='mono' style='font-size:13px'>live_enabled = true</span>", "cents to a few dollars per month", "Lambda invocations, Step Functions transitions, SQS and DynamoDB requests, the publisher at about $1 per month; no NAT gateway, no EIP"]].map((row, k) => row.map((c, j) => `<div style="padding:16px 12px;border-bottom:1px solid var(--line);${k === 0 ? "font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)" : j === 1 ? "font-weight:700" : ""}">${c}</div>`).join("")).join("")}
+      </div>
+      <p style="font-size:19px;margin:18px 0 0"><span class="tag bad">rejected</span> An always-on NAT gateway alone costs about $32 per month, over three times the budget (D19).</p>
+    </div>
+    <div class="w card rv" data-s="0" data-u="0" style="left:1070px;top:212px;width:490px;padding:20px 24px;font-size:19px">
+      <div class="lab">Switches on master</div>
+      ${[["switched_on", "false", "batch path and its NAT gateway"], ["live_enabled", "true", "live poller, independent of switched_on"], ["weekly_retrain_enabled", "true", "Saturday retrain, only while switched_on"]].map(([k, v, d]) => `<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:16px 0"><div><div class="mono" style="font-weight:650">${k}</div><div style="color:var(--muted);font-size:15.5px">${d}</div></div><span class="tag ${v === "true" ? "good" : ""}">${v}</span></div>`).join("")}
+      <p style="margin:12px 0 0;color:var(--muted);font-size:14.5px">The site publisher runs while switched_on or live_enabled. A full load needs live_enabled off.</p>
+    </div>
+    <div class="w card rv" data-s="1" data-u="1" style="left:40px;top:226px;width:720px;padding:20px 24px">
+      <div class="lab">1–23 November 2026 · the backfill month</div>
+      ${[["EC2 – Other (NAT)", 4.70], ["ECS (Fargate)", 2.53], ["S3", 0.44], ["VPC", 0.39], ["SQS", 0.23]].map(([n, v]) => `<div style="display:grid;grid-template-columns:200px 1fr 80px;align-items:center;gap:12px;margin-top:14px;font-size:20px"><span>${n}</span><div style="height:24px;border-radius:12px;background:var(--panel2)"><div style="height:24px;border-radius:12px;width:${v / 4.70 * 100}%;background:var(--k-compute)"></div></div><b class="mono" style="text-align:right">$${v.toFixed(2)}</b></div>`).join("")}
+      <div style="margin-top:26px;font-size:20px;display:flex;justify-content:space-between"><b>$8.52 of $10</b><span style="color:var(--muted);font-size:16px">credits covered it</span></div>
+      <div style="position:relative;height:30px;border-radius:15px;background:var(--panel2);margin-top:10px">
+        <div style="position:absolute;left:0;top:0;bottom:0;width:85.2%;border-radius:15px;background:var(--accent)"></div>
+        <div style="position:absolute;left:50%;top:-6px;bottom:-6px;width:3px;background:var(--warn)"></div><div style="position:absolute;right:0;top:-6px;bottom:-6px;width:3px;background:var(--bad)"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;color:var(--muted);margin-top:6px"><span>$0</span><span style="color:var(--warn)">50% · actual-cost alert</span><span style="color:var(--bad)">100% · forecast alert</span></div>
+    </div>
+    <div class="w rv" data-s="1" data-u="1" style="left:790px;top:226px;width:770px">
+      <div class="lab">Guardrails</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px">
+        ${[["dollar", "sec", "Budget", "$10 · 50% / 100% · alerts only"], ["table", "data", "Athena", "cap 1 GiB per query"], ["logs", "data", "Logs", "kept 14 days"], ["bell", "sec", "DLQ alarm", "SQS → CloudWatch → SNS → email"]].map(([i, k, t, d]) => `<div class="card" style="padding:14px 16px;display:flex;gap:12px;align-items:center"><svg width="42" height="42" viewBox="0 0 44 44"><rect width="44" height="44" rx="11" fill="var(--k-${k})"/><g class="ig" transform="translate(10 10)">${ICON[i]}</g></svg><div><div style="font-weight:750;font-size:19px">${t}</div><div style="color:var(--muted);font-size:15px">${d}</div></div></div>`).join("")}
+      </div>
+      <div class="lab" style="margin-top:20px">Observability</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:10px">
+        ${[["logs", "data", "Dashboard", "queues · runs · errors"], ["fargate", "compute", "Container Insights", "task CPU, memory"], ["check", "ci", "make status", "about 15 s"]].map(([i, k, t, d]) => `<div class="card" style="padding:14px 14px;display:flex;gap:10px;align-items:center"><svg width="38" height="38" viewBox="0 0 44 44"><rect width="44" height="44" rx="11" fill="var(--k-${k})"/><g class="ig" transform="translate(10 10)">${ICON[i]}</g></svg><div><div style="font-weight:750;font-size:17px">${t}</div><div style="color:var(--muted);font-size:14px">${d}</div></div></div>`).join("")}
+      </div>
+      <div style="display:flex;gap:12px;margin-top:20px">${["no alarm on failed runs", "Pipe has no DLQ"].map(t => `<span style="background:var(--warn);color:#fff;font-weight:800;font-size:15px;padding:7px 14px;border-radius:999px">known limit · ${t}</span>`).join("")}</div>
+    </div></div>`,
+});
+
+const WS = (x, y, t, a = "start", c = "") => `<text class="lbl ${c}" x="${x}" y="${y}" text-anchor="${a}" style="font-size:13.5px">${t}</text>`;
+const P_SITE2 = ({
+  id: "site-fig5",
+  svg: () => `
+    ${node({ s: 0, id: "ws-view", x: 30, y: 262, w: 250, h: 64, k: "ext", i: "person", t: "Viewer browser", sub: "HTTPS · Basic auth" })}
+    ${frame({ s: 0, x: 300, y: 218, w: 600, h: 254, t: "Edge · CloudFront (global)" })}
+    ${node({ s: 0, id: "ws-fn", x: 318, y: 262, w: 270, h: 64, k: "sec", i: "key", t: "site-auth function", sub: "every request · 401 if wrong" })}
+    ${node({ s: 0, id: "ws-kvs", x: 318, y: 362, w: 270, h: 60, k: "sec", i: "key", t: "KeyValueStore", sub: "credential_sha256", submono: true })}
+    <path class="rv edge dashed" data-s="0" d="M453 362 V330" marker-end="url(#ah)" data-noamb="1"/>
+    ${node({ s: 0, id: "ws-cf", x: 612, y: 262, w: 274, h: 64, k: "data", i: "globe", t: "Distribution", sub: "HTTPS only · GET, HEAD" })}
+    <g class="rv" data-s="0">${WS(749, 352, "http → 301 · gzip, brotli", "middle")}${WS(749, 374, "* static ≤ 60 s (site-static)", "middle")}${WS(749, 396, "data/* ≤ 5 s (site-data)", "middle")}</g>
+    ${edge({ s: 0, id: "ws-e1", d: "M280 294 H316" })}
+    ${edge({ s: 0, id: "ws-e2", d: "M588 294 H610" })}
+    ${edge({ s: 0, id: "ws-e3", d: "M886 294 H938" })}
+    <g class="rv" data-s="0">${WS(912, 282, "OAC", "middle", "acc")}</g>
+    ${frame({ s: 0, x: 920, y: 218, w: 660, h: 644, t: "Region us-east-1" })}
+    ${node({ s: 0, id: "ws-s3", x: 940, y: 262, w: 330, h: 64, k: "store", i: "s3", t: "S3 site bucket", sub: "static files · data/*.json" })}
+    ${node({ s: 0, id: "ws-pub", x: 1290, y: 380, w: 270, h: 70, k: "compute", i: "lambda", t: "site-publisher λ", sub: "arm64 · outside the VPC" })}
+    ${edge({ s: 0, id: "ws-e8", d: "M1330 380 C 1330 350, 1250 345, 1240 328" })}
+    <g class="rv" data-s="0">${WS(1300, 346, "writes live · health · portfolio · model · explore .json")}</g>
+    ${node({ s: 0, id: "ws-sch", x: 940, y: 372, w: 320, h: 60, k: "int", i: "sched", t: "Scheduler site-publish", sub: "rate(1 minute) · mode all" })}
+    ${node({ s: 0, id: "ws-rule", x: 940, y: 452, w: 320, h: 60, k: "int", i: "bolt", t: "Rule live-score-finished", sub: "run ends · mode live" })}
+    ${edge({ s: 0, id: "ws-e4", d: "M1260 402 H1288" })}
+    ${edge({ s: 0, id: "ws-e5", d: "M1260 482 C 1276 482, 1276 440, 1288 438" })}
+    ${frame({ s: 0, x: 934, y: 560, w: 632, h: 222, t: "Reads, read-only" })}
+    ${[["Step Functions", "live-score, retrain runs", "sfn", "int"], ["SQS", "5 queues + DLQs", "sqs", "int"], ["CloudWatch", "live Lambda metrics", "logs", "data"], ["Scheduler state", "schedules", "sched", "int"], ["S3 data + Glue", "warehouse/, models/", "s3", "store"], ["SSM", "Alpaca keys", "key", "sec"]].map(([t, sub, i, k], j) => node({ s: 0, x: 950 + (j % 2) * 308, y: 596 + Math.floor(j / 2) * 60, w: 296, h: 52, k, i, t, sub })).join("")}
+    ${edge({ s: 0, id: "ws-e6", d: "M1425 560 V452", cls: "flow dashed" })}
+    ${node({ s: 0, id: "ws-ecr", x: 940, y: 796, w: 330, h: 54, k: "ci", i: "image", t: "ECR site-publisher", sub: "linux/arm64 image" })}
+    ${frame({ s: 0, x: 20, y: 480, w: 270, h: 200, t: "Internet" })}
+    ${node({ s: 0, x: 34, y: 520, w: 242, h: 60, k: "ext", i: "short", t: "Alpaca paper API", sub: "account · positions · orders" })}
+    ${node({ s: 0, x: 34, y: 600, w: 242, h: 60, k: "ext", i: "globe", t: "Yahoo Finance", sub: "SPY prices" })}
+    ${edge({ s: 0, id: "ws-e7", d: "M276 550 C 560 550, 640 532, 905 532 H1300 V454", cls: "flow dashed" })}
+    ${edge({ s: 0, d: "M276 630 C 560 630, 640 532, 905 532", cls: "flow dashed", noarrow: true })}
+    <g class="rv" data-s="0">${WS(300, 652, "SPY prices → Model page benchmark")}</g>
+    ${frame({ s: 0, x: 20, y: 712, w: 880, h: 150, t: "CI · GitHub Actions" })}
+    ${node({ s: 0, id: "ws-img", x: 36, y: 752, w: 400, h: 64, k: "ci", i: "git", t: "images.yml", sub: "site-publisher image · linux/arm64" })}
+    ${node({ s: 0, id: "ws-tf", x: 470, y: 752, w: 414, h: 64, k: "ci", i: "tf", t: "terraform.yml · github-apply", sub: "OIDC · master · after approval in aws" })}
+    <g class="rv" data-s="0">${WS(677, 857, "uploads site/ (aws_s3_object; not data/, fixtures/, README.md)", "middle")}</g>
+    ${edge({ s: 0, id: "ws-e9", d: "M240 816 V836 H922 Q930 836 930 830 V826 H938" })}
+    ${edge({ s: 0, id: "ws-e10", d: "M884 772 H910 V312 H938" })}
+    ${pill({ s: 0, x: 150, y: 232, t: "1 Serve", w: 110, cls: "ws-f1" })}
+    ${pill({ s: 0, x: 1450, y: 246, t: "2 Trigger", w: 120, cls: "ws-f2" })}
+    ${pill({ s: 0, x: 1500, y: 540, t: "3 Publish", w: 120, cls: "ws-f3" })}
+    ${pill({ s: 0, x: 150, y: 700, t: "4 Deploy", w: 120, cls: "ws-f4" })}
+    <g class="rv" data-s="1">${WS(320, 446, "D23: the password hash lives only in the KeyValueStore,", "start", "acc")}${WS(320, 464, "out of the code and the Terraform state", "start", "acc")}${WS(640, 694, "D21: no API; the browser fetches only static files", "middle", "acc")}${WS(944, 352, "D22: OAC, the bucket admits only this distribution", "start", "acc")}</g>`,
+  html: () => `<div class="w rv" data-s="0" style="left:30px;top:400px"><button class="btn ghost" id="ws-go">▶ Replay the flows</button></div>`,
+  init(el) { $("#ws-go", el).addEventListener("click", () => { bump(); const r = runner(); this.play(el, r); }); },
+  async play(el, r) {
+    const svg = $("svg.dia", el);
+    const hot = ids => { $$(".node", el).forEach(n => n.parentNode.classList.remove("hot")); ids.forEach(id => tog(el, "#" + id, "hot", true)); };
+    const flows = [[["ws-e1", "ws-e2", "ws-e3"], "1 serve", ["ws-view", "ws-fn", "ws-cf", "ws-s3"], ".ws-f1"], [["ws-e4", "ws-e5"], "2 trigger", ["ws-sch", "ws-rule", "ws-pub"], ".ws-f2"], [["ws-e6", "ws-e7", "ws-e8"], "3 publish", ["ws-pub", "ws-s3"], ".ws-f3"], [["ws-e9", "ws-e10"], "4 deploy", ["ws-img", "ws-ecr", "ws-tf", "ws-s3"], ".ws-f4"]];
+    const pill = sel => $$(".ws-f1, .ws-f2, .ws-f3, .ws-f4", el).forEach(g => g.classList.toggle("ws-on", !!sel && g.matches(sel)));
+    for (const [edges, lbl, ids, sel] of flows) {
+      hot(ids); pill(sel);
+      for (const e of edges) { if (!await r.travel(svg, [e], { dur: 2600, label: lbl })) return; }
+      if (!await r.sleep(1500)) return;
+    }
+    hot([]); pill(null);
+  },
+  step(el, s, r) {
+    if (s === 0) r.sleep(600).then(ok => ok && this.play(el, r));
+    if (s === 1) r.later(() => stamp(el, 640, 630, "No public API", { rot: -6 }), 500);
+  },
+});
+
+const IMAGES8 = ["master-index", "scraper", "kafka-to-store", "yahoo-connect", "target", "training", "inference", "site-publisher"];
+const P_CODE = ({
+  id: "code-structure",
+  html: () => `
+    <div class="w card rv" data-s="0" style="left:40px;top:212px;width:650px;padding:18px 22px">
+      <div class="lab">Repository · one uv project per image</div>
+      <pre class="code" style="margin-top:10px;font-size:13.5px;line-height:1.55;white-space:pre;overflow:hidden">sec-feature-pipeline/     <span class="c">master-index, scraper, kafka-to-store</span>
+prices-feature-pipeline/  <span class="c">yahoo_connect, target</span>
+training/  inference/  site-publisher/
+<span id="cs-pkg" style="font-weight:700">packages/secform4strategy-clients/</span>
+  ports.py      <span class="c">Protocols the services depend on</span>
+  sqs.py, feature_store.py, broker.py, ...
+                <span class="c">one adapter per outside system</span>
+  fakes/        <span class="c">typed in-memory adapters for tests</span></pre>
+      <p style="font-size:15.5px;color:var(--muted);margin:10px 0 0">Each SDK is an optional extra. <code>main.py</code> / <code>handler.py</code> build the adapters, so the same code runs locally and on AWS.</p>
+    </div>
+    <div class="w card rv" data-s="0" style="left:710px;top:212px;width:850px;padding:18px 22px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="lab" style="white-space:nowrap">images.yml · 8 images from the repo root</div>
+        <div style="white-space:nowrap">${seg("cs-case", ["change scraper/", "change clients package"])}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px">
+        ${IMAGES8.map(n => `<div class="cs-tile" data-img="${n}" style="border:1.5px solid var(--line);border-radius:12px;padding:16px 14px;transition:all .4s"><div class="mono" style="font-weight:650;font-size:17px">${n}</div><div class="cs-st" style="font-size:15px;color:var(--muted);margin-top:6px"></div></div>`).join("")}
+      </div>
+      <p style="font-size:15.5px;margin:14px 0 0">The tag is the last commit that changed the service or the shared package. <b>Same tag → skip the build → no redeploy</b> (tags are immutable).</p>
+    </div>
+    <div class="w rv" data-s="0" style="left:40px;top:680px;width:1520px;display:flex;gap:18px;font-size:20px">
+      ${[["good", "quality.yml", "tests + Trivy"], ["acc", "images.yml", "1 vs 8 rebuilds"], ["", "terraform.yml", "changed only"]].map(([t, a, b]) => `<div class="card" style="padding:16px 22px;display:flex;gap:12px;align-items:center"><span class="tag ${t}">${a}</span><b>${b}</b></div>`).join("")}
+    </div>`,
+  init(el) { segOn(el, "cs-case", v => this.show(el, v)); },
+  show(el, v) {
+    segSet(el, "cs-case", v);
+    $("#cs-pkg", el).style.color = v ? "var(--accent)" : "";
+    $$(".cs-tile", el).forEach(t => {
+      const on = v === 1 || t.dataset.img === "scraper";
+      t.style.borderColor = on ? "var(--accent)" : "var(--line)";
+      t.style.background = on ? "color-mix(in srgb,var(--accent) 10%,transparent)" : "";
+      $(".cs-st", t).textContent = on ? "new tag → build → redeploy" : "same tag → skip → no redeploy";
+      $(".cs-st", t).style.color = on ? "var(--accent)" : "var(--muted)";
+    });
+  },
+  step(el, s, r) { this.show(el, 0); r.later(() => this.show(el, 1), 2600); r.later(() => this.show(el, 0), 5600); },
+});
+
+const RCHIP = (i, k, t) => `<span style="display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:10px;padding:5px 9px 5px 5px;font-size:14.5px;font-weight:600;background:var(--panel)"><svg width="26" height="26" viewBox="0 0 44 44"><rect width="44" height="44" rx="11" fill="var(--k-${k})"/><g class="ig" transform="translate(10 10)">${ICON[i]}</g></svg>${t}</span>`;
+const REQS = [
+  [0, "R1", "Speed from disclosure", "Business", "React to a new filing within minutes of accepted_at, at near-zero cost while no filing arrives.", [["sched", "int", "Scheduler"], ["sqs", "int", "SQS"], ["lambda", "compute", "Lambda"], ["pipe", "int", "Pipe"], ["sfn", "int", "Step Functions"]], "Separate live path: polls every minute; cold starts accepted.", "D1 · D5 · D8"],
+  [0, "R4", "No look-ahead, one feature implementation", "ML", "Use no information that was not public at decision time; one implementation for training and scoring.", [["fargate", "compute", "Fargate"], ["lambda", "compute", "Lambda"], ["s3", "store", "Iceberg on S3"], ["table", "data", "Glue"]], "Same images on Fargate and Lambda; one Iceberg feature store.", "D3 · D10"],
+  [0, "R5", "Upserts, reprocessing, at-least-once", "Data", "Support upserts, reprocessing and at-least-once delivery without duplicate rows or orders.", [["sqs", "int", "SQS + DLQ"], ["table", "data", "Iceberg keys"], ["short", "ext", "client_order_id"]], "Deterministic keys; standard queues with DLQs and partial batch failures.", "D9"],
+  [0, "R6", "A bad model never trades", "ML, business", "Never let a bad or test model trade. Record what each model was trained on.", [["s3", "store", "S3 models/"], ["gate", "sec", "latest.json gate"]], "save vs promote in S3; PROMOTE=never|gated; metadata as lineage.", "D11"],
+  [1, "R2", "Years of history, long jobs", "Data, ML", "Process years of history and run long jobs: a multi-day backfill and a weekly retrain.", [["fargate", "compute", "Fargate Spot"], ["sfn", "int", "Step Functions"], ["sched", "int", "Scheduler"]], "Fargate ARM64 tasks under runTask.sync; Spot with an On-Demand fallback; waits of 600 s.", "D2 · D6"],
+  [1, "R10", "Operate a multi-day backfill", "Operations", "Operate and recover a multi-day backfill.", [["logs", "data", "CloudWatch"], ["bell", "sec", "DLQ alarms"], ["image", "ci", "ECR · 5 images"]], "Dashboard, DLQ alarms, make status; pinned revisions keep their images.", "D7 · D20"],
+  [1, "R3", "SEC fair access", "Constraint", "Stay under the SEC limit of 10 requests per second, shared by every request with the project's User-Agent.", [["globe", "ext", "SEC EDGAR"], ["fargate", "compute", "batch 5/s"], ["lambda", "compute", "live 4.5/s"]], "Rate budget split between batch and live, set by the SEC_MAX_RATE environment variables.", "D13"],
+  [2, "R7", "$10 per month, on/off batch path", "Constraint", "Cost at most $10 per month in normal operation, with a batch path that switches on and off.", [["nat", "data", "NAT, batch only"], ["s3", "store", "S3 gateway endpoint"], ["dollar", "sec", "Budget"]], "Serverless everywhere; NAT only while switched_on; live path outside the VPC.", "D12 · D14 · D19"],
+  [2, "R8", "Secrets and trading keys", "Security", "Keep secrets and trading keys out of code, state and CI, in a public repository.", [["key", "sec", "SSM"], ["shield", "sec", "IAM role per service"], ["git", "ci", "GitHub OIDC"], ["tf", "ci", "encrypted plan"]], "SSM SecureString outside the state; least-privilege roles; approval-gated, encrypted two-stage deploy.", "D15–D18"],
+  [2, "R9", "Show the client", "Business", "Show a client what the system does with their money, without exposing the system.", [["globe", "data", "CloudFront"], ["s3", "store", "S3 + OAC"], ["lambda", "compute", "publisher Lambda"]], "Basic auth at the edge; a publisher writes static JSON; no public API.", "D21–D23"],
+];
+const P_REQ = ({
+  id: "requirements-cards",
+  html: () => {
+    const strip = g => `<div style="display:flex;gap:8px;justify-content:center">${["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10"].map(id => { const on = REQS.some(r => r[0] === g && r[1] === id); return `<span style="font-size:14px;font-weight:700;padding:4px 10px;border-radius:999px;${on ? "background:var(--accent);color:#fff" : "background:var(--panel2);color:var(--muted)"}">${id}</span>`; }).join("")}</div>`;
+    const card = ([g, id, title, src, req, chips, how, ds]) => `
+      <div class="card" style="padding:20px 22px;display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><span style="font-size:34px;font-weight:780;letter-spacing:-.02em">${id}</span><span class="tag ${DTAG[src]}">${src}</span></div>
+        <div style="font-size:21px;font-weight:700;line-height:1.25">${title}</div>
+        <div style="font-size:15px;color:var(--muted);line-height:1.4">${req}</div>
+        <div style="font-size:22px;color:var(--accent);line-height:1">↓</div>
+        <div style="display:flex;flex-wrap:wrap;gap:7px">${chips.map(c => RCHIP(...c)).join("")}</div>
+        <div style="font-size:16px;line-height:1.4">${how}</div>
+        <div class="mono" style="font-size:13.5px;color:var(--muted);margin-top:auto">${ds}</div>
+      </div>`;
+    return [0, 1, 2].map(g => {
+      const rs = REQS.filter(r => r[0] === g);
+      return `<div class="w rv" data-s="${g}" data-u="${g}" style="left:60px;top:214px;width:1480px">${strip(g)}
+        <div style="display:grid;grid-template-columns:repeat(${rs.length},1fr);gap:20px;margin-top:20px">${rs.map(card).join("")}</div></div>`;
+    }).join("");
+  },
+});
+
+const ICE_FILE = (x, y, id, on) => `<rect id="${id}" x="${x}" y="${y}" width="46" height="34" rx="6" fill="${on ? "var(--k-data)" : "var(--panel2)"}" stroke="var(--line)" style="transition:opacity .5s,fill .5s"/>`;
+const P_ICE = ({
+  id: "iceberg-table",
+  svg: () => `
+    ${frame({ s: 0, x: 40, y: 214, w: 960, h: 590, t: "One Iceberg table on S3 (BT4)" })}
+    ${node({ s: 0, id: "ice-glue", x: 70, y: 254, w: 400, h: 64, k: "data", i: "table", t: "Glue Data Catalog · BT4", sub: "points to the current metadata file" })}
+    ${node({ s: 0, id: "ice-m1", x: 70, y: 380, w: 220, h: 60, k: "data", i: "doc", t: "metadata v1", sub: "snapshot 1" })}
+    <g id="ice-m2g" style="opacity:0;transition:opacity .5s">${node({ s: 0, id: "ice-m2", x: 320, y: 380, w: 220, h: 60, k: "data", i: "doc", t: "metadata v2", sub: "snapshot 2" })}</g>
+    <path id="ice-p1" class="rv edge hot" data-s="0" d="M180 318 V378" marker-end="url(#ahh)" style="transition:opacity .4s"/>
+    <path id="ice-p2" class="rv edge hot" data-s="0" d="M300 318 C 300 350, 430 340, 430 378" marker-end="url(#ahh)" style="opacity:0;transition:opacity .4s"/>
+    <g class="rv" data-s="0">
+      <rect x="70" y="470" width="220" height="40" rx="10" fill="var(--panel)" stroke="var(--line)"/><text class="lbl" x="180" y="495" text-anchor="middle" style="font-size:14px">manifest list → manifests</text>
+      <path class="edge" d="M180 440 V468" marker-end="url(#ah)"/><path class="edge" d="M180 510 V556" marker-end="url(#ah)"/>
+    </g>
+    <g id="ice-l2" style="opacity:0;transition:opacity .5s">
+      <rect x="320" y="470" width="220" height="40" rx="10" fill="var(--panel)" stroke="var(--line)"/><text class="lbl" x="430" y="495" text-anchor="middle" style="font-size:14px">manifest list → manifests</text>
+      <path class="edge" d="M430 440 V468" marker-end="url(#ah)"/><path class="edge" d="M430 510 V556" marker-end="url(#ah)"/>
+    </g>
+    <g class="rv" data-s="0">
+      <rect x="70" y="558" width="900" height="110" rx="14" fill="none" stroke="var(--line)" stroke-dasharray="5 5"/>
+      <text class="lbl mono" x="88" y="584" style="font-size:14px">s3://secform4strategy-data-&lt;account&gt;/warehouse/ · Parquet data files</text>
+      ${[0, 1, 2, 3, 4].map(k => ICE_FILE(90 + k * 56, 606, `ice-f${k}`, true)).join("")}
+      <g id="ice-new" style="opacity:0;transition:opacity .5s">${[0, 1].map(k => `<rect x="${380 + k * 56}" y="606" width="46" height="34" rx="6" fill="var(--accent)"/>`).join("")}</g>
+    </g>
+    ${node({ s: 0, id: "ice-wa", x: 640, y: 254, w: 330, h: 64, k: "compute", i: "fargate", t: "kafka-to-store", sub: "writer A: upsert batch" })}
+    ${node({ s: 0, id: "ice-wb", x: 640, y: 380, w: 330, h: 64, k: "compute", i: "lambda", t: "second writer", sub: "writer B: same table, same time" })}
+    ${edge({ s: 0, id: "ice-ea", d: "M640 286 H472" })}
+    ${edge({ s: 0, id: "ice-eb", d: "M640 412 C 560 412, 520 330, 472 300" })}
+    <text id="ice-msg1" class="lbl acc" x="600" y="488" style="font-size:16px;font-weight:650;opacity:0;transition:opacity .4s">A: new files + v2, atomic swap; snapshot 1 stays</text>
+    <text id="ice-msg2" class="lbl bad" x="600" y="514" style="font-size:16px;font-weight:650;opacity:0;transition:opacity .4s">B: commit fails; it redoes its upsert</text>
+    <text id="ice-msg3" class="lbl" x="600" y="540" style="font-size:16px;font-weight:700;opacity:0;transition:opacity .4s">Hence one writer per table (D25)</text>
+    <text class="rv lbl" data-s="0" x="88" y="770" style="font-size:16px">Deterministic keys: a redelivered message upserts the same row.</text>`,
+  html: () => `
+    <div class="w card rv" data-s="0" style="left:1020px;top:214px;width:540px;padding:16px 20px;font-size:16px">
+      <div class="lab">Stores weighed · idle cost and why</div>
+      ${[["table", "sec", "RDS", "bills hourly", "✕"], ["s3", "store", "S3 Tables", "managed compaction", "~"], ["table", "data", "Aurora Serverless v2", "VPC or Data API", "✕"], ["s3", "store", "Iceberg on S3 + Glue", "storage only · D10", "✓"]].map(([i, k, n, d, v]) => `<div style="display:flex;gap:12px;align-items:center;border-bottom:1px solid var(--line);padding:10px 0"><svg width="34" height="34" viewBox="0 0 44 44"><rect width="44" height="44" rx="11" fill="var(--k-${k})"/><g class="ig" transform="translate(10 10)">${ICON[i]}</g></svg><span style="font-weight:700;flex:1">${n}</span><span style="color:var(--muted)">${d}</span><span style="font-weight:800;width:20px;text-align:center;color:${v === "✓" ? "var(--good)" : v === "✕" ? "var(--bad)" : "var(--warn)"}">${v}</span></div>`).join("")}
+    </div>
+    <div class="w card rv" data-s="0" style="left:1020px;top:560px;width:540px;padding:16px 20px;font-size:15.5px;line-height:1.45">
+      <div class="lab">Live-path state, not features</div>
+      <div style="display:flex;gap:12px;align-items:center;margin-top:8px"><svg width="34" height="34" viewBox="0 0 44 44"><rect width="44" height="44" rx="11" fill="var(--k-data)"/><g class="ig" transform="translate(10 10)">${ICON.ddb}</g></svg><span style="font-weight:700" class="mono">secform4strategy-seen</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${["poller reads + writes", "7-day TTL", "on demand · $0 idle"].map(t => `<span class="tag">${t}</span>`).join("")}</div>
+    </div>
+    <div class="w rv" data-s="0" style="left:60px;top:690px"><button class="btn ghost" id="ice-go">▶ Replay the upsert</button></div>`,
+  init(el) { $("#ice-go", el).addEventListener("click", () => { bump(); const r = runner(); this.play(el, r); }); },
+  set(el, id, v) { const e = $("#" + id, el); if (e) e.style.opacity = v; },
+  reset(el) {
+    ["ice-m2g", "ice-l2", "ice-new", "ice-p2", "ice-msg1", "ice-msg2", "ice-msg3"].forEach(id => this.set(el, id, 0));
+    this.set(el, "ice-p1", ""); tog(el, "#ice-wa, #ice-wb", "hot", false); tog(el, "#ice-wb", "badk", false);
+  },
+  async play(el, r) {
+    const svg = $("svg.dia", el);
+    this.reset(el);
+    tog(el, "#ice-wa", "hot", true);
+    if (!await r.sleep(500)) return;
+    this.set(el, "ice-new", 1); if (!await r.sleep(500)) return;
+    this.set(el, "ice-m2g", 1); this.set(el, "ice-l2", 1); if (!await r.sleep(500)) return;
+    if (!await r.travel(svg, ["ice-ea"], { speed: 0.5, label: "commit" })) return;
+    this.set(el, "ice-p1", 0.18); this.set(el, "ice-p2", 1); this.set(el, "ice-msg1", 1);
+    tog(el, "#ice-wa", "hot", false); tog(el, "#ice-wb", "hot", true);
+    if (!await r.sleep(700)) return;
+    if (!await r.travel(svg, ["ice-eb"], { speed: 0.5, label: "commit" })) return;
+    this.set(el, "ice-msg2", 1); if (!await r.sleep(800)) return;
+    this.set(el, "ice-msg3", 1); stamp(el, 780, 700, "One writer per table", { rot: -6 });
+  },
+  step(el, s, r) { this.reset(el); r.sleep(600).then(ok => ok && this.play(el, r)); },
+});
+
+const P_REG = ({
+  id: "model-registry",
+  svg: () => `
+    ${node({ s: 0, x: 30, y: 300, w: 220, h: 72, k: "compute", i: "fargate", t: "training run", sub: "always saves" })}
+    ${edge({ s: 0, id: "rg-e1", d: "M250 336 H288" })}
+    <g id="rg-new" style="transition:opacity .5s">${node({ s: 0, x: 290, y: 300, w: 300, h: 72, k: "store", i: "s3", t: "models/<new>/", sub: "20261122T224917Z", mono: true })}</g>
+    <g class="rv" data-s="0">${QC(290, 392, 140, "model.joblib", "store", 12.5, "doc")}${QC(440, 392, 150, "model.meta.json", "store", 12, "doc")}</g>
+    ${edge({ s: 0, id: "rg-e2", d: "M590 336 H640" })}
+    <g class="rv" data-s="0">
+      <rect id="rg-gate" x="642" y="258" width="250" height="236" rx="18" fill="var(--panel)" stroke="var(--line)" stroke-width="2.4" style="transition:stroke .4s"/>
+      <rect x="660" y="274" width="40" height="40" rx="10" fill="var(--k-sec)"/><g class="ig" transform="translate(668 282)">${ICON.gate}</g>
+      <text x="712" y="300" style="font-size:20px;font-weight:750;fill:var(--ink)">Gate</text>
+      <text id="rg-gt" x="712" y="300" dx="58" style="font-size:14px;font-weight:700;fill:var(--muted)">closed</text>
+      ${["rows", "features", "finite AP", "≥ 1 short"].map((t, k) => `<circle class="rg-ck" cx="676" cy="${344 + k * 38}" r="12" fill="var(--panel2)" stroke="var(--line)" stroke-width="2" style="transition:all .3s"/><text class="rg-ckt" x="676" y="${349 + k * 38}" text-anchor="middle" style="font-size:14px;font-weight:800;fill:#fff;opacity:0">✓</text><text x="700" y="${350 + k * 38}" style="font-size:17px;fill:var(--ink)">${t}</text>`).join("")}
+    </g>
+    ${edge({ s: 0, id: "rg-e3", d: "M892 336 H940" })}
+    ${node({ s: 0, id: "rg-l", x: 942, y: 300, w: 220, h: 72, k: "sec", i: "gate", t: "latest.json", sub: "one pointer", mono: true })}
+    ${edge({ s: 0, id: "rg-e4", d: "M1162 336 H1210" })}
+    ${node({ s: 0, x: 1212, y: 300, w: 350, h: 72, k: "compute", i: "lambda", t: "inference", sub: "loads it each invocation" })}
+    ${node({ s: 0, id: "rg-old", x: 760, y: 610, w: 330, h: 72, k: "store", i: "s3", t: "20261122T205816Z/", sub: "regressor", mono: true })}
+    ${node({ s: 0, id: "rg-cls", x: 1150, y: 610, w: 330, h: 72, k: "store", i: "s3", t: "20261122T224917Z/", sub: "classifier", mono: true })}
+    <path id="rg-pa" class="rv edge hot" data-s="0" d="M1030 372 C 1020 480, 930 520, 925 606" marker-end="url(#ahh)" style="transition:opacity .4s"/>
+    <path id="rg-pb" class="rv edge hot" data-s="0" d="M1080 372 C 1100 480, 1300 520, 1312 606" marker-end="url(#ahh)" style="opacity:0;transition:opacity .4s"/>
+    <path class="rv edge dashed" data-s="0" d="M950 360 C 760 420, 760 560, 790 606" marker-end="url(#ah)" data-noamb="1"/>
+    <text class="rv lbl" data-s="0" x="925" y="712" text-anchor="middle" style="font-size:15px;font-weight:650">↺ promote_model.sh · rollback</text>
+    <path class="rv edge dashed" data-s="0" d="M515 426 V470" data-noamb="1"/>
+    <g class="rv" data-s="0">${[["git SHA", 0, 0], ["sklearn version", 1, 0], ["features", 0, 1], ["row counts", 1, 1], ["holdout scores", 0, 2], ["cutoff 0.70", 1, 2]].map(([t, c, r]) => QC(290 + c * 160, 476 + r * 44, 150, t, "data", 12.5, "tag" in ICON ? "tag" : "table")).join("")}</g>
+    <g class="rv" data-s="0"><rect x="290" y="616" width="310" height="34" rx="17" fill="var(--bad-soft)" stroke="var(--bad)" stroke-width="1.6"/><text x="445" y="638" text-anchor="middle" style="font-size:13.5px;font-weight:700;fill:var(--bad)">✕ refused: other sklearn version / no cutoff</text></g>`,
+  html: () => `<div class="w rv" data-s="0" style="left:30px;top:720px"><button class="btn ghost" id="rg-go">▶ Replay the promotion</button></div>`,
+  init(el) { $("#rg-go", el).addEventListener("click", () => { bump(); const r = runner(); this.play(el, r); }); },
+  reset(el) {
+    $$(".rg-ck", el).forEach(c => { c.style.fill = ""; c.style.stroke = ""; });
+    $$(".rg-ckt", el).forEach(t => t.style.opacity = 0);
+    $("#rg-gate", el).style.stroke = ""; $("#rg-gt", el).textContent = "closed"; $("#rg-gt", el).style.fill = "";
+    $("#rg-new", el).style.opacity = 0.25; $("#rg-pa", el).style.opacity = ""; $("#rg-pb", el).style.opacity = 0; badge(el, "rg-cls", false);
+  },
+  async play(el, r) {
+    const svg = $("svg.dia", el);
+    this.reset(el);
+    if (!await r.travel(svg, ["rg-e1"], { speed: 0.5, label: "save" })) return;
+    $("#rg-new", el).style.opacity = 1;
+    if (!await r.travel(svg, ["rg-e2"], { speed: 0.5, label: "check" })) return;
+    const cs = $$(".rg-ck", el), ts = $$(".rg-ckt", el);
+    for (let k = 0; k < cs.length; k++) { if (!await r.sleep(380)) return; cs[k].style.fill = "var(--good)"; cs[k].style.stroke = "var(--good)"; ts[k].style.opacity = 1; }
+    $("#rg-gate", el).style.stroke = "var(--good)"; $("#rg-gt", el).textContent = "open"; $("#rg-gt", el).style.fill = "var(--good)";
+    if (!await r.travel(svg, ["rg-e3"], { speed: 0.5, label: "promote" })) return;
+    $("#rg-pa", el).style.opacity = 0.15; $("#rg-pb", el).style.opacity = 1; badge(el, "rg-cls", true);
+    stamp(el, 1330, 520, "latest.json moved", { rot: -6 });
+  },
+  step(el, s, r) { this.reset(el); r.sleep(600).then(ok => ok && this.play(el, r)); },
+});
+
+
+const P_STRIP_BATCH = ({
+  id: "strip-batch",
+  svg: () => `
+    ${frame({ s: 0, x: 60, y: 300, w: 1480, h: 300, t: "Batch billing · one week (D2)" })}
+    <g class="rv" data-s="0">${LANE_STRIP(420, "One week", [[0.7738, 0.06]], [[0.0714, "Mon"], [0.2143, "Tue"], [0.3571, "Wed"], [0.5, "Thu"], [0.6429, "Fri"], [0.7857, "Sat"], [0.9286, "Sun"]], [[0.36, "idle = $0"], [0.8, "retrain"]])}</g>
+    ${label({ s: 0, x: 800, y: 540, a: "middle", t: "Fargate Spot · per second while running · no time limit · ARM64 ~20% below x86 (D4)", cls: "big" })}`,
+});
+const P_STRIP_LIVE = ({
+  id: "strip-live",
+  svg: () => `
+    ${frame({ s: 0, x: 60, y: 300, w: 1480, h: 300, t: "Live billing · one trading day (D1)" })}
+    <g class="rv" data-s="0">${LANE_STRIP(420, "One trading day", [[0.06, 0.003], [0.11, 0.003], [0.13, 0.003], [0.24, 0.003], [0.31, 0.003], [0.33, 0.003], [0.47, 0.003], [0.52, 0.003], [0.61, 0.003], [0.66, 0.003], [0.68, 0.003], [0.79, 0.003], [0.88, 0.003], [0.93, 0.003]], [[0, "00:00"], [0.25, "06:00"], [0.5, "12:00"], [0.75, "18:00"], [1, "24:00"]], [[0.18, "idle = $0"], [0.4, "idle = $0"], [0.84, "idle = $0"]])}</g>
+    ${label({ s: 0, x: 800, y: 540, a: "middle", t: "Lambda · per invocation · 15-min limit · cold start 10–45 s", cls: "big" })}`,
+});
+
+const P_DATA = ({
+  id: "data-etl",
+  svg: () => `
+    <g class="rv" data-s="0">
+      <text class="ft" x="395" y="234" text-anchor="middle" style="fill:var(--accent)">EXTRACT</text>
+      <text class="ft" x="870" y="234" text-anchor="middle" style="fill:var(--accent)">TRANSFORM</text>
+      <text class="ft" x="60" y="430" style="fill:var(--accent)">LOAD · THE TABLES</text>
+    </g>
+    ${node({ s: 0, dl: 1, x: 40, y: 244, w: 190, h: 64, k: "ext", i: "globe", t: "SEC EDGAR", sub: "Form 4 XML" })}
+    ${node({ s: 0, dl: 1, x: 40, y: 330, w: 190, h: 64, k: "ext", i: "globe", t: "Yahoo Finance", sub: "daily bars" })}
+    ${node({ s: 0, dl: 2, x: 270, y: 244, w: 250, h: 64, k: "compute", i: "fargate", t: "scraper", sub: "parse XML → transactions" })}
+    ${node({ s: 0, dl: 3, x: 560, y: 244, w: 280, h: 64, k: "compute", i: "fargate", t: "kafka-to-store", sub: "validate · cast · upsert" })}
+    ${node({ s: 0, dl: 3, x: 270, y: 330, w: 250, h: 64, k: "compute", i: "fargate", t: "yahoo-connect", sub: "split-adjusted prices" })}
+    <g class="rv" data-s="0" data-d="4">
+      <rect x="880" y="244" width="320" height="150" rx="14" fill="var(--panel)" stroke="var(--line)"/>
+      <rect x="892" y="256" width="40" height="40" rx="10" fill="var(--k-compute)"/><g class="ig" transform="translate(900 264)">${ICON.fargate}</g>
+      <text x="944" y="284" style="font-size:20px;font-weight:750;fill:var(--ink)">target</text>
+      <text x="896" y="320" class="lbl" style="font-size:13.5px">join: one row per ticker @ next print</text>
+      <text x="896" y="344" class="lbl" style="font-size:13.5px">features: clusters, USD values, past labels</text>
+      <text x="896" y="368" class="lbl" style="font-size:13.5px">label: 30-day return + guards (batch only)</text>
+    </g>
+    ${node({ s: 0, dl: 5, x: 1240, y: 244, w: 320, h: 64, k: "ml", i: "model", t: "training", sub: "RT4 → models/<trained_at>/" })}
+    ${node({ s: 0, dl: 5, x: 1240, y: 330, w: 280, h: 64, k: "ml", i: "lambda", t: "inference", sub: "BIR4 + latest.json" })}
+    ${edge({ s: 0, d: "M230 276 H268" })}${edge({ s: 0, d: "M520 276 H558" })}${edge({ s: 0, d: "M230 362 H268" })}
+    ${edge({ s: 0, d: "M840 276 H878" })}${edge({ s: 0, d: "M520 362 H878" })}
+    ${edge({ s: 0, d: "M1200 276 H1238" })}${edge({ s: 0, d: "M1200 362 H1238" })}
+    ${frame({ s: 0, x: 40, y: 440, w: 320, h: 180, t: "Landing (raw)" })}
+    ${frame({ s: 0, x: 380, y: 440, w: 480, h: 180, t: "Formatted" })}
+    ${frame({ s: 0, x: 880, y: 440, w: 680, h: 180, t: "Serving" })}
+    ${edge({ s: 0, d: "M700 308 V438" })}${edge({ s: 0, d: "M450 394 V438" })}${edge({ s: 0, d: "M1040 394 V438" })}${edge({ s: 0, d: "M1540 308 V438" })}
+    <path class="rv edge dashed" data-s="0" d="M1300 438 V398" marker-end="url(#ah)" data-noamb="1"/>
+    <g class="rv" data-s="0">
+      <text class="lbl" x="60" y="512" style="font-size:22px;font-weight:750;fill:var(--ink)">None</text>
+      <text class="lbl" x="60" y="542" style="font-size:15px">EDGAR is the immutable raw archive;</text>
+      <text class="lbl" x="60" y="564" style="font-size:15px">the XML is parsed in memory</text>
+      ${QC(400, 490, 140, "BT4", "data", 15, "table")}${QC(550, 490, 140, "BI4", "data", 15, "table")}${QC(700, 490, 140, "P", "data", 15, "table")}
+      <text class="lbl" x="400" y="560" style="font-size:15px">transactions (batch · live) and prices</text>
+      ${QC(900, 490, 140, "RT4", "data", 15, "table")}${QC(1050, 490, 140, "BIR4", "data", 15, "table")}${QC(1200, 490, 150, "models/", "store", 15, "s3")}${QC(1360, 490, 180, "Athena ad hoc", "data", 14, "logs")}
+      <text class="lbl" x="900" y="560" style="font-size:15px">RT4: labelled training rows · BIR4: live rows, same features, no label</text>
+      <text class="lbl" x="400" y="600" style="font-size:14px">Iceberg · Parquet · schema-on-write</text>
+    </g>
+    <g class="rv" data-s="0" data-d="6">
+      ${[["Volume", "1,048,560 filings · ~870 MB"], ["Velocity", "a few per minute, in bursts"], ["Variety", "Form 4 XML → typed tables"], ["Veracity", "label guards · 61 rows removed"]].map(([v, d], k) => `<g transform="translate(${40 + k * 383} 650)"><rect width="366" height="58" rx="14" fill="var(--panel)" stroke="var(--line)"/><text x="18" y="25" style="font-size:17px;font-weight:780;fill:var(--accent)">${v}</text><text x="18" y="46" class="lbl" style="font-size:14px">${d}</text></g>`).join("")}
+    </g>
+    ${label({ s: 0, x: 800, y: 760, a: "middle", t: "Batch ingests on a schedule; live ingests in near real time, driven by events." })}`,
+});
+
+
+const P_MODEL = ({
+  id: "data-model",
+  svg: () => `
+    <g class="rv" data-s="0">
+      <rect x="50" y="236" width="470" height="150" rx="18" fill="var(--panel)" stroke="var(--line)"/>
+      <text x="74" y="276" class="lbl" style="font-size:15px;font-weight:700">LABEL</text>
+      <text x="74" y="318" style="font-size:25px;font-weight:780;fill:var(--ink)">short winner =</text>
+      <text x="74" y="352" style="font-size:25px;font-weight:780;fill:var(--accent)">30-day return &lt; −5%</text>
+      <text x="74" y="376" class="lbl" style="font-size:14px">from the next market print after accepted_at</text>
+    </g>
+    ${edge({ s: 0, d: "M520 311 H580" })}
+    ${node({ s: 0, dl: 2, x: 582, y: 270, w: 440, h: 82, k: "ml", i: "model", t: "HistGradientBoostingClassifier", sub: "Pipeline: scaling + one-hot" })}
+    ${edge({ s: 0, d: "M1022 311 H1082" })}
+    <g class="rv" data-s="0" data-d="3">
+      <rect x="1084" y="236" width="466" height="150" rx="18" fill="var(--panel)" stroke="var(--line)"/>
+      <text x="1108" y="276" class="lbl" style="font-size:15px;font-weight:700">SCORE CUTOFF · CHOSEN ON THE FOLDS</text>
+      <rect x="1108" y="300" width="418" height="22" rx="11" fill="var(--panel2)"/>
+      <rect x="1400" y="300" width="126" height="22" rx="11" fill="var(--accent)"/>
+      <line x1="1400" y1="292" x2="1400" y2="330" stroke="var(--ink)" stroke-width="2.5"/>
+      <text x="1108" y="350" class="lbl mono" style="font-size:13px">0</text><text x="1526" y="350" text-anchor="end" class="lbl mono" style="font-size:13px">1</text>
+      <text x="1400" y="352" text-anchor="middle" style="font-size:18px;font-weight:780;fill:var(--accent)">0.70</text>
+      <text x="1108" y="376" class="lbl" style="font-size:14px">by the median short return · short 1 share at ≥ 0.70</text>
+    </g>
+    <g class="rv" data-s="0" data-d="4">
+      <text x="60" y="470" class="lbl" style="font-size:15px;font-weight:700">WALK-FORWARD VALIDATION · PURGED</text>
+      ${[0, 1, 2, 3].map(k => `<rect x="${60 + k * 180}" y="490" width="160" height="44" rx="10" fill="var(--k-data)" opacity="${0.45 + k * 0.15}"/><text x="${140 + k * 180}" y="518" text-anchor="middle" style="font-size:15px;font-weight:700;fill:#fff">fold ${k + 1}</text>`).join("")}
+      <rect x="780" y="490" width="240" height="44" rx="10" fill="var(--accent)"/><text x="900" y="518" text-anchor="middle" style="font-size:15px;font-weight:700;fill:#fff">holdout · latest 20%</text>
+      <text x="60" y="570" class="lbl" style="font-size:16px">32 parameter combinations × 4 folds = 128 fits, scored on AP; one holdout score</text>
+    </g>
+    <g class="rv" data-s="0" data-d="5">
+      ${QC(1084, 490, 466, "label guards: +300% cap · 61 rows removed", "ml", 15, "gate")}
+      ${QC(1084, 540, 466, "→ the promotion gate moves latest.json", "sec", 15, "gate")}
+    </g>
+    ${label({ s: 0, x: 800, y: 680, a: "middle", t: "One model.joblib: no GPU, no hosted endpoint; it loads in a Lambda or a task (D24).", cls: "big" })}`,
+});
+
+const P_AVAIL = ({
+  id: "availability",
+  html: () => `
+    <div class="w card rv" data-s="0" style="left:60px;top:226px;width:1480px;padding:20px 26px">
+      <div style="display:grid;grid-template-columns:60px 300px 1fr 1fr;gap:0;font-size:19px">
+        ${[["", "Failure", "Effect", "Recovery"],
+           ["net:data", "One AZ fails", "live path unaffected · batch egress via the single NAT", "none for live · a second NAT ~$32/month"],
+           ["sqs:int", "A message fails", "DLQ for 14 days · alarm", "manual redrive · RPO zero within 14 days"],
+           ["table:data", "A table is lost", "no versioning or backup", "rebuild from EDGAR + Yahoo · RTO ~2 days"],
+           ["s3:store", "The model is deleted", "no orders", "promote_model.sh in minutes · retrain ~16 min"],
+           ["cloud:ext", "The region fails", "not designed for", "Terraform recreate elsewhere (untested)"]].map((row, k) => row.map((c, j) => j === 0
+             ? `<div style="padding:12px 0;border-bottom:1px solid var(--line)">${c ? `<svg width="40" height="40" viewBox="0 0 44 44"><rect width="44" height="44" rx="11" fill="var(--k-${c.split(":")[1]})"/><g class="ig" transform="translate(10 10)">${ICON[c.split(":")[0]]}</g></svg>` : ""}</div>`
+             : `<div style="padding:16px 12px;border-bottom:1px solid var(--line);${k === 0 ? "font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)" : j === 1 ? "font-weight:750" : ""}">${c}</div>`).join("")).join("")}
+      </div>
+    </div>`,
+});
+
+const P_CONC = ({
+  id: "conclusion",
+  html: () => `
+    <div class="w rv" data-s="0" style="left:90px;top:236px;width:1420px;display:flex;flex-direction:column;gap:26px">
+      ${[[["lambda:compute", "fargate:compute", "s3:store"], "Two workload shapes, two compute models, one lakehouse.", "5 years · 1,048,560 filings · a new filing scored in about 1–2 minutes"],
+         [["dollar:sec", "nat:data"], "Pay only when it works.", "live path for cents a month · NAT only while batch runs · $8.52 in the backfill month, budget $10"],
+         [["shield:sec", "git:ci", "key:sec"], "Secure by construction.", "no stored keys (OIDC) · one role per service · every change tested, Trivy-scanned and approved"],
+         [["model:ml"], "A first signal, ready to be tested live.", "holdout AP 0.418 vs 0.338 base rate · 314 shorts · median +9.9% before costs"]].map(([ics, t, proof], n) => `<div class="cc-line" style="display:flex;align-items:center;gap:24px;opacity:0;transform:translateY(12px);transition:opacity .5s,transform .5s"><div style="display:flex;gap:8px;width:200px;flex:none">${ics.map(c => `<svg width="54" height="54" viewBox="0 0 44 44"><rect width="44" height="44" rx="11" fill="var(--k-${c.split(":")[1]})"/><g class="ig" transform="translate(10 10)">${ICON[c.split(":")[0]]}</g></svg>`).join("")}</div><div><div style="font-size:36px;font-weight:780;letter-spacing:-.02em;line-height:1.1">${t}</div><div style="font-size:19px;color:var(--muted);margin-top:6px">${proof}</div></div></div>`).join("")}
+    </div>`,
+  step(el, s, r) {
+    const ls = $$(".cc-line", el);
+    ls.forEach(l => { l.style.opacity = 0; l.style.transform = "translateY(12px)"; });
+    ls.forEach((l, k) => r.later(() => { l.style.opacity = 1; l.style.transform = "none"; }, RM.matches ? 0 : 400 + k * 600));
+  },
+});
+
+
+const P_EDGES = ({
+  id: "two-edges",
+  html: () => `
+    <div class="w rv" data-s="0" style="left:60px;top:236px;width:1480px;display:grid;grid-template-columns:1fr 1fr;gap:28px">
+      ${[["model", "ml", "Selection", "a classifier trained on five years of insider sales", ["scores each new sale for a short winner: a 30-day return below −5%", "most sales are routine (taxes, diversification); it is fitted to spot the ones that come before a fall", "shorts only the top of the ranking: score ≥ 0.70"]],
+         ["bolt", "compute", "Speed", "act within minutes of accepted_at", ["matters for the 15.1% of filings accepted in market hours", "for the other 85%, the race starts at the next open", "the live path trades in-session filings at the same day's close"]]].map(([i, k, t, sub, pts]) => `
+        <div class="card" style="padding:28px 30px">
+          <div style="display:flex;align-items:center;gap:16px"><svg width="56" height="56" viewBox="0 0 44 44"><rect width="44" height="44" rx="11" fill="var(--k-${k})"/><g class="ig" transform="translate(10 10)">${ICON[i]}</g></svg><div><div style="font-size:34px;font-weight:780;letter-spacing:-.02em">${t}</div><div style="font-size:18px;color:var(--muted)">${sub}</div></div></div>
+          ${pts.map(x => `<div style="display:flex;gap:12px;align-items:baseline;margin-top:18px;font-size:21px;line-height:1.35"><span style="color:var(--accent);font-weight:800">→</span><span>${x}</span></div>`).join("")}
+        </div>`).join("")}
+    </div>`,
+});
+
+/* ===================== The deck, in the order of the submission ===================== */
+section(S_COVER);
+section({
+  id: "problem", title: "Problem and requirements", short: "Problem",
+  h1: "Insiders trade. The SEC publishes. Then the market can react.",
+  parts: [{ ...P_PROBLEM }, { ...P_REQ }, { ...P_EDGES }],
+  map: [[0, 1], [0, 2], [2, 0], [0, 3], [1, 0], [1, 1], [1, 2]],
+  steps: [
+    { cap: "Insiders file a <strong>Form 4</strong> within 2 business days. EDGAR publishes it at <code>accepted_at</code>.",
+      notes: ["≈2 min, 7 steps. Section 2.1. Insiders are directors, officers and owners of more than 10%.", "A trader can act only after <code>accepted_at</code>, so it is the only clock for labels and features."] },
+    { cap: "The model shorts likely <strong>short winners</strong>: rows whose stock falls by more than 5% in the 30 days after entry.",
+      notes: ["The hypothesis: insider sales come before underperformance, and the market has not priced that in at publication.", "The price line is illustrative."] },
+    { cap: "Two edges: <strong>selection</strong>, a model that learns which insider sales come before a drop, and <strong>speed</strong>, acting soon after <code>accepted_at</code>.",
+      notes: ["≈30 s. Selection: some insiders sell for reasons that precede a fall; most sales are routine. A classifier trained on five years of dispositions ranks each new sale and shorts only scores ≥ 0.70.", "Speed: within minutes of accepted_at; it matters for the 15.1% in market hours, because for the rest the race starts at the open."] },
+    { cap: "Speed from disclosure matters for the <strong>15.1%</strong> of filings accepted in market hours. For the other 85%, the race starts at the next open.",
+      notes: ["Measured in RT4: 32,434 of 215,273 rows, Monday to Friday 09:30–16:00 ET.", "Outside market hours nobody can trade before the open, so a pre-open batch would reach the same entry price.", "The live path adds same-day-close trades for in-session filings, and one implementation for both paths."] },
+    { cap: "Speed and correctness: <strong>R1, R4, R5, R6</strong> shape the live path, the shared feature store and the model gate.",
+      notes: ["Section 2.4. The method of the report: every service answers a requirement.", "Live path for speed, one implementation and one store for correctness, keys and a gate so nothing doubles and no bad model trades."] },
+    { cap: "Scale and operations: <strong>R2, R10, R3</strong> shape the batch path, its recovery and the SEC rate budget.",
+      notes: ["Fargate Spot under Step Functions for the days-long load; alarms, the dashboard and pinned revisions to recover it; one budget for the SEC limit."] },
+    { cap: "Cost, security and the client: <strong>R7, R8, R9</strong> shape the switch, the identities and the static website.",
+      notes: ["$10: only the batch path needs the NAT. Public repository: SSM, one role per service, OIDC. The client sees static files, never the system."] },
+  ],
+});
+section({
+  id: "data", title: "Data and model", short: "Data",
+  h1: "An ETL pipeline, and one model behind a gate",
+  parts: [{ ...P_DATA }, { ...P_MODEL }],
+  map: [[0, 0], [1, 0]],
+  steps: [
+    { cap: "An ETL pipeline into three zones; the 5 Vs shape the cloud design.",
+      notes: ["≈1 min, 2 steps. Section 3.1. Extract: the scraper parses the Form 4 XML in memory; transform: kafka-to-store casts and drops invalid rows; load: target builds the feature rows.", "Volume and veracity drive the batch path and the label guards; velocity drives the per-event live path; variety means one parser and fixed schemas."] },
+    { cap: "The model in one picture: a label, a classifier, a cutoff chosen on the folds, and a gate.",
+      notes: ["A short winner falls by more than 5% in 30 days. Purged walk-forward folds choose the parameters and the 0.70 cutoff; the holdout is scored once.", "The scores are not calibrated probabilities; the cutoff is a rank threshold. The model is one small file, so no hosted endpoint (D24)."] },
+  ],
+});
+section({
+  id: "architecture", title: "Architecture overview", short: "Overview", zoom: true,
+  h1: "Two paths on one feature store",
+  parts: [{ ...P_OVERVIEW }, { ...P_LIVE }],
+  map: [[0, 0], [0, 0], [0, 0], [0, 0], [0, 1], [0, 0], [0, 0], [1, 5]],
+  spots: [null, {"r": [[6, 242, 1583, 151], [717, 422, 174, 56]], "l": [40, 430, "Batch: retrain → queues → BT4"]}, {"r": [[6, 688, 1583, 160], [717, 560, 174, 56]], "l": [40, 668, "Live: poller → queues → Pipe → live-score"]}, {"r": [[698, 408, 889, 221]], "l": [704, 404, "One Iceberg feature store on S3 + Glue"]}, {"r": [[931, 422, 154, 193], [1130, 422, 154, 193], [1416, 422, 159, 193]], "l": [704, 404, "Shared: P, RT4 and models/"]}, {"r": [[19, 480, 136, 60], [513, 480, 164, 60], [1416, 801, 164, 44]], "l": [180, 470, "External: SEC EDGAR, Yahoo, Alpaca"]}, null, null],
+  steps: [
+    { cap: "Each path writes its own transaction table; both share prices (P), labels (RT4) and the model, so training and live scoring use the same features (R4).",
+      notes: ["≈1 min, 8 quick steps. Section 4.1. Top: batch; bottom: live; middle: the Iceberg tables both use. Solid arrows write, dashed arrows read."] },
+    { cap: "The batch path: Step Functions <code>retrain</code> runs six Fargate tasks; <code>filings</code> and <code>transactions</code> queues; writes BT4.",
+      notes: ["Batch: Scheduler on Saturday, six tasks in order, SQS between the first three; kafka-to-store writes BT4."] },
+    { cap: "The live path: poller with DynamoDB <code>seen</code>, SQS-triggered Lambdas, <code>live-tickers</code> → Pipe → <code>live-score</code>.",
+      notes: ["Live: a poll every minute, queues between the Lambdas, then the Pipe starts live-score; kafka-to-store writes BI4."] },
+    { cap: "The Iceberg band: each path writes <strong>its own transaction table</strong>, BT4 or BI4.",
+      notes: ["One feature store on S3 with Glue; the transaction tables stay separate, so live never writes training data."] },
+    { cap: "Where the paths meet: prices (P), labels (RT4) and the model.",
+      notes: ["The live target reads RT4 for past labels; live inference reads the model batch training wrote, through latest.json and the gate."] },
+    { cap: "External services: SEC EDGAR feeds both master-index and both scrapers; Yahoo both yahoo-connects; Alpaca receives the orders.",
+      notes: ["SEC EDGAR is shared and rate-limited; Yahoo Finance gives prices; only inference talks to Alpaca."] },
+    { cap: "Each path writes its own transaction table; both share prices (P), labels (RT4) and the model, so training and live scoring use the same features (R4).",
+      notes: ["Everything together: one implementation, one store, two paths (R4)."] },
+    { cap: "Both paths run the <strong>same container image</strong> with a different entry point: same feature code, no skew (<strong>D3</strong>).",
+      notes: ["One image per service, two runtimes; the trade-off is image size, about 1 GB."] },
+  ],
+});
+
+section({
+  id: "batch", title: "Batch path", short: "Batch",
+  h1: "One state machine, hours of work, nobody watching",
+  parts: [{ ...P_BATCH }, { ...P_STRIP_BATCH }],
+  map: [[0, 1], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [1, 0]],
+  spots: [null, {"r": [[44, 204, 478, 84], [34, 339, 1532, 172]], "l": [1040, 300, "Spot ×3 → Wait → On-Demand"]}, {"r": [[180, 550, 500, 142]], "l": [190, 538, "SQS + DLQs, outside the frame"]}, {"r": [[34, 714, 392, 76], [789, 554, 212, 72]], "l": [440, 760, "Sources: SEC EDGAR, Yahoo Finance"]}, {"r": [[684, 674, 908, 196]], "l": [1030, 655, "S3 writes, one per task"]}, null, null],
+  steps: [
+    { cap: "<code>retrain</code> runs six Fargate tasks in order through two SQS queues. Spot first; after 3 Spot attempts, a Wait and an On-Demand fallback (<strong>D2</strong>, <strong>D6</strong>).",
+      notes: ["≈1¼ min, 7 quick steps. Sections 5.1 and 5.2. The run plays by itself; ▶ replays it. A load of days, retried with nobody watching (R2, R10)."] },
+    { cap: "Scheduler, Saturday 06:00 UTC → Step Functions: Spot ×3, 600 s apart → Wait 600 s → On-Demand.",
+      notes: ["Spot is up to 70% cheaper; idempotent steps lose only the in-flight batch. Rejected: MWAA, On-Demand only; a code failure now runs 5 times."] },
+    { cap: "The SQS queues and their DLQs sit <strong>outside</strong> the state machine; only the tasks use them.",
+      notes: ["filings and transactions connect master-index → scraper → kafka-to-store; after 5 receives a message goes to the DLQ. The arrows are logical: traffic passes the NAT gateway."] },
+    { cap: "Sources: SEC EDGAR for master-index and the scraper, Yahoo Finance for yahoo-connect. No batch task calls Alpaca.",
+      notes: ["The batch scraper's SEC rate is SEC_MAX_RATE=5, or 8 during a full load with the live path off."] },
+    { cap: "Each task writes its own S3 output: BT4, P, RT4 and <code>models/</code>, through the S3 gateway endpoint.",
+      notes: ["kafka-to-store, yahoo-connect, target and training each write one prefix; master-index and scraper write only SQS."] },
+    { cap: "<code>retrain</code>: Scheduler → six tasks → S3, with retries and a fallback (<strong>D2</strong>, <strong>D6</strong>).",
+      notes: ["Everything together; ▶ Run the machine replays the run."] },
+    { cap: "Why Fargate for batch: no run-time limit, billed per second while a task runs, idle the rest of the week (<strong>D2</strong>).",
+      notes: ["Rejected: Lambda (15-minute limit), EC2 (instances to patch and stop), an always-on service (bills around the clock)."] },
+  ],
+});
+section({
+  id: "live", title: "Live path", short: "Live", zoom: true,
+  h1: "From a filing to a paper short, serverless",
+  parts: [{ ...P_LIVE }, { ...P_STRIP_LIVE }],
+  map: [[0, 4], [0, 3], [0, 3], [0, 3], [0, 3], [0, 3], [0, 3], [1, 0], [0, 6]],
+  spots: [null, {"r": [[34, 199, 527, 84], [254, 346, 212, 84]], "l": [40, 455, "Every minute · seen keys in DynamoDB"]}, {"r": [[594, 199, 807, 136], [1294, 346, 277, 84], [474, 346, 222, 84]], "l": [1180, 505, "SQS chain with DLQs"]}, {"r": [[709, 346, 552, 132]], "l": [1010, 505, "Pipe: no DLQ · failed run loses its tickers"]}, {"r": [[36, 476, 968, 218]], "l": [1010, 540, "live-score: prices → rows → scores"]}, {"r": [[404, 756, 632, 84], [1044, 559, 262, 84]], "l": [1060, 720, "Model from S3 · keys from SSM · Alpaca"]}, null, null, null],
+  steps: [
+    { cap: "Poll every minute → SQS → Lambda → EventBridge Pipe → <code>live-score</code> (<strong>D8</strong>). <span class=\"tag acc\">simulated run</span>",
+      notes: ["≈1½ min, 9 quick steps. Sections 5.1 and 5.2. The run plays by itself; ▶ Send a filing replays it. An animation, not a recording; earlier real runs verified the wiring."] },
+    { cap: "EventBridge Scheduler starts the poller every minute; DynamoDB <code>seen</code> skips filings already sent.",
+      notes: ["The poller reads the SEC feed, checks the seen keys, then writes the new keys with a 7-day TTL."] },
+    { cap: "SQS chain: <code>live-filings</code> → scraper → <code>live-transactions</code> → kafka-to-store; each queue has a DLQ.",
+      notes: ["The scrapers fetch from SEC EDGAR at 2 × 2.25 requests per second; partial batch failures redeliver only unfinished messages."] },
+    { cap: "<code>live-tickers</code> → EventBridge Pipe starts <code>live-score</code> fire-and-forget: the one place without a DLQ.",
+      notes: ["A failed run loses its tickers (Section 7.1). Rejected: REQUEST_RESPONSE, which Standard workflows do not support."] },
+    { cap: "<code>live-score</code>, a Standard workflow: yahoo-connect → target → inference, each retried twice.",
+      notes: ["Standard, because the site reads its execution history. Rejected: one Lambda that polls, scrapes, stores and scores."] },
+    { cap: "inference loads <code>models/latest.json</code> from S3, reads the Alpaca keys from SSM at cold start, and places paper orders.",
+      notes: ["client_order_id is the row key, so a retry never doubles an order."] },
+    { cap: "The live chain: serverless, idle at $0, one implementation with the batch path (<strong>D1</strong>, <strong>D3</strong>, <strong>D8</strong>).",
+      notes: ["Everything together."] },
+    { cap: "Why Lambda for live: billed per invocation, so an idle minute costs nothing (<strong>D1</strong>).",
+      notes: ["Rejected: an always-on container. Cold starts of 10–45 s are accepted (D5): provisioned concurrency would cost about $60 per month, six times the budget, and a cold start matters only for the 15.1% of filings accepted in market hours."] },
+    { cap: "Both paths share <strong>one error contract</strong> on SQS standard queues, each with a DLQ (<strong>D9</strong>).",
+      notes: ["Rejected: FIFO and MSK. A DLQ does not retry; two failures bypass it: a PermanentError and a failed live-score run."] },
+  ],
+});
+section({
+  id: "storage", title: "Storage", short: "Storage",
+  h1: "One store for both paths, and a gate for the model",
+  parts: [{ ...P_ICE }, { ...P_REG }],
+  map: [[0, 0], [1, 0]],
+  steps: [
+    { cap: "An Iceberg table is plain S3 objects plus a catalog pointer: a commit writes new files, then swaps the pointer atomically (<strong>D10</strong>, <strong>D25</strong>).",
+      notes: ["≈1 min, 2 steps. Section 5.3. Upserts and schema changes on plain S3 objects, so only storage bills while idle; rejected: RDS, S3 Tables (the fix for maintenance), Aurora Serverless v2.", "pyiceberg commits optimistically: a second writer's commit fails and redoes its upsert, so parallel writers do not speed up a load. One writer per table."] },
+    { cap: "Training always saves; only the gate moves <code>latest.json</code> (<strong>D11</strong>).",
+      notes: ["The gate: at least 50,000 development rows and 80% of the current model's; the same features; a finite holdout AP; at least one short at the cutoff. It does not compare AP with the current model: each holds out a different period. The classifier replaced the regressor; it was promoted by hand (Section 6.4).", "Rejected: each run replaces the live model, or a registry service. <code>promote_model.sh</code> is also the rollback. The metadata records git SHA, scikit-learn version, feature order, row counts, holdout scores and <code>probability_cutoff</code> 0.70; inference refuses another scikit-learn version or a missing cutoff."] },
+  ],
+});
+section({
+  id: "network", title: "Network", short: "Network",
+  h1: "Only Fargate needs the VPC",
+  parts: [{ ...P_INFRA }, { ...P_PERF }],
+  map: [[0, 1], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1], [1, 0]],
+  spots: [null, {"r": [[99, 479, 312, 84]], "l": [100, 600, "Private subnets · no inbound"]}, {"r": [[99, 316, 277, 84]], "l": [100, 440, "NAT: batch path only"]}, {"r": [[334, 729, 297, 84]], "l": [340, 712, "Free S3 gateway endpoint"]}, {"r": [[844, 444, 332, 84]], "l": [850, 432, "Lambdas outside the VPC"]}, null, null],
+  steps: [
+    { cap: "The VPC holds only the Fargate tasks (<strong>D12</strong>). A free S3 gateway endpoint and a NAT gateway that exists only while the batch path is on (<strong>D14</strong>).",
+      notes: ["≈1 min, 7 quick steps. Section 5.4. Three constraints meet here: the SEC limit, the NAT as the largest fixed cost, and no inbound connections."] },
+    { cap: "Private subnets: the Fargate tasks have no public IP, and the security group has no inbound rules.",
+      notes: ["Fargate needs a subnet and a security group for every task; nothing on the internet can open a connection."] },
+    { cap: "The NAT gateway exists only while the batch path is switched on; one NAT in one AZ.",
+      notes: ["About $1.08 per day plus its EIP; the trade-off of one NAT is an AZ dependency for batch egress."] },
+    { cap: "The free S3 gateway endpoint carries S3 and the ECR image layers.",
+      notes: ["Rejected: six or more interface endpoints, about $88 per month or more, and the tasks need the internet anyway."] },
+    { cap: "The Lambdas run outside the VPC: they reach nothing inside it, so they do not depend on the NAT.",
+      notes: ["That lets the live path run continuously without the NAT gateway."] },
+    { cap: "Only Fargate needs the VPC (<strong>D12</strong>, <strong>D14</strong>).",
+      notes: ["Everything together."] },
+    { cap: "The SEC allows 10 requests per second per client. Batch 5 + live 4.5 ≈ <strong>9.5</strong>: one explicit rate budget (<strong>D13</strong>).",
+      notes: ["Batch and live send one <code>User-Agent</code>, so the limit applies to their sum. Each cap is an environment variable set in Terraform (<code>SEC_MAX_RATE</code> 5 on the task definition, 2.25 on the scraper Lambda with <code>maximum_concurrency</code> 2, 1 on the poller); <code>EdgarClient</code> spaces requests at least 1 / <code>SEC_MAX_RATE</code> seconds apart.", "The trade-off is throughput: the split reserves 4.5 for live even when idle, and nothing enforces the sum. A shared token bucket in DynamoDB was rejected.", "If the budget breaks, a 403 locks the client out for about 10 minutes."] },
+  ],
+});
+section({
+  id: "security", title: "Security and CI/CD", short: "Security",
+  h1: "Who can do what, and how changes reach AWS",
+  parts: [{ ...P_RUNSEC }, { ...S_SEC }, { ...P_CODE }],
+  map: [[0, 0], [1, 1], [1, 1], [1, 1], [1, 1], [1, 1], [1, 1], [2, 0]],
+  spots: [null, null, {"r": [[34, 209, 857, 84], [34, 630, 770, 160]], "l": [40, 330, "PR → quality-static gates + read-only plan"]}, {"r": [[924, 209, 642, 84], [824, 630, 744, 120]], "l": [930, 330, "Merge → build → Trivy scan → push"]}, {"r": [[34, 369, 1202, 84]], "l": [300, 492, "Encrypted plan → approval → apply"]}, {"r": [[36, 496, 1528, 133]], "l": [40, 486, "OIDC roles: temporary credentials"]}, null, null],
+  steps: [
+    { cap: "Runtime: one role per service, secrets in SSM outside the state (<strong>D15</strong>, <strong>D16</strong>).",
+      notes: ["≈1¼ min, 8 quick steps. Section 5.5. The pressure: a public repository and Alpaca keys that can place and cancel orders (R8); only one service may trade (R6).", "The choice: <code>task_access</code> and <code>lambda_access</code> list each service's queues and capabilities; the iam module turns each entry into one inline policy.", "Rejected: one shared role, Terraform-managed secrets, Secrets Manager. Trade-offs: the shared ECS execution role and the publisher's shared keys rest on code and task definitions, not IAM."] },
+    { cap: "Deploy: no stored keys, and the reviewer approves exactly the plan that is applied (<strong>D17</strong>, <strong>D18</strong>).",
+      notes: ["Section 5.6. The pipeline can change the AWS account, and a public repository's artifacts are public."] },
+    { cap: "A pull request runs <code>quality.yml</code> and a read-only <code>terraform plan</code>.",
+      notes: ["quality-static runs ruff, pydoclint, bandit, unit tests against fakes, Trivy fs (dependencies, secrets) and Trivy config (Terraform); all fail on HIGH or CRITICAL; accepted findings sit in .trivyignore. make security-scan runs the same checks locally."] },
+    { cap: "A merge to master builds the arm64 images: immutable tags, scanned on push.",
+      notes: ["images.yml builds each changed image, Trivy scans it, and only a clean image is pushed; a failing service is held back. All 8 images passed the gate today after apt-get upgrade, pip removal and two lockfile bumps. Rulesets: a pull request with checks; no force push or deletion."] },
+    { cap: "The saved plan is encrypted (AES-256 + PBKDF2, 1 day); after approval in <code>aws</code>, apply runs exactly that plan.",
+      notes: ["Plan encrypted with AES-256 and PBKDF2, key in TFPLAN_KEY, artifact kept 1 day. Rejected: apply -auto-approve after a fresh plan, with a plain artifact anyone can download."] },
+    { cap: "Three OIDC roles, one job each; STS checks the audience and exact <code>sub</code> claims.",
+      notes: ["Rejected: IAM user keys in GitHub, which live until rotated. github-apply is assumable only from the environment aws."] },
+    { cap: "Deploy: no stored keys, and the reviewer approves exactly the plan that is applied (<strong>D17</strong>, <strong>D18</strong>).",
+      notes: ["Everything together: no stored keys, and the reviewer approves what is applied (D17, D18)."] },
+    { cap: "The code structure decides what CI tests, builds and redeploys: one shared clients package implements the ports for every service.",
+      notes: ["Section 5.6, code structure and the pipeline. Seven services plus the site publisher, each its own uv project; all depend on <code>packages/secform4strategy-clients</code>.", "The tiles toggle by themselves: a change to scraper/ rebuilds 1 image; a change to the clients package rebuilds all 8. Same tag → skip → no redeploy.", "Tests run against typed fakes, so CI needs no AWS access and no mocks; Terraform redeploys only the services whose image changed."] },
+  ],
+});
+section({
+  id: "cost", title: "Cost, observability and availability", short: "Cost",
+  h1: "What bills, when, and how mistakes are caught",
+  parts: [{ ...P_COST }, { ...P_AVAIL }],
+  map: [[0, 0], [0, 1], [1, 0]],
+  steps: [
+    { cap: "Three cost states behind three switches: the live path runs for cents, and only the batch path needs the NAT gateway (<strong>D19</strong>).",
+      notes: ["≈1¼ min, 3 steps. Section 5.7. The pressure: a $10 budget, and a NAT gateway that bills about $1.08 per day with no traffic.", "The choice: everything else is serverless, so one switch on the NAT gateway covers almost all fixed cost; $10 covers the live path all month plus several switched-on batch days.", "Rejected: an always-on stack. During a full load <code>live_enabled</code> must be off: 8 + 4.5 would exceed the SEC's 10."] },
+    { cap: "The backfill month: <strong>$8.52 of $10</strong>; guardrails and observability catch mistakes (<strong>D20</strong>).",
+      notes: ["Sections 5.7 and 5.8. The NAT gateway was the largest item, because the stack ran switched on from 2026-11-20 for the backfill.", "Rejected: third-party monitoring or X-Ray; CloudWatch already holds the logs and metrics, and stays in the free tier.", "Budget secform4strategy-monthly emails at 50% of actual and 100% of forecast; it alerts, it does not cap. Athena cancels queries above 1 GiB; logs keep 14 days; one DLQ alarm per queue through SNS to email. Dashboard free up to 50 metrics; make status in about 15 s. Known gaps: no ExecutionsFailed alarm, and the Pipe has no DLQ."] },
+    { cap: "Availability and recovery: the live path is highly available in the region (<strong>D27</strong>); batch and data accept longer recovery (R7).",
+      notes: ["Section 5.8. AWS keeps each regional service available across AZs; the project chooses which redundancy to pay for.", "RTO is the time to recover; RPO the data that can be lost. A lost table is rebuilt from EDGAR and Yahoo in about 2 days; a lost model is re-promoted in minutes."] },
+  ],
+});
+section({
+  id: "website", title: "Study website", short: "Website",
+  h1: "A publisher in place of an API",
+  parts: [{ ...P_SITE2 }],
+  map: [[0, 0], [0, 1], [0, 2], [0, 2], [0, 2], [0, 2], [0, 2]],
+  spots: [null, null, {"r": [[24, 214, 882, 262], [934, 256, 342, 76]], "l": [320, 500, "1 Serve: edge auth, OAC, private bucket"]}, {"r": [[934, 366, 332, 152], [1284, 374, 282, 82]], "l": [1180, 545, "2 Trigger: schedule + rule"]}, {"r": [[928, 554, 644, 234], [14, 474, 282, 212], [1284, 374, 282, 82], [934, 256, 342, 76]], "l": [930, 541, "3 Publish: read-only in, static JSON out"]}, {"r": [[14, 706, 892, 162], [934, 790, 342, 66], [934, 256, 342, 76]], "l": [40, 700, "4 Deploy: image + site files"]}, null],
+  steps: [
+    { cap: "Serve, trigger, publish, deploy: a publisher Lambda writes static JSON, and the browser never reaches the system (<strong>D21</strong>).",
+      notes: ["≈1¼ min, 7 quick steps. Section 5.9 and Figure 5. The four flows play by themselves; ▶ replays them.", "The pressure: show the client what the system does with their money (R9) without exposing the lakehouse or the keys (R8), and with no server in the budget (R7).", "Rejected: API Gateway and a Lambda per request, which runs code for internet requests that could reach the lakehouse or Alpaca."] },
+    { cap: "CloudFront reads the private bucket through OAC (<strong>D22</strong>) after a CloudFront Function checks Basic auth (<strong>D23</strong>).",
+      notes: ["Rejected: a public S3 website (HTTP only, public bucket), Cognito, or a password in Terraform.", "Remaining weakness: the publisher uses the same Alpaca keys as inference; it calls only read endpoints, so that isolation relies on code."] },
+    { cap: "1 Serve: the browser → CloudFront Function (Basic auth) → distribution → OAC → private S3 bucket.",
+      notes: ["HTTPS only, GET and HEAD; data/* cached at most 5 s, static files at most 60 s."] },
+    { cap: "2 Trigger: the Scheduler every minute, and the rule when a <code>live-score</code> run ends.",
+      notes: ["Both invoke the publisher asynchronously; a missed publish is replaced the next minute."] },
+    { cap: "3 Publish: the publisher reads, read-only, and writes five JSON files into the site bucket.",
+      notes: ["Step Functions, SQS, CloudWatch, Scheduler, the lakehouse, SSM; Alpaca and Yahoo over the internet."] },
+    { cap: "4 Deploy: <code>images.yml</code> pushes the publisher image; <code>terraform.yml</code> uploads <code>site/</code>.",
+      notes: ["Through github-apply, master only, after approval in the environment aws."] },
+    { cap: "CloudFront reads the private bucket through OAC (<strong>D22</strong>) after a CloudFront Function checks Basic auth (<strong>D23</strong>).",
+      notes: ["Everything together: no public API (D21–D23)."] },
+  ],
+});
+section({
+  id: "results", title: "Results", short: "Results",
+  h1: "A modest, consistent signal before costs",
+  parts: [{ ...P_RESULTS }],
+  map: [[0, 3]],
+  steps: [
+    { cap: "Holdout AP <strong>0.418</strong> against a base rate of 0.338. At 0.70: <strong>314 shorts</strong>, precision 0.60, median <strong>+9.9%</strong>, before costs.",
+      notes: ["≈45 s. Section 6.1. <code>ticker_history</code> reaches AP 0.404, so the ranking edge is small. Short SPY over the same windows: −1.33% per trade.", "The median short return rises with the cutoff. Caveats: before costs and borrow, a small overlapping sample, one holdout year.", "Earlier live runs verified the wiring before the classifier was promoted; no live classifier result is claimed."] },
+  ],
+});
+S_QA.id = "questions"; S_QA.title = "Questions"; S_QA.short = "Q&A"; S_QA.h1 = "Questions";
+S_QA.steps = [{"cap": "Click a card for the short answer.", "notes": ["≈30 s, then open questions. The cards prompt the likely ones.", "Deeper answers: docs/presentation/glossary-and-faq.md."]}];
+section({
+  id: "conclusion", title: "Conclusion", short: "Conclusion",
+  h1: "A trading research platform that costs almost nothing idle",
+  parts: [{ ...P_CONC }],
+  map: [[0, 0]],
+  steps: [
+    { cap: "Every AWS choice traces back to a requirement.",
+      notes: ["≈30 s. Four lines, each with its proof: two shapes and one lakehouse; pay only when it works; secure by construction; a first signal.", "Close with: \"The platform is the deliverable: it keeps scoring live filings, and the next untouched period is the real test.\""] },
+  ],
+});
+section(S_QA);
 
 /* ---------- app ---------- */
 const stage = $("#stage"), viewport = $("#viewport");
@@ -1707,8 +2505,9 @@ function buildSlide(def, idx) {
   const el = document.createElement("section");
   el.className = "slide"; el.dataset.id = def.id;
   const caps = def.steps.map((st, k) => `<p class="cap rv" data-s="${k}" data-u="${k}">${st.cap}</p>`).join("");
+  const body = d => `<svg class="dia" viewBox="0 0 1600 900" aria-hidden="true">${d.svg ? d.svg() : ""}</svg>${d.html ? d.html() : ""}`;
   el.innerHTML = `${def.bare ? "" : `<div class="head"><div class="kicker">${idx === 0 ? "" : `<span class="kn">${String(idx).padStart(2, "0")}</span>`}${esc(def.title)}</div><h1>${def.h1}</h1><div class="caps">${caps}</div></div>`}
-    <svg class="dia" viewBox="0 0 1600 900" aria-hidden="true">${def.svg ? def.svg() : ""}</svg>${def.html ? def.html() : ""}`;
+    ${def.parts ? def.parts.map((d, k) => `<div class="part" data-part="${k}">${body(d)}</div>`).join("") : body(def)}`;
   return el;
 }
 function applyStep(root, step) {
@@ -1722,13 +2521,56 @@ function prepDraw(root) { $$("path.draw", root).forEach(p => { const L = Math.ce
 function syncDraw(root) { $$("path.draw", root).forEach(p => { p.style.strokeDashoffset = p.classList.contains("on") ? 0 : p.dataset.len; }); }
 
 function render() {
-  SECTIONS.forEach((def, i) => { const el = buildSlide(def, i); stage.appendChild(el); def.el = el; applyStep(el, -1); def.init && def.init(el); prepDraw(el); });
+  SECTIONS.forEach((def, i) => {
+    const el = buildSlide(def, i); stage.appendChild(el); def.el = el; applyStep(el, -1);
+    if (def.parts) def.parts.forEach((d, k) => { d.el = $(`.part[data-part="${k}"]`, el); d.init && d.init(d.el); });
+    else def.init && def.init(el);
+    prepDraw(el);
+  });
   $("#rail").innerHTML = SECTIONS.map((d, i) => `<button class="rail-item" data-i="${i}" aria-label="${esc(d.title)}"><b>${i}</b><span>${esc(d.short || d.title)}</span></button>`).join("");
   $$(".rail-item").forEach(b => b.addEventListener("click", () => { go(+b.dataset.i, 0); b.blur(); }));
 }
 function fit() {
   const W = viewport.clientWidth, H = viewport.clientHeight, k = Math.min(W / 1600, H / 900);
   stage.style.transform = `translate(${(W - 1600 * k) / 2}px, ${(H - 900 * k) / 2}px) scale(${k})`;
+}
+function drawSpot(root, sp, key, zp) {
+  $$(".spotfx", root).forEach(e => e.remove());
+  // Zoom: the active part is scaled about the spotlight's bounding box; the header stays on top
+  let k = 1, tx = 0, ty = 0;
+  if (zp) {
+    if (sp) {
+      const x0 = Math.min(...sp.r.map(r => r[0])), y0 = Math.min(...sp.r.map(r => r[1]));
+      const x1 = Math.max(...sp.r.map(r => r[0] + r[2])), y1 = Math.max(...sp.r.map(r => r[1] + r[3]));
+      k = Math.min(1.8, Math.max(1, Math.min(1500 / (x1 - x0), 560 / (y1 - y0)) * 0.92));
+      tx = k === 1 ? 0 : 800 - k * (x0 + x1) / 2; ty = k === 1 ? 0 : 575 - k * (y0 + y1) / 2;
+    }
+    zp.style.transformOrigin = "0 0";
+    zp.style.transition = RM.matches ? "none" : "transform .9s cubic-bezier(.65,0,.35,1), clip-path .9s cubic-bezier(.65,0,.35,1), opacity .5s, visibility 0s";
+    zp.style.transform = k === 1 ? "" : `translate(${tx}px,${ty}px) scale(${k})`;
+    // In the part's own coordinates: keep only what lands between the header and the footer
+    zp.style.clipPath = k === 1 ? "inset(0px 0px 0px 0px)" : `inset(${Math.max(0, (228 - ty) / k)}px ${Math.max(0, 1600 - (1600 - tx) / k)}px ${Math.max(0, 900 - (866 - ty) / k)}px ${Math.max(0, -tx / k)}px)`;
+    root.classList.toggle("zoomed", k !== 1);
+  }
+  const T = `translate(${tx}px,${ty}px) scale(${k})`, prev = root.dataset.spz || "translate(0px,0px) scale(1)";
+  root.dataset.spz = sp ? T : "translate(0px,0px) scale(1)";
+  if (!sp) return;
+  const pad = r => `<rect x="${r[0]}" y="${r[1]}" width="${r[2]}" height="${r[3]}" rx="16"`;
+  const w = sp.l ? sp.l[2].length * 8.6 + 28 : 0;
+  let lx = sp.l ? sp.l[0] : 0, ly = sp.l ? sp.l[1] : 0;
+  if (zp && k !== 1 && sp.l) {
+    const x0 = Math.min(...sp.r.map(r => r[0])), y0 = Math.min(...sp.r.map(r => r[1])), y1 = Math.max(...sp.r.map(r => r[1] + r[3]));
+    lx = Math.max(30, Math.min(1570 - w, k * x0 + tx));
+    ly = k * y0 + ty - 22 >= 276 ? k * y0 + ty - 22 : Math.min(872, k * y1 + ty + 38);
+  }
+  root.insertAdjacentHTML("beforeend", `<svg class="spotfx" viewBox="0 0 1600 900"${zp ? ' style="clip-path:inset(228px 0 34px 0)"' : ""}><defs><mask id="spm-${key}" maskUnits="userSpaceOnUse" x="-3000" y="-3000" width="9000" height="9000"><rect x="-3000" y="-3000" width="9000" height="9000" fill="#fff"/>${sp.r.map(r => `${pad(r)} fill="#000"/>`).join("")}</mask>
+    <filter id="spg-${key}" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="6"/></filter></defs>
+    <g class="spz" style="transform-origin:0 0;transform:${prev};transition:${RM.matches ? "none" : "transform .9s cubic-bezier(.65,0,.35,1)"}">
+    <rect x="-3000" y="${zp ? -3000 : 214}" width="9000" height="${zp ? 9000 : 686}" fill="var(--bg)" opacity=".65" mask="url(#spm-${key})"/>
+    ${sp.r.map(r => `${pad(r)} fill="none" stroke="var(--accent)" stroke-width="7" opacity=".35" filter="url(#spg-${key})"/>${pad(r)} fill="none" stroke="var(--accent)" stroke-width="2.6"/>`).join("")}</g>
+    ${sp.l ? `<g transform="translate(${lx} ${ly})"><rect y="-24" width="${w}" height="34" rx="17" fill="var(--accent)"/><text x="${w / 2}" y="-1" text-anchor="middle" style="font-size:15px;font-weight:700;fill:#fff">${sp.l[2]}</text></g>` : ""}</svg>`);
+  const g = root.querySelector(".spotfx .spz");
+  requestAnimationFrame(() => requestAnimationFrame(() => { g.style.transform = T; }));
 }
 function go(i, s, opts = {}) {
   i = Math.max(0, Math.min(SECTIONS.length - 1, i));
@@ -1742,10 +2584,21 @@ function go(i, s, opts = {}) {
     SECTIONS.forEach((d, k) => { d.el.classList.toggle("cur", k === i); d.el.classList.toggle("before", k < i); });
   }
   cur = { i, s };
-  applyStep(def.el, s); syncDraw(def.el);
   const r = runner();
-  try { def.step && def.step(def.el, s, r, { entered, from: entered ? -1 : before.s }); } catch (err) { console.error(err); }
-  if (def.ambient !== false && !(def.quiet || []).includes(s)) ambient(def.el, r, def.ambientMs);
+  if (def.parts) {
+    // A composite section shows one step of one part: map[s] = [part, part step]
+    const [pk, ps] = def.map[s], part = def.parts[pk];
+    applyStep($(".head", def.el), s);
+    def.parts.forEach((d, k) => d.el.classList.toggle("act", k === pk));
+    applyStep(part.el, ps); syncDraw(def.el);
+    try { part.step && part.step(part.el, ps, r, { entered, from: -1 }); } catch (err) { console.error(err); }
+    if (part.ambient !== false && !(part.quiet || []).includes(ps)) ambient(part.el, r, part.ambientMs);
+    drawSpot(def.el, (def.spots || [])[s], def.id, def.zoom ? part.el : null);
+  } else {
+    applyStep(def.el, s); syncDraw(def.el);
+    try { def.step && def.step(def.el, s, r, { entered, from: entered ? -1 : before.s }); } catch (err) { console.error(err); }
+    if (def.ambient !== false && !(def.quiet || []).includes(s)) ambient(def.el, r, def.ambientMs);
+  }
   ui();
   if (!opts.noHash) { const h = `#${def.id}/${s}`; if (location.hash !== h) history.replaceState(null, "", h); }
   booted = true;
@@ -1790,7 +2643,12 @@ function buildOverview() {
     clone.classList.remove("before"); clone.classList.add("cur");
     $$("#l-dia, #d-dia", clone).forEach(e => e.style.opacity = 1);
     $$("[id]", clone).forEach(e => e.removeAttribute("id"));
-    applyStep(clone, def.thumbStep ?? def.steps.length - 1);
+    const ts = def.thumbStep ?? def.steps.length - 1;
+    if (def.parts) {
+      const [pk, ps] = def.map[ts], head = $(".head", clone);
+      if (head) applyStep(head, ts);
+      $$(".part", clone).forEach((d, k) => { d.classList.toggle("act", k === pk); if (k === pk) applyStep(d, ps); });
+    } else applyStep(clone, ts);
     $$("path.draw", clone).forEach(p => p.style.strokeDashoffset = 0);
     $$(".tokens", clone).forEach(g => g.replaceChildren());
     th.appendChild(clone); b.appendChild(th);

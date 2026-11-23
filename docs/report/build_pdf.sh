@@ -82,7 +82,9 @@ from pathlib import Path
 
 page, text = Path(sys.argv[1]), Path(sys.argv[2])
 doc = page.read_text()
-pages = [{' '.join(line.split()) for line in sheet.splitlines()} for sheet in text.read_text().split('\f')]
+sheets = [[' '.join(line.split()) for line in sheet.splitlines()] for sheet in text.read_text().split('\f')]
+# On the Contents page, only the text after the list's last entry (References) can hold a chapter heading
+pages = [set(lines[max((i for i, line in enumerate(lines) if line.startswith('References')), default=len(lines) - 1) + 1:]) if 'Contents' in lines else set(lines) for lines in sheets]
 start = doc.index('id="contents"')
 end = doc.index('<h2', start + 1)
 headings = {m[1]: re.sub(r'<[^>]+>', '', m[2]) for m in re.finditer(r'<h[1-4] id="([^"]+)"[^>]*>(.*?)</h[1-4]>', doc, re.S)}
@@ -90,7 +92,7 @@ headings = {m[1]: re.sub(r'<[^>]+>', '', m[2]) for m in re.finditer(r'<h[1-4] id
 
 def number(m: re.Match[str]) -> str:
     title = ' '.join(markup.unescape(headings.get(m[1], '')).split())
-    if not (found := [i + 1 for i, lines in enumerate(pages) if title and title in lines and 'Contents' not in lines]):
+    if not (found := [i + 1 for i, lines in enumerate(pages) if title and title in lines]):
         return m[0]
     return f'<a class="toc-link" href="#{m[1]}">{m[2]}<span class="toc-page">{found[0]}</span></a>'
 
