@@ -127,7 +127,7 @@ Both triggers invoke the function asynchronously. Lambda drops an event older th
 
 Each file has a top-level `generated_at` timestamp. The records in `site-publisher/src/records.py` define the fields.
 
-`live.json` gives each scored filing its `probability` and whether it was `shorted`. Each run carries the `probability_cutoff` that inference shorted at, and the file's top-level `probability_cutoff` is the newest run's. Runs that scored nothing have no cutoff.
+`live.json` gives each scored filing its `probability` and whether it was `shorted`. Each run carries the `probability_cutoff` that inference shorted at, and the file's top-level `probability_cutoff` is the newest run's. Runs that scored nothing have no cutoff. Such a run's `skip` says why: `no_sale` when target found no sale in the filing, and `stale` when inference found no row accepted in the last 60 minutes. A `no_sale` run lists the tickers of the messages that started it.
 
 `model.json` holds these model fields:
 

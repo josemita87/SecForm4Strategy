@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from constants import Skip
 from records import (
     AccountSummary,
     Equity,
@@ -89,8 +90,23 @@ def steps(events: Iterable[HistoryEvent], status: RunStatus) -> tuple[Step, ...]
     )
 
 
+def started_tickers(input_text: str | None) -> tuple[str, ...]:
+    """Return the tickers of the SQS messages that started the run.
+
+    Args:
+        input_text: The execution input: the Pipe's SQS records, each body ``{"tickers": [...]}``.
+
+    Returns:
+        The distinct tickers, in order.
+    """
+    payload = json.loads(input_text) if input_text else []
+    records = payload if isinstance(payload, list) else [payload]
+    bodies = [json.loads(body) if isinstance(body := record.get('body', record), str) else body for record in records]
+    return tuple(dict.fromkeys(ticker for body in bodies for ticker in body.get('tickers', ())))
+
+
 def tickers(input_text: str | None, output: Mapping[str, Any]) -> tuple[str, ...]:
-    """Return the run's tickers: from its output, or from the SQS messages that started it.
+    """Return the run's tickers: from its output, or from the SQS messages that started it when the output names none.
 
     Args:
         input_text: The execution input: the Pipe's SQS records, each body ``{"tickers": [...]}``.
@@ -99,12 +115,26 @@ def tickers(input_text: str | None, output: Mapping[str, Any]) -> tuple[str, ...
     Returns:
         The distinct tickers, in order.
     """
-    if 'tickers' in output:
-        return tuple(output['tickers'])
-    payload = json.loads(input_text) if input_text else []
-    records = payload if isinstance(payload, list) else [payload]
-    bodies = [json.loads(body) if isinstance(body := record.get('body', record), str) else body for record in records]
-    return tuple(dict.fromkeys(ticker for body in bodies for ticker in body.get('tickers', ())))
+    return tuple(output.get('tickers', ())) or started_tickers(input_text)
+
+
+def skip(input_text: str | None, output: Mapping[str, Any]) -> Skip | None:
+    """Return why a finished run scored nothing.
+
+    Target outputs no tickers for a filing without a sale; inference returns its tickers unscored when no row is fresh.
+
+    Args:
+        input_text: The execution input: the Pipe's SQS records, each body ``{"tickers": [...]}``.
+        output: The parsed execution output, inference's payload; empty while running or after a failure.
+
+    Returns:
+        ``NO_SALE``, ``STALE``, or None when the run scored, is running or failed.
+    """
+    if 'tickers' not in output:
+        return None
+    if not output['tickers']:
+        return Skip.NO_SALE if started_tickers(input_text) else None
+    return Skip.STALE if output.get('scored') == 0 and not output.get('predictions') else None
 
 
 def error_message(error: str | None, cause: str | None, limit: int = 300) -> str | None:
@@ -176,6 +206,7 @@ def run(source: RunSource, orders: Mapping[str, BrokerOrder]) -> Run:
         tickers=tickers(execution.input, output),
         steps=steps(source.events, execution.status),
         error=error_message(execution.error, execution.cause),
+        skip=skip(execution.input, output),
         probability_cutoff=output.get('probability_cutoff'),
         filings=filings(output, orders),
     )

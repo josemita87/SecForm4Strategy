@@ -38,6 +38,13 @@ class Col(StrEnum):
     LAST_ACCEPTED_AT = 'last_accepted_at'
 
 
+class Skip(StrEnum):
+    """Why a finished live run scored nothing."""
+
+    NO_SALE = 'no_sale'
+    STALE = 'stale'
+
+
 class Section(StrEnum):
     """The site's data files, each written to ``data/<section>.json``."""
 

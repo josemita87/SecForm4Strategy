@@ -7,6 +7,7 @@ Under test:
 import json
 from datetime import UTC, datetime, timedelta
 
+from constants import Skip
 from operations import (
     RunSource,
     current_step,
@@ -19,6 +20,7 @@ from operations import (
     queues,
     retrain,
     run_counts,
+    skip,
     steps,
     tickers,
 )
@@ -120,6 +122,28 @@ class TestTickers:
     def test_no_input_no_tickers(self) -> None:
         assert tickers(None, {}) == ()
 
+    def test_empty_output_falls_back_to_the_input(self) -> None:
+        assert tickers(INPUT, {'tickers': [], 'scored': 0}) == ('DBX', 'TGT')
+
+
+class TestSkip:
+    """A finished run that scored nothing names why: no sale in the filing, or no fresh row."""
+
+    def test_no_output_tickers_is_no_sale(self) -> None:
+        assert skip(INPUT, {'tickers': [], 'scored': 0, 'shorts': [], 'predictions': []}) is Skip.NO_SALE
+
+    def test_tickers_unscored_is_stale(self) -> None:
+        assert skip(INPUT, {'tickers': ['DBX'], 'scored': 0, 'shorts': [], 'predictions': []}) is Skip.STALE
+
+    def test_scored_run_is_not_skipped(self) -> None:
+        assert skip(INPUT, OUTPUT) is None
+
+    def test_running_or_failed_run_is_not_skipped(self) -> None:
+        assert skip(INPUT, {}) is None
+
+    def test_no_tickers_anywhere_is_not_skipped(self) -> None:
+        assert skip(None, {'tickers': [], 'scored': 0}) is None
+
 
 class TestErrorMessage:
     """A failure reads as the error name and the handler's message."""
@@ -193,6 +217,12 @@ class TestLiveReport:
             'order': {'id': 'o-1', 'status': 'filled', 'filled_avg_price': 27.1},
         }
         assert (failed['error'], failed['steps'][0]['status']) == ('ValueError: boom', 'FAILED')
+        assert [run['skip'] for run in report['runs']] == [None, None, None]
+
+    def test_a_run_without_a_sale_shows_its_input_tickers(self) -> None:
+        output = {'tickers': [], 'scored': 0, 'shorts': [], 'predictions': []}
+        (run,) = live_report(T0, True, [RunSource(execution('SUCCEEDED', output), ())], []).runs
+        assert (run.tickers, run.skip) == (('DBX', 'TGT'), Skip.NO_SALE)
 
 
 # health.json

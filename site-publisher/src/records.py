@@ -3,6 +3,7 @@
 from datetime import UTC, date, datetime
 from typing import Annotated
 
+from constants import Skip
 from pydantic import AfterValidator, BaseModel, ConfigDict, PlainSerializer
 from secform4strategy_clients.records import RunStatus
 
@@ -85,9 +86,12 @@ class Run(Record):
     status: RunStatus
     started_at: UtcTime
     stopped_at: UtcTime | None
+    # From the output, or from the messages that started the run when the output names none
     tickers: tuple[str, ...]
     steps: tuple[Step, ...]
     error: str | None
+    # Why the run scored nothing; None for runs that scored, are running or failed
+    skip: Skip | None
     # The cutoff inference shorted at; None for runs that scored nothing, or predate the classifier
     probability_cutoff: float | None
     filings: tuple[LiveFiling, ...]
