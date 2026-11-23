@@ -1,7 +1,7 @@
 variable "monthly_budget_usd" {
   description = "Monthly cost budget for the account."
   type        = number
-  default     = 5
+  default     = 10
 }
 
 variable "alert_email" {
@@ -11,7 +11,7 @@ variable "alert_email" {
 }
 
 variable "switched_on" {
-  description = "Switch the stack on: creates the NAT gateway and, later, enables the schedules."
+  description = "Switch the batch path on: creates the NAT gateway and lets the weekly retrain run."
   type        = bool
   default     = false
 }
@@ -23,7 +23,7 @@ variable "weekly_retrain_enabled" {
 }
 
 variable "live_enabled" {
-  description = "Poll for new filings every minute while switched on; off while a full-rate backfill uses SEC's limit."
+  description = "Poll for new filings every minute, independently of switched_on (the live chain needs no NAT gateway); off while a full-rate backfill uses SEC's limit."
   type        = bool
-  default     = true
+  default     = false
 }

@@ -211,10 +211,11 @@ locals {
 }
 
 module "live" {
-  source            = "../../modules/live"
-  name              = "secform4strategy"
-  poller            = "master-index"
-  schedule_enabled  = var.switched_on && var.live_enabled
+  source = "../../modules/live"
+  name   = "secform4strategy"
+  poller = "master-index"
+  # The live chain runs outside the VPC, so it needs no NAT gateway and no switched_on
+  schedule_enabled  = var.live_enabled
   score_steps       = ["yahoo-connect", "target", "inference"]
   tickers_queue_arn = module.queues.queues["live-tickers"].arn
   functions = {
@@ -307,10 +308,11 @@ output "dashboard" {
 }
 
 module "site" {
-  source                       = "../../modules/site"
-  site_directory               = "${path.root}/../../../site"
-  name                         = "secform4strategy"
-  schedule_enabled             = var.switched_on
+  source         = "../../modules/site"
+  site_directory = "${path.root}/../../../site"
+  name           = "secform4strategy"
+  # The publisher feeds the Live page, so it runs whenever the stack or the live path is on
+  schedule_enabled             = var.switched_on || var.live_enabled
   publisher_role_name          = module.iam.lambda_role_names["site-publisher"]
   publisher_role_arn           = module.iam.lambda_role_arns["site-publisher"]
   live_score_state_machine_arn = module.live.score_state_machine_arn
