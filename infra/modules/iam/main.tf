@@ -76,8 +76,9 @@ locals {
     seen-keys = [
       { actions = ["dynamodb:BatchGetItem", "dynamodb:BatchWriteItem"], resources = ["arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.name}-seen"] },
     ]
+    # The SEC User-Agent only; the Alpaca keys need read-alpaca-keys
     read-secrets = [
-      { actions = ["ssm:GetParameters"], resources = ["arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.name}/*"] },
+      { actions = ["ssm:GetParameters"], resources = ["arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.name}/sec-user-agent"] },
     ]
     # The two Alpaca keys only, for the services that trade or read the account
     read-alpaca-keys = [

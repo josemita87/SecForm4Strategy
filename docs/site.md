@@ -5,9 +5,9 @@ The site is a password-protected study website about the project. It has five pa
 | Page | Shows |
 | --- | --- |
 | Story | The presentation deck: the idea, the data, the model and the results |
-| Live | The latest `live-score` runs, their filings, predictions and orders |
+| Live | The latest `live-score` runs, their filings, each filing's probability of a short winner against the cutoff, and the orders |
 | Portfolio | The Alpaca paper account: equity, positions and orders |
-| Model | The current model: parameters, validation folds, holdout results and feature importance |
+| Model | The current classifier: parameters, probability cutoff, fold and holdout average precision (AP) against the base rate, ROC-AUC, median return of the shorts, cutoff results and feature importance |
 | Explore | The largest insider sales and the clusters of insider sales of the last 7 days |
 
 The `site` module in `infra/modules/site` defines the AWS resources. The frontend is in `site/`, and the publisher Lambda is in `site-publisher/`.
@@ -82,7 +82,6 @@ The environment holds the lakehouse and model store settings of the live Lambdas
 | Variable | Value |
 | --- | --- |
 | `SITE_BUCKET` | The site bucket |
-| `PREDICTION_THRESHOLD` | `-0.05`, the threshold inference trades at. `model.json` uses it for a model saved without a `prediction_threshold` |
 | `ALPACA_BASE_URL` | `https://paper-api.alpaca.markets` |
 | `SSM_PARAMETERS` | The two Alpaca key parameters, as for the inference Lambda |
 | `LIVE_SCORE_STATE_MACHINE_ARN`, `RETRAIN_STATE_MACHINE_ARN` | The two state machines |
@@ -120,17 +119,29 @@ Both triggers invoke the function asynchronously. Lambda drops an event older th
 
 | File | Written | Contents |
 | --- | --- | --- |
-| `data/live.json` | After each `live-score` run, and every minute | The latest 50 `live-score` runs, with their steps, filings, predictions and Alpaca orders |
+| `data/live.json` | After each `live-score` run, and every minute | The latest 50 `live-score` runs, with their steps, filings, probabilities, probability cutoff and Alpaca orders |
 | `data/health.json` | Every minute | The switches, queue depths, live Lambda metrics, `live-score` outcomes of the last 24 hours, the latest `retrain` run and the model version |
 | `data/portfolio.json` | Every minute | The Alpaca paper account, its equity history, positions and latest 100 orders |
-| `data/model.json` | When the model version changes | Parameters, validation folds, holdout metrics, threshold results, cumulative return against SPY, feature importance. The rebuild is assumed to finish within a minute; a longer one starts again in each later invocation until one writes the file |
+| `data/model.json` | When the model version changes | Parameters, probability cutoff, label return, base rate, validation folds, holdout metrics, cutoff results, cumulative return against SPY, feature importance. The rebuild is assumed to finish within a minute; a longer one starts again in each later invocation until one writes the file |
 | `data/explore.json` | Every 15 minutes (`every_minutes` must divide 60); optional | The largest insider sales and the insider clusters of the last 7 days |
 
 Each file has a top-level `generated_at` timestamp. The records in `site-publisher/src/records.py` define the fields.
 
-The threshold table of `model.json` scores the holdout at each of the model metadata's `report_thresholds`, which training saves. A model saved before training recorded them has an empty `report_thresholds`. For that model, the table holds one row, at the traded threshold.
+`live.json` gives each scored filing its `probability` and whether it was `shorted`. Each run carries the `probability_cutoff` that inference shorted at, and the file's top-level `probability_cutoff` is the newest run's. Runs that scored nothing have no cutoff.
 
-The traded threshold is the model metadata's `prediction_threshold`, or `PREDICTION_THRESHOLD` when the metadata has none. `model.json` reports it as `prediction_threshold`, which is never `null`. The cumulative return series shorts the holdout rows predicted strictly below it.
+`model.json` holds these model fields:
+
+| Field | Content |
+| --- | --- |
+| `probability_cutoff` | The cutoff saved with the model; the model shorts rows at or above it |
+| `label_return` | The label: a short winner has a return below this value, `-0.05` |
+| `base_rate` | The holdout share of short winners, which is also the AP of a constant predictor |
+| `folds` | Per walk-forward fold, the model's validation AP (`model_ap`) and the fold's base rate |
+| `metrics` | Per predictor (`model`, `base_rate`, `ticker_history`): `average_precision`, `roc_auc`, `precision`, `n_shorts`, and the mean (`short_return`), median and 5% trimmed mean of the captured returns |
+| `cutoffs` | The holdout shorts at each cutoff of the metadata's `cutoff_sweep`: `n_shorts`, `mean_return`, `median_return`. A model without a sweep gets one row, at its cutoff |
+| `importance` | Permutation importance: the fall in holdout AP when a feature is shuffled |
+
+The cumulative return series shorts the holdout rows whose probability is at least `probability_cutoff`. The publisher skips a model saved without `probability_cutoff` or `label_return`, a model from before the classifier, and logs a warning.
 
 ## Network
 

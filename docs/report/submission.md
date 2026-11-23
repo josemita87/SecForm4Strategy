@@ -13,7 +13,7 @@
 
 **The question.** Corporate insiders must report their trades to the US Securities and Exchange Commission (SEC) on a Form 4. The project tests one hypothesis: insider sales come before the stock underperforms, and the market has not priced that in when the filing becomes public. If the hypothesis holds, the edge goes to the system that reacts first after publication.
 
-**The system.** SecForm4Strategy reads every Form 4 from the SEC's EDGAR system, joins it to the stock prices after the filing became public, trains a gradient-boosted regression model to predict the 30-day return, and places short orders on a paper-trading account at the broker Alpaca. It runs on AWS in account `100118195151`, region `us-east-1`. Terraform defines every resource, and GitHub Actions deploys it through OIDC with an approval-gated, two-stage apply.
+**The system.** SecForm4Strategy reads every Form 4 from the SEC's EDGAR system, joins it to the stock prices after the filing became public, trains a gradient-boosted classifier to predict whether the stock falls by more than 5% over the next 30 days, and places short orders on a paper-trading account at the broker Alpaca. It runs on AWS in account `100118195151`, region `us-east-1`. Terraform defines every resource, and GitHub Actions deploys it through OIDC with an approval-gated, two-stage apply.
 
 The architecture has two paths on one feature store:
 
@@ -24,7 +24,11 @@ Both paths share the same container images and one Apache Iceberg lakehouse on S
 
 **How to read this report.** Chapter 2 states the business problem and ends in ten requirements. Chapter 3 gives the data, the model and the engineering only as far as they shape the cloud design. Chapters 4 and 5 are the core: each architecture decision names the requirement that drives it, the alternative it was weighed against, and why it won.
 
-**The outcome.** On one year and on five years of data, the model does not beat a constant zero prediction on mean absolute error. On five years its holdout MAE is 0.12653 against 0.12646 for zero, and it is worse than zero in all four validation folds. Its 619 holdout shorts below -5% returned +2.64% on average before costs, while the shorts below -2% lost 3.24%. That pattern is consistent with noise. The architecture ran every step on five years of data, and the live path ran end to end on real filings. The deliverable is therefore cloud infrastructure that can test the insider-selling hypothesis rigorously, not a proven trading strategy.
+**The outcome.** The presented model is the 5-year classifier `20261122T224917Z`. A "short winner" is a row whose stock falls by more than 5% over the 30 days after the entry. On the holdout from 2025-10-24, the model's average precision (AP) is 0.418, against a base rate of 0.338. At its probability cutoff of 0.70, it takes 314 holdout shorts with a precision of 0.60 and a median short return of +9.9%, before borrow fees, slippage and commissions.
+
+This is a modest but consistent signal. The model beats the base rate in all four validation folds and on the holdout, and the short return rises steadily with the cutoff. A per-ticker baseline reaches AP 0.404, so the model's edge in ranking is small. Its edge is larger at the top: precision 0.60 against 0.52, and median +9.9% against +5.9%. The 314 shorts fall in one holdout year with overlapping 30-day windows, and the names are likely hard to borrow.
+
+The classifier replaced a return regressor. On one year and on five years of data, the regressor never beat a constant zero prediction on mean absolute error. Single outlier labels drove its 5-year short return. The architecture ran every step on five years of data, and the live path ran end to end on real filings. The deliverable is cloud infrastructure that can test the insider-selling hypothesis rigorously, with a first signal worth testing further. It is not a proven trading strategy.
 
 ## Contents
 
@@ -123,10 +127,14 @@ The five tables are Iceberg tables with deterministic keys. A transaction's key 
 | ML property | Value | Cloud consequence |
 | --- | --- | --- |
 | No look-ahead | Every row is timed by `accepted_at`. The label is the return from the next market print to the first close at least 30 days later. A label feeds later rows only after `label_known_at`. | Training and live scoring must compute features with the same code on the same tables: same images, one feature store (R4). |
-| Model | A scikit-learn `Pipeline`: scaling, one-hot encoding and a `HistGradientBoostingRegressor` | One `model.joblib` file. No GPU, no hosted endpoint: the model loads in a Lambda or a task (R7). |
-| Training | A walk-forward grid search: 32 parameter combinations on 4 purged time folds, so 128 fits, then one holdout score | About 2,200 CPU-seconds on one year. Five years took about 10 minutes on a Fargate task overridden to 16 vCPU, more cores than a Lambda function offers (R2). |
+| Label | A short winner is a row whose 30-day return is below −5% (the label threshold `short_return`) | None beyond the image: target writes the return, and training derives the class from `spec.yaml` |
+| Model | A scikit-learn `Pipeline`: scaling, one-hot encoding and a `HistGradientBoostingClassifier` (**D11a**) | One `model.joblib` file. No GPU, no hosted endpoint: the model loads in a Lambda or a task (R7). |
+| Training | A walk-forward grid search: 32 parameter combinations, including `class_weight`, on 4 purged time folds, so 128 fits scored on AP, then one holdout score | Five years took about 16 minutes on a Fargate task overridden to 16 vCPU, more cores than a Lambda function offers (R2). |
+| Probability cutoff | Chosen on the validation folds only, by the median short return, and saved in the model metadata (`probability_cutoff`, 0.70) | A promotion moves the model and its cutoff together (R6) |
 | Retraining cadence | Weekly, on the last 7 days of filings | A scheduled batch run, idle the rest of the week (R2, R7) |
-| Trading rule | Short 1 share for each row predicted below -5% (`PREDICTION_THRESHOLD`), with the row key as `client_order_id` | Idempotent orders under at-least-once delivery (R5) |
+| Trading rule | Short 1 share for each row whose predicted probability of a short winner is at least the cutoff, with the row key as `client_order_id` | Idempotent orders under at-least-once delivery (R5) |
+
+**Label guards.** target leaves the label `pct_change` missing when the entry or exit adjusted price is not positive, or when the 30-day return is above +300% (`max_label_return: 3.0`) (**D11b**). `RT4` held impossible labels, such as +24,335% (BSAI at $0.01) and −133%, from bad split adjustments, reused tickers and sub-penny quotes. The guards removed 61 rows. The system sets no price floor, so penny stocks stay. The author's hypothesis is that they may carry the most edge, because institutions avoid them. They are also hard to borrow (Section 9.2).
 
 ### 3.3 Engineering in brief
 
@@ -184,7 +192,7 @@ All resources are in account `100118195151`, region `us-east-1`. Terraform state
 
 ## 5. Architecture decisions by area
 
-Chapter 4 showed what runs where. This chapter explains why. Each section starts from a pressure that the business, the model or the engineering puts on the system. It then gives the AWS choice, the alternative it beat, and its price. Chapter 8 collects decisions D1 to D23 in one table, and Appendix B holds the configuration details.
+Chapter 4 showed what runs where. This chapter explains why. Each section starts from a pressure that the business, the model or the engineering puts on the system. It then gives the AWS choice, the alternative it beat, and its price. Chapter 8 collects decisions D1 to D23, with the model decisions D11a and D11b of Section 3.2, in one table, and Appendix B holds the configuration details.
 
 ### 5.1 Compute: batch and live
 
@@ -307,14 +315,14 @@ The gate requires all of the following:
 
 - at least 50,000 development rows, and at least 80% of the current model's;
 - the same feature-group version and features;
-- holdout rows and a finite holdout MAE;
-- at least one short.
+- holdout rows and a finite holdout AP;
+- at least one holdout short at the probability cutoff.
 
-The gate does not compare MAE with the current model, because each model holds out a different period.
+The gate does not compare AP with the current model, because each model holds out a different period.
 
 The alternatives were to let each training run replace the live model, or to run a model registry service. Two S3 writes give versioning, promotion and rollback without another service.
 
-The metadata is the model's lineage. It records the training time, the git SHA, the scikit-learn version, the feature order, the parameters, the row counts, the holdout start and scores, the per-fold MAE and the threshold. inference refuses a model saved under another scikit-learn version, before it places any order.
+The metadata is the model's lineage. It records the training time, the git SHA, the scikit-learn version, the feature order, the parameters, the row counts, the holdout start and scores, the per-fold AP and base rate, the label threshold (`label_return`), the probability cutoff (`probability_cutoff`) and the holdout cutoff sweep. inference refuses a model saved under another scikit-learn version, or one without a probability cutoff, before it places any order.
 
 `scripts/promote_model.sh` lists the saved models and promotes one by hand, which is also the rollback. inference loads the model at each invocation, so a promotion takes effect at once.
 
@@ -501,7 +509,7 @@ Amazon Cognito, or a password in Terraform, were the alternatives. Basic auth at
 
 ### 6.1 The run
 
-`backfill-5y` is the first full load of five years of filings: a run of the `retrain` state machine with the full-load input of D6, started by hand on 2026-11-20 at 18:11 UTC.
+`backfill-5y` is the first full load of five years of filings: a run of the `retrain` state machine with the full-load input of D6, started on 2026-11-20 at 18:11 UTC.
 
 | Step | Outcome |
 | --- | --- |
@@ -511,15 +519,23 @@ Amazon Cognito, or a password in Terraform, were the alternatives. Basic auth at
 
 The cause was a missing image. The run had pinned the revision `scraper:3` (D7), which named an image digest. The ECR lifecycle rule then kept only 2 images per repository, and newer scraper images had been pushed during the run, so ECR had already deleted that image. `skip_destroy` kept the revision active, but a revision without its image cannot start a task.
 
-The scraper's work was not lost. Its transactions were in `secform4strategy-transactions`, which keeps messages for 4 days, and every step is an upsert by key. The remaining steps ran as ECS tasks started by hand, on the latest revisions. The manual recovery is complete:
+The scraper's work was not lost. Its transactions were in `secform4strategy-transactions`, which keeps messages for 4 days, and every step is an upsert by key. The remaining steps then ran on the latest revisions:
 
 | Step | Outcome |
 | --- | --- |
 | kafka-to-store | Done, with 2 vCPU, 8 GB and `BUFFER_SIZE` raised to 30,000. |
 | yahoo-connect | Done at 20:43 UTC on 2026-11-22: 160 batches in about 2 h 25 min. Batches slowed from about 35 s to about 80 s as the price table P grew to about 23 million rows, because each batch upserts into P. It was the slowest step. |
 | target | Done in about 2 minutes (revision 11, overridden to 8 vCPU and 60 GB). It read 265,525 disclosure rows across 7,994 tickers from BT4 and pushed 215,334 labelled rows to RT4. |
-| training | Done in about 10 minutes, 20:48 to 20:58 UTC (revision 11, overridden to 16 vCPU, 32 GB and `PROMOTE=never`). It saved model `20261122T205816Z`. This was the first `training` run on AWS Fargate. |
-| promote | Done by hand with `scripts/promote_model.sh 20261122T205816Z` (D11). The new model replaced `20261120T210617Z`. |
+| training | Done in about 10 minutes, 20:48 to 20:58 UTC (revision 11, overridden to 16 vCPU, 32 GB and `PROMOTE=never`). It saved the 5-year regressor `20261122T205816Z`, since superseded (Section 7.2). This was the first `training` run on AWS Fargate. |
+| promote | Done by hand with `scripts/promote_model.sh 20261122T205816Z` (D11). The regressor replaced `20261120T210617Z`. |
+
+Later on 2026-11-22, target and training ran again for the classifier (D11a, D11b):
+
+| Step | Outcome |
+| --- | --- |
+| target | Rebuilt `RT4` with the label guards in about 1.5 minutes, at its configured 2 vCPU and 16 GB. It read the same 265,525 disclosure rows and pushed 215,273 labelled rows. The guards removed 61 rows. |
+| training | Done in about 16 minutes, 22:33 to 22:49 UTC (revision 13, overridden to 16 vCPU, 32 GB and `PROMOTE=never`). It saved the classifier `20261122T224917Z` (git `303401c`). |
+| promote | Done by hand with `scripts/promote_model.sh 20261122T224917Z` (D11). The classifier replaced the regressor `20261122T205816Z`. |
 
 ### 6.2 Measurements
 
@@ -530,70 +546,97 @@ The scraper's work was not lost. Its transactions were in `secform4strategy-tran
 | kafka-to-store, one 30,000-row batch at 2 vCPU | About 75 seconds |
 | yahoo-connect, 160 batches into P | About 2 h 25 min; about 35 s per batch at the start, about 80 s at the end |
 | target, 5 years, 8 vCPU / 60 GB | About 2 minutes |
-| training, 5 years, 16 vCPU / 32 GB | About 10 minutes |
+| target, `RT4` rebuild, 2 vCPU / 16 GB | About 1.5 minutes |
+| training, 5-year regressor, 16 vCPU / 32 GB | About 10 minutes |
+| training, 5-year classifier, 16 vCPU / 32 GB | About 16 minutes |
 | Peak use, from Container Insights | target about 1 vCPU and 3.7 GB; training all 16 vCPU and about 20 GB |
 | Size of the Iceberg warehouse | About 430 MB |
 
 Parallel SQS calls did not change the kafka-to-store rate much, so most of a batch is spent after SQS. Four times the CPU cut a 10,000-row batch from 40 to 25 seconds, because the task went from half a core to a full core. Three times the batch took three times as long, so the cost is per row, at about 400 rows per second: the pandas cleaning and pyiceberg's upsert merge, on one core. More tasks would not help either, because parallel Iceberg commits conflict (D10).
 
-The configured task sizes cover the weekly runs (Appendix B.1). The target override was unneeded headroom, and the training override only shortened the run.
+The configured task sizes cover the weekly runs (Appendix B.1). The target override was unneeded headroom: the `RT4` rebuild ran at the configured size. The training override only shortened the run.
 
 yahoo-connect now caps a full price download at 15 years (`PRICE_HISTORY_YEARS`). Rows already stored beyond 15 years stay in P and are not refreshed.
 
 ### 6.3 Lessons
 
 1. **A pinned revision depends on its image.** `skip_destroy` keeps old revisions active, but ECR can still delete their images, so each repository now keeps 5. During a multi-day run, push at most four new images of a service whose step has not started.
-2. **Incremental steps make a failed run recoverable.** Upserts by deterministic key (R5) and a 4-day queue retention let the remaining steps run by hand, with no work repeated and no duplicate rows.
+2. **Incremental steps make a failed run recoverable.** Upserts by deterministic key (R5) and a 4-day queue retention let the remaining steps run afterwards, with no work repeated and no duplicate rows.
 3. **Measure before scaling.** One full core helps; more tasks, more cores and bigger batches do not. The next step is profiling one batch, then an append-then-deduplicate write for full loads. Container Insights now shows each task's CPU and memory use.
 
 ---
 
 ## 7. Results in brief
 
-The results show that the system works end to end on five years of data. They do not support the hypothesis.
+The system works end to end on five years of data. The presented classifier shows a modest but consistent ranking signal before costs. It does not prove a tradable strategy.
 
-### 7.1 Model on one and five years of data
+### 7.1 The 5-year classifier
 
-The 1-year results come from a local walk-forward run of the merged training code on 2026-11-21, on a 16-core laptop: 73,195 labelled rows, 53,747 development rows after purging, and 14,639 holdout rows from 2026-06-09. The 128 fits plus the refit used about 2,200 CPU-seconds.
+The results come from the `training` task on AWS on 2026-11-22, which saved model `20261122T224917Z`. The task read 215,273 labelled rows. After purging, 169,941 development rows remained, and the holdout has 43,055 rows from 2025-10-24 18:24 UTC. The best parameters are `class_weight=balanced`, `learning_rate=0.03`, `max_leaf_nodes=15`, `min_samples_leaf=50` and `l2_regularization=0.0`.
 
-The 5-year results come from the `training` task on AWS on 2026-11-22: 215,334 labelled rows with 34 columns, 169,990 development rows after purging, and 43,067 holdout rows from 2025-10-24 18:24 UTC. The best parameters are `loss=absolute_error`, `learning_rate=0.03`, `max_leaf_nodes=15`, `min_samples_leaf=200` and `l2_regularization=0.0`. The two holdouts cover different periods, so their MAEs are not comparable. For the same reason, the promotion gate does not compare MAE (D11).
+The base rate is the share of short winners. It is also the AP of a constant predictor, so a model with a ranking signal scores above it. Each fold validates on 33,988 or 33,989 rows.
 
-| Predictor | Holdout MAE, 1-year | Holdout MAE, 5-year |
-| --- | --- | --- |
-| `model` | 0.1216 | 0.12653 |
-| `zero` (no move) | 0.1193 | 0.12646 |
-| `train_mean` | 0.1218 | 0.12657 |
-| `ticker_history` | 0.1421 | 0.13548 |
-
-| Threshold | Holdout shorts, 1-year | Mean return per short, 1-year | Holdout shorts, 5-year | Mean return per short, 5-year |
+| Fold | Training rows | Validation period | Model AP | Base rate |
 | --- | --- | --- | --- | --- |
-| 0 | 7,067 | +1.8% | 28,356 | -1.44% |
-| -2% | 1,942 | +4.0% | 6,602 | -3.24% |
-| -5% (traded) | 265 | +10.8% | 619 | +2.64% |
-| -10% | 29 | Too few to read | 51 | +5.04% |
+| 1 | 30,456 | 2021-11-22 to 2022-12-21 | 0.4757 | 0.4105 |
+| 2 | 64,648 | 2022-12-21 to 2023-12-19 | 0.3748 | 0.3074 |
+| 3 | 97,859 | 2023-12-19 to 2024-11-14 | 0.3635 | 0.2538 |
+| 4 | 132,963 | 2024-11-14 to 2025-09-23 | 0.4084 | 0.3582 |
 
-A positive mean return per short means the shorted stocks fell on average. The figures exclude borrow fees, slippage, commissions and overlapping positions.
+The cutoff comes from the folds only. The median short return over all folds' shorts rises with the cutoff: +1.13% at 0.50, +2.48% at 0.60, +3.75% at 0.65 and +5.53% at 0.70. At 0.70 the folds take 3,343 shorts, and the smallest fold takes 295. At 0.75 and 0.80 some fold takes fewer than 100 shorts, so neither qualifies. The chosen cutoff is therefore 0.70.
 
-- **No MAE edge.** On both datasets the model does not beat the zero baseline on MAE, on the holdout or on any of the four validation folds. On five years the model's fold MAE is above zero's by 0.00023 (fold 4) to 0.00246 (fold 1).
-- **Profit only in the extreme tail.** On five years, the 619 shorts at -5% are 1.4% of the holdout, and only 51 rows fall below -10%.
-- **No monotonic pattern.** On five years, the shorts at -2% lose 3.24% while the shorts at -5% gain 2.64%. That pattern is consistent with noise.
-- **The naive baseline fails clearly.** `ticker_history` shorts 2,982 holdout rows at -5% and loses 6.42% per short. `zero` and `train_mean` short no rows.
+On the holdout, each predictor shorts the rows whose probability is at least 0.70. The return is the captured short return (minus the stock's return, so positive is a profit), before borrow fees, slippage and commissions.
 
-The 1-year ranking signal (+10.8% on 265 trades) does not hold on five years.
+| Predictor | AP | ROC-AUC | Precision | Shorts | Mean | Median | 5% trimmed mean |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `model` | 0.4184 | 0.5892 | 0.5987 | 314 | +9.58% | +9.89% | +11.45% |
+| `ticker_history` | 0.4042 | 0.5730 | 0.5190 | 1,025 | +5.82% | +5.91% | +7.06% |
+| `base_rate` | 0.3383 | 0.5000 | – | 0 | – | – | – |
 
-### 7.2 Live path verification
+| Cutoff | Holdout shorts | Mean | Median |
+| --- | --- | --- | --- |
+| 0.30 | 41,650 | −0.39% | +0.27% |
+| 0.35 | 40,059 | −0.41% | +0.29% |
+| 0.40 | 36,227 | −0.40% | +0.39% |
+| 0.45 | 29,790 | −0.29% | +0.62% |
+| 0.50 | 21,350 | −0.13% | +0.94% |
+| 0.55 | 12,141 | +0.48% | +2.01% |
+| 0.60 | 5,653 | +1.58% | +2.93% |
+| 0.65 | 1,647 | +5.66% | +6.99% |
+| 0.70 (chosen) | 314 | +9.58% | +9.89% |
+| 0.75 | 52 | +20.51% | +16.36% |
+| 0.80 | 1 | +49.75% | +49.75% |
+
+- **A modest, consistent ranking signal.** The model's AP is above the base rate in all four folds and on the holdout (0.418 against 0.338). Its ROC-AUC is 0.589.
+- **Returns rise with the cutoff,** on the folds and on the holdout. At 0.70 the mean (+9.6%) and the median (+9.9%) agree, so outliers do not drive the result.
+- **A small edge over `ticker_history` in ranking.** `ticker_history` is a ticker's past share of short winners, and it reaches AP 0.404, so much of the signal is per-ticker persistence. The model's advantage is at the top: precision 0.60 against 0.52, and median +9.9% against +5.9%.
+- **A small effective sample.** 314 shorts in one holdout year is about 1.2 per trading day. Their 30-day windows overlap, so the independent sample is smaller. Above 0.70, 52 and 1 shorts are too few to read.
+
+### 7.2 The superseded regressor
+
+Before the classifier, the model was a `HistGradientBoostingRegressor` of the 30-day return. The grid search selected it on mean absolute error (MAE), and inference shorted the rows predicted below −5%.
+
+| | 1-year regressor (local run, 2026-11-21) | 5-year regressor (`20261122T205816Z`) |
+| --- | --- | --- |
+| Holdout MAE, model against zero | 0.1216 against 0.1193 | 0.12653 against 0.12646 |
+| Validation folds | Never better than zero | Worse than zero in all four |
+| Holdout shorts below −5%, mean return | 265, +10.8% | 619, +2.64% |
+
+The regressor never beat a constant zero prediction on MAE. Single outlier labels drove the 5-year regressor's mean short return. That result led to the label guards (D11b) and the switch to the classifier (D11a).
+
+### 7.3 Live path verification
 
 The live path ran end to end on real filings. Filings for AMZN, TGT, DGICA and IMTX went from the SEC feed through the poller, scraper and kafka-to-store to the `live-score` state machine, and inference scored them. AWS records seven successful `live-score` runs. Alpaca paper orders were placed and then cancelled, to verify three things: the broker wiring, the `client_order_id` idempotency and the IAM path to the Alpaca keys. The measured cold starts of D5 come from these runs.
 
-### 7.3 Batch path verification
+### 7.4 Batch path verification
 
-No `retrain` run has finished all six steps on AWS in one state-machine run. The 1-year runs were stopped by hand. The 5-year backfill scraped every filing, then ended `FAILED`. Its remaining steps ran by hand on 2026-11-22, and every step of the batch path completed on five years of data (Chapter 6). The 5-year model `20261122T205816Z` is the promoted model.
+No `retrain` run has finished all six steps on AWS in one state-machine run. The 1-year runs were stopped by hand. The 5-year backfill scraped every filing, then ended `FAILED`. Its remaining steps ran on 2026-11-22, and every step of the batch path completed on five years of data (Chapter 6). target and training then ran again with the label guards, and the classifier `20261122T224917Z` is the promoted model.
 
 ---
 
 ## 8. Design decisions and trade-offs
 
-The table collects the decisions of Chapter 5, with the requirement behind each.
+The table collects the decisions of Chapters 3 and 5, with the requirement behind each.
 
 | Decision | Req. | Rejected alternative | Reason |
 | --- | --- | --- | --- |
@@ -608,7 +651,9 @@ The table collects the decisions of Chapter 5, with the requirement behind each.
 | SQS standard queues, DLQs, partial batch failures (D9) | R5 | SQS FIFO; MSK | Upserts by key and `client_order_id` make duplicates harmless; MSK bills brokers around the clock |
 | Iceberg on S3 with the Glue catalog (D10) | R4, R5, R7 | RDS; a hosted feature store | Upserts on plain objects; only storage is billed while idle |
 | One Iceberg writer per table (Ch. 6) | R10 | Parallel kafka-to-store tasks | Parallel commits conflict and redo their upserts |
-| Promotion gate; `save` vs `promote` (D11) | R6 | Each run replaces the live model | A truncated dataset or changed features would reach inference at once |
+| Promotion gate; `save` vs `promote` (D11) | R6 | Each run replaces the live model | A truncated dataset or changed features would reach inference at once; the gate also requires a finite holdout AP and at least one short at the cutoff |
+| Classifier of short winners, scored on AP, with its cutoff chosen on the folds and saved in the metadata (D11a) | R6 | A return regressor selected on MAE, with a fixed −5% prediction threshold | Both regressors never beat a constant zero on MAE, and outlier labels drove the 5-year short return; the median picks the cutoff without the holdout |
+| Label plausibility guards, no price floor (D11b) | R6 | A minimum stock price | The guards drop impossible labels (61 rows) and keep penny stocks, which may carry the most edge but are hard to borrow |
 | Model file in S3, no endpoint | R7 | SageMaker endpoint | A small pipeline; an endpoint bills every hour |
 | VPC only for Fargate (D12) | R7, R8 | Everything in the VPC | The Lambdas reach nothing inside the VPC and would depend on the NAT gateway |
 | Rate budget; live egress from Lambda addresses (D13) | R3, R7 | All SEC traffic through one NAT address | The SEC already sees one `User-Agent`; the budget keeps the sum under 10 |
@@ -640,7 +685,15 @@ The table collects the decisions of Chapter 5, with the requirement behind each.
 
 ### 9.2 Model
 
-The model does not beat the zero baseline on MAE, on one year or on five years. On five years the +2.64% at -5% rests on 619 trades, 1.4% of the holdout, without costs, and the -2% threshold loses money. Next: add costs and a benchmark (SPY), and test several holdout windows.
+The classifier shows a modest ranking signal, and these caveats remain:
+
+| Caveat | Effect | Next step |
+| --- | --- | --- |
+| Borrow and costs | The returns exclude borrow fees, slippage and commissions. The shorted names are likely small caps that are hard to borrow, and Alpaca shorts only easy-to-borrow names. | Model costs and borrow availability; compare with a benchmark (SPY) |
+| Effective sample | 314 holdout shorts is about 1.2 per trading day, and their 30-day windows overlap, so the independent sample is smaller | Count independent positions, not rows |
+| One holdout year | The holdout starts on 2025-10-24. Another period can give a different result. | Test several holdout windows |
+| Live cluster features | Live rows read their cluster features from `BI4` only, which has a shorter history than `BT4`. The code is the same, but the data differ: a known skew. | Read `BT4` plus `BI4` |
+| Label prices | The labels use adjusted prices. A bad split adjustment below the +300% guard stays in the data. | Cross-check the labels against as-traded prices |
 
 ---
 
@@ -650,7 +703,9 @@ SecForm4Strategy turns one business idea into a set of explicit cloud requiremen
 
 Security follows the same method: SSM secrets outside the state, one role per service, OIDC for CI, an encrypted plan applied only after approval, and a static website with no public API.
 
-The live path ran end to end on real filings. The 5-year backfill exercised every step of the batch path at scale and taught two lessons: keep the images of pinned revisions, and measure before scaling. On one year and on five years of data the model does not beat a zero prediction on MAE. Its 5-year holdout profit sits only in the extreme tail and does not grow steadily with the threshold, so the evidence does not support the hypothesis. The infrastructure is the deliverable: it can add costs and a benchmark, test more holdout windows, and keep scoring live filings, so the hypothesis can be accepted or rejected on evidence.
+The live path ran end to end on real filings. The 5-year backfill exercised every step of the batch path at scale and taught two lessons: keep the images of pinned revisions, and measure before scaling.
+
+The presented model is the 5-year classifier. Its holdout AP is 0.418 against a base rate of 0.338, and at the cutoff of 0.70 its 314 holdout shorts have a precision of 0.60 and a median return of +9.9%, before costs. The signal is modest but consistent: it beats the base rate in every fold, and the return rises with the cutoff. Its edge over a ticker's own history is small in ranking and larger at the top. The earlier return regressor never beat a constant zero on MAE, which led to the label guards and the classifier. Borrow costs, a small effective sample and one holdout year still limit the evidence. The infrastructure is the deliverable: it can add costs and a benchmark, test more holdout windows, and keep scoring live filings, so the hypothesis can be accepted or rejected on evidence.
 
 ---
 
@@ -692,7 +747,7 @@ Each table supports one section of Chapter 5.
 These are the sizes in `infra/envs/demo/main.tf`, which the weekly runs use. The 5-year runs overrode them at run time: target to 8 vCPU and 60 GB, training to 16 vCPU and 32 GB. Container Insights shows that the configured sizes are enough:
 
 - target peaked at about 1 vCPU and 3.7 GB, because pandas runs mostly on one core, so its override was unneeded headroom;
-- training used all 16 vCPU at 100% and peaked at about 20 GB, because each `n_jobs` worker holds a copy of the data. The override cut the run from an expected 35 minutes at 4 vCPU to about 10 minutes.
+- training used all 16 vCPU at 100% and peaked at about 20 GB, because each `n_jobs` worker holds a copy of the data. The override cut the regressor run from an expected 35 minutes at 4 vCPU to about 10 minutes. The classifier run took about 16 minutes at 16 vCPU.
 
 ### B.2 SQS and retry settings (Section 5.2)
 
@@ -734,10 +789,10 @@ These are the sizes in `infra/envs/demo/main.tf`, which the weekly runs use. The
 | Send to a queue | `sqs:GetQueueUrl`, `sqs:SendMessage` on that queue |
 | Receive from a queue | `sqs:GetQueueUrl`, `sqs:GetQueueAttributes`, `sqs:ReceiveMessage`, `sqs:DeleteMessage` on that queue |
 | `lakehouse-read` | Glue reads on the database and its tables; `s3:GetObject` on `warehouse/*` |
-| `lakehouse-write` | `lakehouse-read` plus `glue:CreateTable`, `glue:UpdateTable` and `s3:PutObject` on `warehouse/*` |
+| `lakehouse-write` | `lakehouse-read` plus `glue:CreateTable`, `glue:UpdateTable`, `s3:PutObject` and `s3:DeleteObject` on `warehouse/*` |
 | `models-read` / `models-write` | `s3:GetObject` / `s3:PutObject` on `models/*` |
 | `seen-keys` | `dynamodb:BatchGetItem`, `dynamodb:BatchWriteItem` on `secform4strategy-seen` |
-| `read-secrets` | `ssm:GetParameters` on `/secform4strategy/*` |
+| `read-secrets` | `ssm:GetParameters` on `/secform4strategy/sec-user-agent` only |
 | `read-alpaca-keys` | `ssm:GetParameters` on the two Alpaca key parameters only |
 
 ### B.6 CI/CD workflows and OIDC roles (Section 5.6)
@@ -777,9 +832,9 @@ The read-only command `make status` prints the stack state in about 15 seconds:
 | Page | Shows |
 | --- | --- |
 | Story | The idea, the data, the model and the results |
-| Live | The latest `live-score` runs, their filings, predictions and orders |
+| Live | The latest `live-score` runs, their filings, each prediction's probability against the cutoff, and orders |
 | Portfolio | The Alpaca paper account: equity, positions and orders |
-| Model | The current model: parameters, validation folds, holdout results and feature importance |
+| Model | The current model: parameters, validation folds, holdout AP, ROC-AUC, base rate, cutoff and median return, and feature importance |
 | Explore | The largest insider sales and the clusters of insider sales of the last 7 days |
 
 | File | Written | Contents |
@@ -809,7 +864,11 @@ The read-only command `make status` prints the stack state in about 15 seconds:
 | Look-ahead bias | Use of information that was not public at decision time |
 | Holdout | The latest 20% of rows, scored once |
 | Promotion | Making a saved model version the one inference loads, by writing `latest.json` |
-| MAE | Mean absolute error |
+| Short winner | A row whose 30-day return is below −5%, the label threshold; the classifier's positive class |
+| Base rate | The share of short winners; also the AP of a constant predictor |
+| AP | Average precision: how well predicted probabilities rank short winners above other rows |
+| Probability cutoff | The probability at or above which inference shorts a row; saved with the model |
+| MAE | Mean absolute error; the selection metric of the superseded regressor |
 | Short | Selling borrowed shares, to profit when the price falls |
 | Paper trading | Trading with simulated money on a broker's test account |
 | Apache Iceberg | An open table format of data and metadata files on object storage |

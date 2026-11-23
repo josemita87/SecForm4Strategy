@@ -24,3 +24,19 @@ td:first-child code {
 
 /* Contents starts its own page, so its list never splits */
 h2#contents { break-before: page; }
+
+/* The holdout cutoff sweep follows the predictor table, compact and on one page */
+[id="71-the-5-year-classifier"] ~ table + table:not([id="72-the-superseded-regressor"] ~ *) {
+  break-inside: avoid;
+}
+
+[id="71-the-5-year-classifier"] ~ table + table:not([id="72-the-superseded-regressor"] ~ *) :is(td, th) {
+  padding-top: 0.5mm;
+  padding-bottom: 0.5mm;
+}
+
+/* Section 5.3 sets slightly tighter, so its last paragraph stays on its page before the landscape network figure */
+[id="53-storage-lakehouse-and-models"] ~ :is(p, ul):not([id="54-network"] ~ *) {
+  margin-bottom: 1.6mm;
+  line-height: 1.4;
+}

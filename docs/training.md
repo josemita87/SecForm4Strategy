@@ -1,6 +1,6 @@
 # Training
 
-The training service (`training/src/main.py`) fits a `HistGradientBoostingRegressor` that predicts each filing's 30-day return (`pct_change`). It picks the model parameters by walk-forward cross-validation, then scores the chosen model once on a holdout set.
+The training service (`training/src/main.py`) fits a `HistGradientBoostingClassifier` that gives each row the probability of a short winner. A short winner is a row whose 30-day return (`pct_change`) is below `-0.05`: a drop of more than 5%. Training picks the model parameters by walk-forward cross-validation, chooses a probability cutoff on the same folds, then scores the chosen model once on a holdout set.
 
 ## Settings
 
@@ -49,40 +49,52 @@ A label is the return to the first close at least 30 calendar days after the fil
 
 ## Grid search
 
-scikit-learn `GridSearchCV` fits every parameter combination on every fold, with `n_jobs=-1`.
+scikit-learn `GridSearchCV` fits every parameter combination on every fold, with `n_jobs=-1`. The classifier learns the binary label `pct_change < short_return`.
 
 | Parameter | Values |
 | --- | --- |
-| `loss` | `squared_error`, `absolute_error` |
 | `learning_rate` | `0.03`, `0.1` |
 | `max_leaf_nodes` | `15`, `31` |
 | `min_samples_leaf` | `50`, `200` |
 | `l2_regularization` | `0`, `1` |
+| `class_weight` | `null`, `balanced` |
 
 The grid has 32 combinations. With 4 folds, that is 128 fits. Each fit uses early stopping with a cap of `max_iter=500`.
 
-`GridSearchCV` selects the combination with the lowest mean validation MAE (mean absolute error). The short return is not the selection metric. At the traded threshold, each fold's short return comes from a few hundred trades (265 on the 1-year holdout, 619 on the 5-year holdout), which is too noisy to rank 32 combinations.
+`GridSearchCV` selects the combination with the highest mean validation average precision (AP). AP measures how well the probabilities rank the short winners above the other rows. A constant predictor has an AP equal to the base rate: the share of short winners in the rows.
+
+## Probability cutoff
+
+Training chooses the cutoff from the development folds only. The holdout plays no part in it.
+
+1. Training refits the best combination on each fold's training rows and predicts that fold's validation rows (`model.fold_probabilities`).
+2. For each cutoff in `cutoff_grid`, it shorts every validation row whose probability is at least the cutoff, and pools the shorts of all folds.
+3. A cutoff qualifies only when every fold has at least `min_fold_shorts` shorts.
+4. Training chooses the qualifying cutoff with the highest median captured return. The lowest cutoff wins a tie. The median keeps a few extreme returns from deciding the cutoff.
+5. If no cutoff qualifies, training saves `fallback_cutoff`.
+
+The captured return of a short is minus the row's `pct_change`, so a positive value is a profit. The metadata stores the cutoff as `probability_cutoff`. A promotion therefore moves the model and its cutoff together. Inference shorts a row when its probability is at least this cutoff, and refuses a model without one. The optional `PROBABILITY_CUTOFF` variable of inference replaces the saved cutoff.
 
 ## Final model and holdout
 
-Training refits the best combination on the whole development set. It then scores the refitted model once on the holdout, next to three baselines:
+Training refits the best combination on the whole development set. It then scores the refitted model once on the holdout, next to two baselines:
 
-| Predictor | Prediction |
+| Predictor | Probability |
 | --- | --- |
 | `model` | The refitted pipeline |
-| `zero` | No move (0 for every row) |
-| `train_mean` | The mean development label |
-| `ticker_history` | `avg_target_expanding`, the ticker's past average return, or the development mean where it is missing |
+| `base_rate` | The development share of short winners, for every row |
+| `ticker_history` | The ticker's share of short winners among its labels known before the row's `accepted_at`, or the development share where it has none |
 
-Each predictor gets these scores:
+Each predictor shorts the rows at or above `probability_cutoff` and gets these scores (`Scores` in `secform4strategy_clients.records`):
 
-- `mae`: the mean absolute error of the predicted return.
-- `short_return`: the mean return captured per short. The predictor shorts every row it predicts below `PREDICTION_THRESHOLD`. Positive is a profit.
+- `average_precision` and `roc_auc`: how well the probabilities rank the short winners.
+- `precision`: the share of short winners among the shorts.
 - `n_shorts`: the number of rows shorted.
+- `short_return`, `median_return` and `trimmed_return`: the mean, median and 5% trimmed mean of the captured returns.
 
-Training also logs the model's short return at each of `report_thresholds`: 0, -2%, -5% and -10%.
+Training also reports the model's holdout shorts at each cutoff of `cutoff_grid`, with their number, mean and median captured return.
 
-The holdout decides nothing. The parameters, the threshold and the feature set are all fixed before training scores the holdout. If a holdout result leads to a change and a new run, the holdout no longer measures unseen data.
+The holdout decides nothing. The parameters, the cutoff and the feature set are all fixed before training scores the holdout. If a holdout result leads to a change and a new run, the holdout no longer measures unseen data.
 
 ## Logs and metadata
 
@@ -90,9 +102,11 @@ Training logs:
 
 - the row counts and time range of the development set, each fold and the holdout;
 - the best parameters;
-- the per-fold validation MAE of the best combination, next to the zero baseline's MAE on the same fold;
+- the per-fold validation AP of the best combination, next to the fold's base rate;
+- each cutoff's fold shorts, the fewest shorts in a fold, and the median captured return;
+- the chosen cutoff and the holdout base rate;
 - the holdout scores of the model and each baseline;
-- the model's holdout short return at each threshold.
+- the model's holdout shorts at each cutoff.
 
 `model.meta.json` saves the `ModelMetadata` record (`secform4strategy_clients.records`), with these fields among the others:
 
@@ -140,7 +154,7 @@ The `retrain` task definition sets `PROMOTE=gated`, `MIN_TRAIN_ROWS=50000` and `
 
 If no model is promoted yet, the gate skips the three checks that compare with the current model. `train_rows_vs_current` catches a truncated dataset, for example a run on 1 day of data. `features` and `feature_group_version` catch a model whose inputs differ from the rows that inference builds.
 
-The gate does not compare the holdout MAE with the current model's MAE. Each run holds out the latest 20% of its own rows, so two models are scored on different periods. A lower MAE on one period does not show that a model is better than a model scored on another period.
+The gate does not compare the holdout AP with the current model's AP. Each run holds out the latest 20% of its own rows, so two models are scored on different periods. A higher AP on one period does not show that a model is better than a model scored on another period.
 
 ### Logs
 
@@ -159,55 +173,71 @@ To roll back, promote an earlier version the same way. Inference loads the model
 
 The task definition in `infra/envs/demo/main.tf` gives training 4 vCPU and 16 GB of memory. Early stopping makes each fit's time depend on the parameters; a smaller `param_grid` shortens the run.
 
-| Data | Rows | Where | Run time |
+| Run | Rows | Where | Run time |
 | --- | --- | --- | --- |
-| 1 year | 73,195 | A 16-core laptop | About 2,200 CPU-seconds for the 128 fits plus the refit: 3 minutes |
-| 5 years | 215,334 | ECS on AWS Fargate, revision 11, overridden to 16 vCPU and 32 GB, `PROMOTE=never` | About 10 minutes, from 20:48 to 20:58 UTC on 2026-11-22 |
+| 5-year classifier | 215,273 | ECS on AWS Fargate, revision 13, overridden to 16 vCPU and 32 GB, `PROMOTE=never` | About 16 minutes, from 22:33 to 22:49 UTC on 2026-11-22 |
 
-The 5-year run overrode the configured size at run time. Container Insights shows it used all 16 vCPU at 100% and peaked at about 20 GB of memory, because each `n_jobs` worker holds a copy of the data. The configured 4 vCPU and 16 GB are therefore enough for the weekly runs. The override only shortened the run, from an expected 35 minutes at 4 vCPU to about 10 minutes.
+The run saved model `20261122T224917Z` at git `303401c`. `scripts/promote_model.sh` promoted it by hand in place of `20261122T205816Z`, the 5-year regressor that the classifier replaced.
 
-The 5-year run was the first `training` run on AWS Fargate. It saved model `20261122T205816Z`, and `scripts/promote_model.sh 20261122T205816Z` promoted it by hand in place of `20261120T210617Z`.
+The earlier 5-year regressor run used the same override. Container Insights showed it used all 16 vCPU at 100% and peaked at about 20 GB of memory, because each `n_jobs` worker holds a copy of the data. The configured 4 vCPU and 16 GB are therefore enough for the weekly runs. The override only shortens the run.
 
 ## 5-year results
 
-The 5-year training data has 215,334 rows and 34 columns. The development set has 169,990 rows after purging. The holdout has 43,067 rows and starts at 2025-10-24 18:24 UTC. The best parameters are `loss=absolute_error`, `learning_rate=0.03`, `max_leaf_nodes=15`, `min_samples_leaf=200` and `l2_regularization=0.0`.
+target rebuilt `RT4` with the label guards ([configuration.md](configuration.md), `max_label_return`): 215,273 labelled rows. The development set has 169,941 rows after purging. The holdout has 43,055 rows and starts at 2025-10-24 18:24 UTC. The best parameters are `class_weight=balanced`, `l2_regularization=0.0`, `learning_rate=0.03`, `max_leaf_nodes=15` and `min_samples_leaf=50`.
 
-Each fold validates on 33,998 rows. The model is worse than zero in every fold:
+Each fold validates on 33,988 or 33,989 rows. The model's AP is above the base rate in every fold:
 
-| Fold | Training rows | Validation period | Model MAE | Zero MAE |
+| Fold | Training rows | Validation period | Model AP | Base rate |
 | --- | --- | --- | --- | --- |
-| 1 | 30,472 | 2021-11-22 to 2022-12-21 | 0.11050 | 0.10804 |
-| 2 | 64,675 | 2022-12-21 to 2023-12-19 | 0.11192 | 0.11030 |
-| 3 | 97,893 | 2023-12-19 to 2024-11-14 | 0.10011 | 0.09908 |
-| 4 | 133,002 | 2024-11-14 to 2025-09-23 | 0.11330 | 0.11307 |
+| 1 | 30,456 | 2021-11-22 to 2022-12-21 | 0.4757 | 0.4105 |
+| 2 | 64,648 | 2022-12-21 to 2023-12-19 | 0.3748 | 0.3074 |
+| 3 | 97,859 | 2023-12-19 to 2024-11-14 | 0.3635 | 0.2538 |
+| 4 | 132,963 | 2024-11-14 to 2025-09-23 | 0.4084 | 0.3582 |
 
-Holdout scores at `PREDICTION_THRESHOLD` = -0.05:
+The median captured return of the pooled fold shorts at each cutoff:
 
-| Predictor | MAE | Short return | Shorts |
+| Cutoff | 0.30 | 0.40 | 0.50 | 0.55 | 0.60 | 0.65 | 0.70 | 0.75, 0.80 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Median | +0.59% | +0.69% | +1.13% | +1.77% | +2.48% | +3.75% | +5.53% | Too few shorts |
+
+0.70 takes 3,343 fold shorts, with 295 in the fold with the fewest. It is the chosen cutoff.
+
+The holdout base rate is 0.3382. Holdout scores at `probability_cutoff` = 0.70:
+
+| Predictor | AP | ROC-AUC | Precision | Shorts | Mean | Median | 5% trimmed mean |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `model` | 0.4184 | 0.5892 | 0.5987 | 314 | +9.58% | +9.89% | +11.45% |
+| `ticker_history` | 0.4042 | 0.5730 | 0.5190 | 1,025 | +5.82% | +5.91% | +7.06% |
+| `base_rate` | 0.3383 | 0.5000 | – | 0 | – | – | – |
+
+The model's holdout shorts at each cutoff:
+
+| Cutoff | Shorts | Mean | Median |
 | --- | --- | --- | --- |
-| `model` | 0.12653 | +2.64% | 619 |
-| `zero` | 0.12646 | 0 | 0 |
-| `train_mean` | 0.12657 | 0 | 0 |
-| `ticker_history` | 0.13548 | -6.42% | 2,982 |
+| 0.30 | 41,650 | -0.39% | +0.27% |
+| 0.35 | 40,059 | -0.41% | +0.29% |
+| 0.40 | 36,227 | -0.40% | +0.39% |
+| 0.45 | 29,790 | -0.29% | +0.62% |
+| 0.50 | 21,350 | -0.13% | +0.94% |
+| 0.55 | 12,141 | +0.48% | +2.01% |
+| 0.60 | 5,653 | +1.58% | +2.93% |
+| 0.65 | 1,647 | +5.66% | +6.99% |
+| 0.70 | 314 | +9.58% | +9.89% |
+| 0.75 | 52 | +20.51% | +16.36% |
+| 0.80 | 1 | +49.75% | +49.75% |
 
-The model's holdout short return at each of `report_thresholds`:
+- **Signal.** The model ranks short winners modestly but consistently. Its AP is above the base rate in all 4 folds and on the holdout (0.418 against 0.338). Its holdout ROC-AUC is 0.589.
+- **Consistency.** The median return rises with the cutoff on the folds and on the holdout. At 0.70 the mean and the median agree (+9.6% and +9.9%), so single outliers do not drive the result.
+- **Baseline.** `ticker_history` reaches AP 0.404, so much of the signal is per-ticker persistence. The model's advantage is at the top: precision 0.60 against 0.52, and a median of +9.9% against +5.9%.
+- **Costs.** The returns exclude borrow fees, slippage and commissions. The shorted names are likely small caps that are hard to borrow, and Alpaca shorts only easy-to-borrow names.
+- **Sample.** 314 shorts in one holdout year is about 1.2 per trading day. Their 30-day windows overlap, so the effective sample is smaller.
 
-| Threshold | Shorts | Mean return captured |
-| --- | --- | --- |
-| 0 | 28,356 | -1.44% |
-| -0.02 | 6,602 | -3.24% |
-| -0.05 | 619 | +2.64% |
-| -0.10 | 51 | +5.04% |
+### Superseded regressor
 
-- The model has no MAE edge over predicting zero, on the holdout or on any fold.
-- The holdout profit sits only in the extreme tail. The 619 shorts at -0.05 are 1.4% of the holdout, and only 51 rows fall below -0.10.
-- The return does not grow steadily with the threshold: -0.02 loses while -0.05 gains. That pattern is consistent with noise.
-- `ticker_history` loses 6.42% per short, so the naive baseline fails clearly.
-- The returns exclude borrow fees, slippage and commissions.
-
-The 1-year holdout MAE (0.1216) and the 5-year holdout MAE are not comparable, because each model holds out a different period. For the same reason, the promotion gate does not compare MAE.
+The classifier replaced a `HistGradientBoostingRegressor` of `pct_change`. Neither the 1-year nor the 5-year regressor beat a constant zero prediction on mean absolute error (MAE). The 1-year holdout MAE was 0.1216 against 0.1193 for zero. The 5-year model `20261122T205816Z` had a holdout MAE of 0.12653 against 0.12646, and was worse than zero in all 4 folds. Single outlier labels drove its holdout mean short return. These results led to the label guards and to the classifier.
 
 ## Limits
 
-- **One holdout window.** The holdout score comes from one period, the latest 20% of rows. A different period can give a different result.
+- **One holdout window.** The holdout score comes from one period, the latest 20% of rows: about one year. A different period can give a different result.
+- **Feature skew in live scoring.** The live cluster features read `BI4` only, which has a shorter history than `BT4`. The fix is to read `BT4` and `BI4` together.
 - **Random early-stopping rows.** Early stopping holds out a random 10% of each fit's training rows, not the latest 10%. Those rows are close in time to the rows the fit trains on, so early stopping can stop later than a time-ordered split would.

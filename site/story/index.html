@@ -596,7 +596,7 @@ function wipe(i, def) {
   $(".wt2", w).textContent = def.title;
   w.classList.remove("go"); void w.offsetWidth; w.classList.add("go");
 }
-const TAPE = [["up", "▲ scraper 6–7.8 filings/s"], ["eq", "■ kafka-to-store ≈ 400 rows/s"], ["dn", "▼ short below −0.05"], ["eq", "■ qty 1 · paper"], ["eq", "■ SEC 10 req/s per client"], ["dn", "▼ NAT $0.045/h"], ["eq", "■ budget $5/month"], ["eq", "■ retrain Sat 06:00 UTC"], ["eq", "■ poll rate(1 minute)"], ["eq", "■ seen keys 7-day TTL"], ["up", "✓ backfill-5y recovered by hand · 5-year model promoted"], ["up", "✓ live path: 7 live-score runs"], ["dn", "▼ cold start 10–45 s"], ["eq", "■ dormant ≈ $0/day"]];
+const TAPE = [["up", "▲ scraper 6–7.8 filings/s"], ["eq", "■ kafka-to-store ≈ 400 rows/s"], ["dn", "▼ short at P ≥ 0.70"], ["eq", "■ qty 1 · paper"], ["eq", "■ SEC 10 req/s per client"], ["dn", "▼ NAT $0.045/h"], ["eq", "■ budget $5/month"], ["eq", "■ retrain Sat 06:00 UTC"], ["eq", "■ poll rate(1 minute)"], ["eq", "■ seen keys 7-day TTL"], ["up", "✓ 5-year model promoted"], ["up", "✓ live path: 7 live-score runs"], ["dn", "▼ cold start 10–45 s"], ["eq", "■ dormant ≈ $0/day"]];
 /* ---------- section registry ---------- */
 const SECTIONS = [];
 function section(def) { SECTIONS.push(def); }
@@ -617,7 +617,7 @@ section({
     </div>
     <div class="cv-r">
       <div class="note">${NOTE("ext", "doc")}<div><div class="hd"><span>SEC EDGAR</span><span>16:42:07 ET</span></div><div class="tt">Form 4 accepted</div><div class="bd">An officer of Example Corp sold 12,500 shares of XYZ.</div></div></div>
-      <div class="note">${NOTE("ml", "model")}<div><div class="hd"><span>SecForm4Strategy</span><span>now</span></div><div class="tt">Predicted 30-day return: −7%</div><div class="bd">Below the −5% threshold. Insider sale (D).</div></div></div>
+      <div class="note">${NOTE("ml", "model")}<div><div class="hd"><span>SecForm4Strategy</span><span>now</span></div><div class="tt">P(drop of more than 5%): 0.74</div><div class="bd">At or above the 0.70 cutoff. Insider sale (D).</div></div></div>
       <div class="note">${NOTE("int", "short")}<div><div class="hd"><span>Alpaca · Paper</span><span>now</span></div><div class="tt">Short placed: sell 1 XYZ</div><div class="bd">client_order_id XYZ@next print</div></div></div>
       <div class="cv-fine">Illustrative example. XYZ is a placeholder.</div>
     </div>`,
@@ -642,8 +642,8 @@ section({
       notes: ["An insider is a director, an officer or an owner of more than 10% of the company.", "Insiders know things the market does not.", "The project tests one question: do insider sales come before price drops?"] },
     { cap: "Each trade must reach the SEC on a <strong>Form 4</strong> within <strong>2 business days</strong>. EDGAR publishes it at <code>accepted_at</code>.",
       notes: ["The trade date is often days before the disclosure.", "<code>accepted_at</code> is the moment the SEC accepted the filing and made it public.", "A trader can act only after <code>accepted_at</code>. The trade date is a model feature, never a clock for the label."] },
-    { cap: "Insider sales can come before price drops. The model predicts the move that follows the disclosure.",
-      notes: ["The price line is illustrative, not real data.", "Not every sale is bad news: tax withholding and gifts also reduce a holding. The features carry these flags.", "The label is the 30-day return from the first price after disclosure."] },
+    { cap: "Insider sales can come before price drops. The model estimates the chance of a drop after the disclosure.",
+      notes: ["The price line is illustrative, not real data.", "Not every sale is bad news: tax withholding and gifts also reduce a holding. The features carry these flags.", "The label: a drop of more than 5% in the 30 days from the first price after disclosure."] },
     { cap: "The edge is <strong>speed from disclosure to trade</strong>. An order minutes after <code>accepted_at</code> captures more of the move.",
       notes: ["The fast trader enters near the price at disclosure; the slow one enters after part of the drop.", "This is why the system has a live path on Lambda next to the weekly batch.", "Everything after this slide serves one goal: act soon after <code>accepted_at</code>, without look-ahead."] },
   ],
@@ -687,10 +687,10 @@ section({
   steps: [
     { cap: "Each new Form 4 becomes <strong>features</strong>: one row per ticker and next market print.",
       notes: ["target groups every transaction of a ticker before the same next print into one row.", "Features: insider counts in the last 30 days, USD values traded and held, roles, transaction flags, market cap, sector.", "Every USD value uses the close of the last trading day before the acceptance day, so nothing is unknown at disclosure."] },
-    { cap: "A scikit-learn model predicts the 30-day <code>pct_change</code> of each row.",
-      notes: ["The regressor is a <code>HistGradientBoostingRegressor</code> inside a scikit-learn <code>Pipeline</code>.", "The label is the return from the next print to the first close at least 30 calendar days later.", "Training uses a purged walk-forward split: the latest 20% of rows is the holdout, scored once."] },
-    { cap: "The rule: <strong>short</strong> when the prediction is below <code>−0.05</code>, for insider sales only (<code>acquired_disposed = D</code>).",
-      notes: ["Try the slider: move the prediction across −0.05.", "Switch to a purchase (A): the pipeline filters on <code>ACQUIRED_DISPOSED=D</code>, so no order.", "<code>PREDICTION_THRESHOLD=-0.05</code> means a predicted fall of more than 5%."] },
+    { cap: "A scikit-learn <strong>classifier</strong> gives each row the probability of a <strong>short winner</strong>: a drop of more than 5% in 30 days.",
+      notes: ["The classifier is a <code>HistGradientBoostingClassifier</code> inside a scikit-learn <code>Pipeline</code>.", "A short winner has <code>pct_change</code> below −0.05 (<code>short_return</code> in <code>training/src/spec.yaml</code>). <code>pct_change</code> runs from the next print to the first close at least 30 calendar days later.", "Training uses a purged walk-forward split: the latest 20% of rows is the holdout, scored once."] },
+    { cap: "The rule: <strong>short</strong> when the probability is at least <code>0.70</code>, for insider sales only (<code>acquired_disposed = D</code>).",
+      notes: ["Try the slider: move the probability across 0.70.", "Switch to a purchase (A): the pipeline filters on <code>ACQUIRED_DISPOSED=D</code>, so no order.", "Training chooses the cutoff on the development folds, never the holdout, and stores it with the model as <code>probability_cutoff</code>. A promotion moves the model and its cutoff together.", "inference refuses a model without a cutoff."] },
     { cap: "Alpaca receives a paper order: sell 1 share, market, good until cancelled. <code>client_order_id</code> is the row key.",
       notes: ["<code>QTY=1</code>; the account is paper trading, so no real money moves.", "The row key <code>&lt;ticker&gt;@&lt;next print&gt;</code> is the <code>client_order_id</code>. Alpaca rejects a duplicate id, so a rerun never places the same order twice.", "Press R to replay the flow."] },
   ],
@@ -699,15 +699,15 @@ section({
     ${edge({ s: 0, id: "s2-e1", d: "M310 256 H350" })}
     ${node({ s: 0, dl: 2, id: "s2-x", x: 350, y: 220, w: 270, k: "data", i: "table", t: "Features", sub: "ticker @ next print" })}
     ${edge({ s: 1, id: "s2-e2", d: "M620 256 H660" })}
-    ${node({ s: 1, id: "s2-m", x: 660, y: 220, w: 270, k: "ml", i: "model", t: "Model", sub: "predicts pct_change" })}
+    ${node({ s: 1, id: "s2-m", x: 660, y: 220, w: 270, k: "ml", i: "model", t: "Classifier", sub: "P(short winner)" })}
     ${edge({ s: 2, id: "s2-e3", d: "M930 256 H970" })}
-    ${node({ s: 2, id: "s2-r", x: 970, y: 220, w: 270, k: "sec", i: "funnel", t: "Rule", sub: "D only, < −0.05" })}
+    ${node({ s: 2, id: "s2-r", x: 970, y: 220, w: 270, k: "sec", i: "funnel", t: "Rule", sub: "D only, P ≥ 0.70" })}
     ${edge({ s: 3, id: "s2-e4", d: "M1240 256 H1280" })}
     ${node({ s: 3, id: "s2-a", x: 1280, y: 220, w: 280, k: "ext", i: "short", t: "Alpaca paper", sub: "sell 1 share" })}
     ${label({ s: 0, x: 175, y: 330, a: "middle", t: "accepted_at, owner, code" })}
     ${label({ s: 0, dl: 2, x: 485, y: 330, a: "middle", t: "insiders_recent, tx_value …" })}
-    ${label({ s: 1, x: 795, y: 330, a: "middle", t: "HistGradientBoosting" })}
-    ${label({ s: 2, x: 1105, y: 330, a: "middle", t: "PREDICTION_THRESHOLD" })}
+    ${label({ s: 1, x: 795, y: 330, a: "middle", t: "HistGradientBoostingClassifier" })}
+    ${label({ s: 2, x: 1105, y: 330, a: "middle", t: "probability_cutoff, from the model" })}
     ${label({ s: 3, x: 1420, y: 330, a: "middle", t: "client_order_id = row key" })}`,
   html: () => `
     <div class="w card rv" data-s="2" style="left:40px;top:390px;width:1520px;height:380px;padding:26px 34px">
@@ -715,18 +715,18 @@ section({
         <div style="width:420px">
           <div class="lab">Transaction direction</div>
           <div style="margin:10px 0 26px">${seg("s2-dir", ["Sale · D", "Purchase · A"])}</div>
-          <div class="lab">Predicted 30-day pct_change</div>
-          <div id="s2-val" style="font-size:64px;font-weight:760;letter-spacing:-.03em;margin:4px 0 2px;font-variant-numeric:tabular-nums">−0.080</div>
-          <input id="s2-sl" type="range" min="-0.2" max="0.1" step="0.005" value="-0.08" aria-label="Predicted pct_change">
+          <div class="lab">Probability of a short winner</div>
+          <div id="s2-val" style="font-size:64px;font-weight:760;letter-spacing:-.03em;margin:4px 0 2px;font-variant-numeric:tabular-nums">0.78</div>
+          <input id="s2-sl" type="range" min="0" max="1" step="0.01" value="0.78" aria-label="Probability of a short winner">
         </div>
         <div style="flex:1">
           <svg viewBox="0 0 980 210" style="width:100%;height:230px;overflow:visible">
-            <rect x="20" y="70" width="${(0.15 / 0.3) * 940}" height="64" rx="10" fill="var(--bad-soft)"/>
-            <text x="30" y="58" class="lbl bad">short zone</text>
+            <rect x="${20 + 0.7 * 940}" y="70" width="${0.3 * 940}" height="64" rx="10" fill="var(--bad-soft)"/>
+            <text x="${950}" y="58" text-anchor="end" class="lbl bad">short zone</text>
             <line x1="20" y1="102" x2="960" y2="102" stroke="var(--edge)" stroke-width="3"/>
-            ${[-0.2, -0.15, -0.1, -0.05, 0, 0.05, 0.1].map(v => { const x = 20 + (v + 0.2) / 0.3 * 940; return `<line x1="${x}" y1="94" x2="${x}" y2="110" stroke="var(--edge)" stroke-width="2"/><text x="${x}" y="160" text-anchor="middle" class="lbl mono">${v.toFixed(2).replace("-", "−")}</text>`; }).join("")}
-            <line x1="${20 + (0.15 / 0.3) * 940}" y1="40" x2="${20 + (0.15 / 0.3) * 940}" y2="140" stroke="var(--bad)" stroke-width="3" stroke-dasharray="6 5"/>
-            <text x="${26 + (0.15 / 0.3) * 940}" y="34" class="lbl bad mono">threshold −0.05</text>
+            ${[0, 0.2, 0.4, 0.6, 0.8, 1].map(v => { const x = 20 + v * 940; return `<line x1="${x}" y1="94" x2="${x}" y2="110" stroke="var(--edge)" stroke-width="2"/><text x="${x}" y="160" text-anchor="middle" class="lbl mono">${v.toFixed(1)}</text>`; }).join("")}
+            <line x1="${20 + 0.7 * 940}" y1="40" x2="${20 + 0.7 * 940}" y2="140" stroke="var(--bad)" stroke-width="3" stroke-dasharray="6 5"/>
+            <text x="${14 + 0.7 * 940}" y="34" text-anchor="end" class="lbl bad mono">cutoff 0.70</text>
             <g id="s2-ptr" style="transition:transform .35s cubic-bezier(.2,.7,.2,1)"><circle cy="102" r="15" fill="var(--accent)"/><circle cy="102" r="26" fill="none" stroke="var(--accent)" stroke-width="2" opacity=".4"/></g>
           </svg>
           <div id="s2-dec" style="display:flex;align-items:center;gap:16px;margin-top:6px">
@@ -746,13 +746,13 @@ section({
   decide(el) {
     const v = +$("#s2-sl", el).value, sale = $("#s2-dir .on", el).dataset.v === "0";
     $$(".stampfx", el).forEach(x => x.parentNode.removeChild(x));
-    $("#s2-val", el).textContent = (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(3);
-    $("#s2-ptr", el).style.transform = `translateX(${20 + (v + 0.2) / 0.3 * 940}px)`;
-    const short = sale && v < -0.05;
+    $("#s2-val", el).textContent = v.toFixed(2);
+    $("#s2-ptr", el).style.transform = `translateX(${20 + v * 940}px)`;
+    const short = sale && v >= 0.7;
     const chip = $("#s2-chip", el), why = $("#s2-why", el);
     chip.className = "tag " + (short ? "bad" : "");
     chip.textContent = short ? "Paper short" : "No order";
-    why.textContent = short ? "sell 1 share · market · gtc" : !sale ? "purchases (A) are not traded" : "prediction is not below −0.05";
+    why.textContent = short ? "sell 1 share · market · gtc" : !sale ? "purchases (A) are not traded" : "probability is below the 0.70 cutoff";
     tog(el, "#s2-r", "okk", short); tog(el, "#s2-r", "badk", !short);
     tog(el, "#s2-a, #s2-e4", "off", !short);
     return short;
@@ -893,7 +893,8 @@ const DECIDE = [
   ["business", "SEC allows <b>10 requests per second</b> per <code>User-Agent</code>", "One <b>shared rate budget</b>: batch 5 + live 4.5"],
   ["model", "Look-ahead risk: a feature or label from after disclosure", "<code>accepted_at</code> as the clock + a <b>purged walk-forward split</b>"],
   ["engineering", "The repository is public", "<b>OIDC</b> roles, no stored key + an <b>encrypted saved plan</b>"],
-  ["model", "A bad model loses money", "The <b>promotion gate</b>; promote and roll back by hand"],
+  ["model", "Fat-tailed, noisy return labels", "A <b>classifier</b> on short winners + <b>label plausibility guards</b>"],
+  ["model", "A bad model loses money", "The <b>promotion gate</b> (finite holdout AP); promote and roll back by hand"],
   ["engineering", "Parallel Iceberg commits to one table conflict", "One batch writer per table; live gathers a burst into <b>one commit</b>"],
   ["business", "$5 budget; batch steps are idempotent and can be rerun", "<b>Fargate Spot</b> (about 70% cheaper) with an <b>On-Demand fallback</b>"],
 ];
@@ -908,7 +909,7 @@ section({
   html: () => `
     <div class="w" style="left:60px;top:205px;width:1480px">
       <div class="cd" style="grid-template-columns:1fr 46px 1.1fr;margin-bottom:8px"><div class="hd">Constraint · source</div><i></i><div class="hd">Decision on AWS</div></div>
-      ${DECIDE.map(([src, c, d], k) => `<div class="cd rv" data-s="0" data-d="${k + 1}" style="grid-template-columns:1fr 46px 1.1fr;margin-bottom:13px"><div><span class="tag ${DTAG[src]}" style="margin-right:10px;vertical-align:2px">${src}</span>${c}</div><i>→</i><div>${d}</div></div>`).join("")}
+      ${DECIDE.map(([src, c, d], k) => `<div class="cd rv" data-s="0" data-d="${k + 1}" style="grid-template-columns:1fr 46px 1.1fr;margin-bottom:9px"><div><span class="tag ${DTAG[src]}" style="margin-right:10px;vertical-align:2px">${src}</span>${c}</div><i>→</i><div>${d}</div></div>`).join("")}
     </div>`,
 });
 
@@ -973,7 +974,7 @@ section({
     { cap: "Each step is an <strong>ECS task on Fargate Spot (ARM64)</strong> with an On-Demand fallback. EventBridge Scheduler starts the machine on <strong>Saturday 06:00 UTC</strong>.",
       notes: ["Schedule: <code>cron(0 6 ? * SAT *)</code>, time zone UTC.", "Tasks run in the private subnets with no public IP.", "Spot first: capacity provider <code>FARGATE_SPOT</code>, retried on <code>States.TaskFailed</code> after 600 s, at most 2 times, so 3 Spot attempts.", "Then a <code>Catch</code> on <code>States.ALL</code> waits 600 s and runs the step with launch type <code>FARGATE</code> (On-Demand), retried once. <code>States.ALL</code>, because a failed RunTask (no Spot capacity) arrives as <code>AmazonECS.Unknown</code>.", "Every wait is 600 s, longer than the 300 s SQS visibility timeout, so unfinished messages are visible again.", "Spot is about 70% cheaper. Every step is idempotent, so a reclaimed task loses only its in-flight batch. A code failure now runs 5 times, not 4: about 40 minutes of retries, not 30.", "Fargate has no run-time limit; Lambda stops after 15 minutes. That is why batch is on Fargate.", "Step Functions bills per state transition and costs nothing idle; Airflow on MWAA runs around the clock."] },
     { cap: "training saves a new model folder. <code>latest.json</code> moves only if the promotion gate passes (<code>PROMOTE=gated</code>). Ad-hoc runs use <code>PROMOTE=never</code>.",
-      notes: ["Each folder holds <code>model.joblib</code> and <code>model.meta.json</code>. inference loads only what <code>latest.json</code> names.", "The gate checks: at least 50,000 development rows, and at least 80% of the current model's; the same features; holdout rows and a finite holdout MAE; at least one short.", "It does not compare MAE with the current model, because each model holds out a different period.", "<code>scripts/promote_model.sh</code> lists the saved models and promotes one by hand. That is also the rollback."] },
+      notes: ["Each folder holds <code>model.joblib</code> and <code>model.meta.json</code>. inference loads only what <code>latest.json</code> names.", "The gate checks: at least 50,000 development rows, and at least 80% of the current model's; the same feature-group version and features; holdout rows and a finite holdout average precision (AP); at least one short at the probability cutoff.", "It does not compare AP with the current model, because each model holds out a different period.", "<code>scripts/promote_model.sh</code> lists the saved models and promotes one by hand. That is also the rollback."] },
     { cap: "The first full load is the <strong>same machine</strong>, started once with overrides in its input.",
       notes: ["The weekly run starts with input <code>{}</code>: master-index uses <code>MODE=recent</code>, <code>DAYS_BACK=7</code>.", "A full load overrides master-index to <code>MODE=historical</code>, raises the scraper to 8 SEC requests per second and kafka-to-store to 10,000 rows per batch.", "Every task is incremental: upserts by key, per-ticker start dates. A retry redoes only what failed."] },
   ],
@@ -1077,7 +1078,7 @@ const LIVE = [
   ["l-e8", "l-yc", "<b>Pipe</b>: start live-score"],
   ["l-e9", "l-tg", "<b>yahoo-connect</b>: P"],
   ["l-e10", "l-inf", "<b>target</b>: row → BIR4"],
-  ["l-e11", "l-alp", "<b>inference</b>: −0.07"],
+  ["l-e11", "l-alp", "<b>inference</b>: P 0.74 ≥ 0.70"],
 ];
 section({
   id: "live", thumbStep: 3, title: "Live path", short: "Live path",
@@ -1125,7 +1126,7 @@ section({
     ${edge({ s: 3, id: "l-e9", d: "M340 601 H380" })}
     ${node({ s: 3, id: "l-tg", x: 380, y: 565, w: 250, k: "compute", i: "lambda", t: "target λ", sub: "rows → BIR4" })}
     ${edge({ s: 3, id: "l-e10", d: "M630 601 H670" })}
-    ${node({ s: 3, id: "l-inf", x: 670, y: 565, w: 300, k: "compute", i: "lambda", t: "inference λ", sub: "short if < −0.05" })}
+    ${node({ s: 3, id: "l-inf", x: 670, y: 565, w: 300, k: "compute", i: "lambda", t: "inference λ", sub: "short if P ≥ 0.70" })}
     ${edge({ s: 3, id: "l-e11", d: "M970 601 H1050" })}
     ${node({ s: 3, id: "l-alp", x: 1050, y: 565, w: 250, k: "ext", i: "short", t: "Alpaca paper", sub: "id = row key" })}
     ${node({ s: 2, id: "l-lake", x: 40, y: 762, w: 330, k: "data", i: "table", t: "Iceberg tables", sub: "BI4 · P · BIR4 · RT4" })}
@@ -1446,7 +1447,7 @@ section({
     { cap: "SEC allows <strong>10 requests per second per client</strong>. Batch and live send one <code>User-Agent</code>, so they share one budget.",
       notes: ["SEC identifies a client by its <code>User-Agent</code>. Every service sends the same one, from <code>SEC_USER_AGENT</code>.", "The batch tasks leave through the NAT's Elastic IP. The live Lambdas leave from Lambda's own network, with no fixed IP. The budget is shared all the same.", "Weekly batch scraper: <code>SEC_MAX_RATE=5</code>. Live: 2 scraper Lambdas × 2.25 = 4.5. Together 9.5.", "The 5-year backfill runs the scraper at 8 per second, so the live poll is off meanwhile.", "The poller has its own cap of 1 per second but makes one feed request per minute.", "An SEC rate-limit 403 locks the client out for about 10 minutes, so the shared cap protects both paths at once."] },
     { cap: "At <code>SEC_MAX_RATE=8</code> the scraper runs at <strong>6–7.8 filings per second</strong>: a year of filings in hours, five years in about two days.",
-      notes: ["Four settings get close to the cap: 12 fetch workers, one rate limiter shared by the threads, a 5 s retry pause, a send buffer of 200.", "About 155,000 to 192,000 filings with transactions per year: 6 to 8 hours at 6 to 7.8 per second.", "About 1.06 million filings in 5 years: 38 to 49 hours. That is why the full load runs on Fargate, not Lambda."] },
+      notes: ["Four settings get close to the cap: 12 fetch workers, one rate limiter shared by the threads, a 5 s retry pause, a send buffer of 200.", "About 155,000 to 192,000 filings with transactions per year: about 5.5 to 9 hours at 7.8 to 6 per second.", "About 1.05 million filings in 5 years: 37 to 49 hours. That is why the full load runs on Fargate, not Lambda."] },
     { cap: "kafka-to-store: the cost is <strong>per row, on one core</strong>. One full core helps; bigger batches and more writers do not.",
       notes: ["Measured during <code>backfill-5y</code>: a 10,000-row batch took about 40 s at 0.5 vCPU and about 25 s at 2 vCPU.", "A 30,000-row batch took about 75 s at 2 vCPU: three times the rows, three times the time. About 400 rows per second.", "The time goes to the pandas cleaning and pyiceberg's upsert merge, on one core. Parallel SQS calls barely changed it.", "More tasks would not help: parallel Iceberg commits to one table conflict, and the second one redoes its upsert.", "Next: profile one batch, then an append-then-deduplicate write for full loads."] },
   ],
@@ -1549,14 +1550,14 @@ section({
 
 /* ===================== Operations: the 5-year backfill ===================== */
 const OPS_SF = [["o-mi", "master-index", "5 years of filings queued", "okk"], ["o-sc", "scraper", "every filing processed", "okk"], ["o-rt", "scraper retries", "CannotPullContainerError", "badk"]];
-const OPS_HAND = [["o-k2s", "kafka-to-store", "2 vCPU · 30,000 rows", "okk", "done"], ["o-yc", "yahoo-connect", "160 batches → P", "okk", "done · 2 h 25 min"], ["o-tg", "target", "215,334 rows → RT4", "okk", "done · 2 min"], ["o-tr", "training", "PROMOTE=never", "okk", "done · 10 min"], ["o-pr", "promote", "20261122T205816Z", "okk", "done · by hand"]];
+const OPS_HAND = [["o-k2s", "kafka-to-store", "2 vCPU · 30,000 rows", "okk", "done"], ["o-yc", "yahoo-connect", "160 batches → P", "okk", "done · 2 h 25 min"], ["o-tg", "target", "215,273 rows → RT4", "okk", "done · rebuilt"], ["o-tr", "training", "PROMOTE=never", "okk", "classifier · 16 min"], ["o-pr", "promote", "20261122T224917Z", "okk", "done · by hand"]];
 section({
   id: "ops", thumbStep: 0, title: "Operations: the 5-year backfill", short: "Ops",
   h1: "Operations: the 5-year backfill",
   steps: [
-    { cap: "<code>backfill-5y</code> scraped every filing, then <strong>failed</strong>. The rest ran by hand, and every step is <strong>done</strong> on 5 years of data.",
-      notes: ["<code>backfill-5y</code> started by hand on 2026-11-20 at 18:11 UTC: the <code>retrain</code> machine with the full-load input.", "master-index finished. The scraper processed every filing; the <code>filings</code> queue and its DLQ were empty at the end. It exited non-zero, as designed, because it had left filings for a retry.", "Each retry failed with <code>CannotPullContainerError</code>. The run ended <code>FAILED</code>; the last four steps did not start.", "The remaining steps ran as ECS tasks started by hand on the latest revisions. The manual recovery is complete.", "yahoo-connect finished at 20:43 UTC on 2026-11-22: 160 batches in about 2 h 25 min. Batches slowed from about 35 s to about 80 s as P grew to about 23M rows, because each batch upserts into P. It was the slowest step.", "target took about 2 minutes, overridden to 8 vCPU and 60 GB: 265,525 disclosure rows across 7,994 tickers gave 215,334 labelled rows in RT4.", "training took about 10 minutes, overridden to 16 vCPU, 32 GB and <code>PROMOTE=never</code>, the first <code>training</code> run on Fargate. <code>scripts/promote_model.sh 20261122T205816Z</code> promoted it in place of <code>20261120T210617Z</code>.", "Container Insights: target peaked at about 1 vCPU and 3.7 GB, training used all 16 vCPU and about 20 GB. The configured sizes (target 2 vCPU / 16 GB, training 4 vCPU / 16 GB) cover the weekly runs; the training override only cut the run from about 35 to about 10 minutes.", "The earlier 1-year runs on AWS were stopped by hand. The 1-year model was trained locally on a 16-core laptop."] },
-    { cap: "Cause: ECR deleted the pinned revision's image. Recovery: upserts by key let the remaining steps run by hand, with nothing repeated.",
+    { cap: "<code>backfill-5y</code> scraped every filing, then <strong>failed</strong>. Every step is now <strong>done</strong> on 5 years of data.",
+      notes: ["<code>backfill-5y</code> started on 2026-11-20 at 18:11 UTC: the <code>retrain</code> machine with the full-load input.", "master-index finished. The scraper processed every filing; the <code>filings</code> queue and its DLQ were empty at the end. It exited non-zero, as designed, because it had left filings for a retry.", "Each retry failed with <code>CannotPullContainerError</code>. The run ended <code>FAILED</code>; the last four steps did not start.", "The remaining steps then ran on the latest revisions.", "yahoo-connect finished at 20:43 UTC on 2026-11-22: 160 batches in about 2 h 25 min. Batches slowed from about 35 s to about 80 s as P grew to about 23M rows, because each batch upserts into P. It was the slowest step.", "target first took about 2 minutes, overridden to 8 vCPU and 60 GB. After the label guards, it rebuilt RT4 in about 1.5 minutes on its configured 2 vCPU / 16 GB: 265,525 disclosure rows across 7,994 tickers gave 215,273 labelled rows. The guards removed 61 rows.", "training (revision 13) took about 16 minutes, 22:33–22:49 UTC, overridden to 16 vCPU, 32 GB and <code>PROMOTE=never</code>. It saved the classifier <code>20261122T224917Z</code> (git 303401c). <code>scripts/promote_model.sh</code> promoted it in place of <code>20261122T205816Z</code>, the superseded 5-year regressor.", "The regressor run was the first <code>training</code> run on Fargate, about 10 minutes. Container Insights: target peaked at about 1 vCPU and 3.7 GB, training used all 16 vCPU and about 20 GB. The configured sizes (target 2 vCPU / 16 GB, training 4 vCPU / 16 GB) cover the weekly runs; the training override only shortens the run.", "The earlier 1-year runs on AWS were stopped by hand. The 1-year model was trained locally on a 16-core laptop."] },
+    { cap: "Cause: ECR deleted the pinned revision's image. Upserts by key let the remaining steps run afterwards, with nothing repeated.",
       notes: ["The run pinned <code>scraper:3</code>, which names an image digest. ECR then kept only 2 images per repository, and newer scraper images were pushed during the run.", "<code>skip_destroy</code> kept the revision active, but a revision without its image cannot start a task. Each repository now keeps 5.", "The scraper's transactions stayed in <code>secform4strategy-transactions</code>, which keeps messages for 4 days. Every step upserts by key, so no work is repeated and no row is duplicated.", "Measure before scaling: one full core helped kafka-to-store; more tasks and bigger batches did not. Container Insights now shows each task's CPU and memory."] },
   ],
   svg: () => `
@@ -1564,7 +1565,7 @@ section({
     ${OPS_SF.map(([id, t, sub, c], k) => node({ s: 0, dl: k + 1, id, cls: c, x: 70 + k * 400, y: 262, w: 360, h: 80, k: "compute", i: "fargate", t, sub, submono: k === 2 })).join("")}
     ${[0, 1].map(k => edge({ s: 0, id: `o-e${k}`, d: `M${430 + k * 400} 302 H${470 + k * 400}` })).join("")}
     <g class="rv" data-s="0"><rect x="1270" y="280" width="270" height="44" rx="22" fill="var(--bad-soft)" stroke="var(--bad)" stroke-width="1.5"/><text x="1405" y="309" text-anchor="middle" class="lbl bad" style="font-size:19px">run FAILED</text></g>
-    ${frame({ s: 0, x: 40, y: 395, w: 1520, h: 180, t: "ECS tasks started by hand · latest revisions" })}
+    ${frame({ s: 0, x: 40, y: 395, w: 1520, h: 180, t: "Remaining steps · latest revisions" })}
     ${OPS_HAND.map(([id, t, sub, c, tag], k) => `${node({ s: 0, dl: k + 3, id, cls: c, x: 60 + k * 300, y: 440, w: 280, h: 80, k: k < 4 ? "compute" : "ml", i: k < 4 ? "fargate" : "model", t, sub, submono: k > 2 })}${label({ s: 0, dl: k + 3, x: 200 + k * 300, y: 553, a: "middle", t: tag, cls: c === "okk" ? "good" : c === "wait" ? "warn" : "" })}`).join("")}
     ${[0, 1, 2, 3].map(k => edge({ s: 0, id: `o-h${k}`, d: `M${340 + k * 300} 480 H${360 + k * 300}` })).join("")}`,
   html: () => `
@@ -1583,19 +1584,19 @@ section({
     </div>
     <div class="w rv" data-s="1" data-u="1" style="left:40px;top:600px;width:1520px;display:grid;grid-template-columns:repeat(3,1fr);gap:24px">
       <div class="card" style="padding:20px 24px;height:215px"><span class="tag bad">lesson 1</span><h3 style="margin-top:12px">A pinned revision depends on its image</h3><p><code>skip_destroy</code> kept the revision, but ECR (keeping 2) deleted its image. ECR now keeps <b>5</b>.</p></div>
-      <div class="card" style="padding:20px 24px;height:215px"><span class="tag good">lesson 2</span><h3 style="margin-top:12px">Incremental steps make a failed run recoverable</h3><p>Upserts by key and a 4-day queue retention let the rest run by hand: no work repeated, no duplicate rows.</p></div>
+      <div class="card" style="padding:20px 24px;height:215px"><span class="tag good">lesson 2</span><h3 style="margin-top:12px">Incremental steps make a failed run recoverable</h3><p>Upserts by key and a 4-day queue retention let the remaining steps run afterwards: no work repeated, no duplicate rows.</p></div>
       <div class="card" style="padding:20px 24px;height:215px"><span class="tag acc">lesson 3</span><h3 style="margin-top:12px">Measure before scaling</h3><p>One full core helped kafka-to-store; more tasks and bigger batches did not. Container Insights now shows CPU and memory.</p></div>
     </div>`,
   step(el, s, r) {
     ["o-mi", "o-sc", "o-k2s", "o-yc", "o-tg", "o-tr", "o-pr"].forEach(id => badge(el, id, false));
     r.later(() => ["o-mi", "o-sc", "o-k2s", "o-yc", "o-tg", "o-tr", "o-pr"].forEach((id, k) => r.later(() => badge(el, id, true), k * 250)), 700);
-    if (s === 0) r.later(() => stamp(el, 1405, 380, "Recovered by hand", { rot: -6, color: "var(--warn)" }), 1500);
   },
 });
 
 /* ===================== Results ===================== */
 const SMOKE = [["poller λ", "new filing"], ["scraper λ", "transactions"], ["kafka-to-store λ", "BI4 upserted"], ["EventBridge Pipe", "started live-score"], ["yahoo-connect λ", "prices → P"], ["target λ", "row → BIR4"], ["inference λ", "scored, order sent"], ["Alpaca paper", "placed, then cancelled"]];
 const hx9 = h => 110 + h / 36 * 1380;
+const SWEEP = [["0.30", 41650, 0.27], ["0.35", 40059, 0.29], ["0.40", 36227, 0.39], ["0.45", 29790, 0.62], ["0.50", 21350, 0.94], ["0.55", 12141, 2.01], ["0.60", 5653, 2.93], ["0.65", 1647, 6.99], ["0.70", 314, 9.89], ["0.75", 52, 16.36]];
 section({
   id: "results", thumbStep: 3, title: "Results", short: "Results",
   h1: "Results: the system works end to end",
@@ -1606,8 +1607,8 @@ section({
       notes: ["Cold invocations: scraper 10 s, yahoo-connect 39 s, kafka-to-store 45 s. Warm ones take a few seconds.", "A first cold start exceeds Lambda's 10 s initialization limit; Lambda repeats the initialization inside the invocation, which succeeds.", "Provisioned concurrency: about $10 per month per function, about $60 for six, twelve times the budget. Declined.", "Follow-up: smaller images."] },
     { cap: "Design decision: the label enters at the <strong>next price print</strong> after disclosure, the 09:30 open or the 16:00 close.",
       notes: ["Daily bars give two prices a trader can act on each day: the open and the close.", "In session: entry at that day's close. Before the open or after the close: entry at the next open.", "Exit: the first close at least 30 calendar days after the entry day.", "This is a data-availability choice. Intraday prices would tighten the entry; daily bars keep the label honest and reproducible."] },
-    { cap: "On 1 and 5 years, the model does <strong>not beat predicting zero</strong> on MAE. On 5 years, its 619 shorts at −5% averaged +2.64%, but −2% lost.",
-      notes: ["Training: purged walk-forward grid search (32 combinations × 4 folds = 128 fits), then one score on the holdout: the latest 20% of rows.", "1 year: MAE 0.1216 against 0.1193 for the zero baseline: as a return forecaster, the model is not better than 'no move'.", "1 year: at the traded threshold of −5%, 265 holdout shorts returned +10.8% on average. One holdout window, no trading costs or borrow fees: a signal worth testing, not a result.", "1 year, per-fold MAE, model vs zero: 0.152 vs 0.114, 0.117 vs 0.114, 0.135 vs 0.135, 0.132 vs 0.131. The model never beats zero on a fold.", "1 year, best parameters: absolute_error loss, learning rate 0.03, 15 leaf nodes, min 50 samples per leaf, L2 1.0. 5 years: the same, except min 200 samples per leaf and L2 0.", "5 years, trained on Fargate: holdout MAE 0.12653 against 0.12646 for zero. The model is worse than zero in all 4 folds.", "The 619 shorts at −5% are 1.4% of the holdout; only 51 fall below −10%. At −2% the 6,602 shorts lost 3.24%. The pattern is not monotonic, which is consistent with noise.", "ticker_history shorts 2,982 rows at −5% and loses 6.42%: the naive baseline fails clearly. zero and train_mean never short.", "The 1-year and 5-year MAEs are not comparable: each holds out a different period. That is why the promotion gate does not compare MAE.", "Returns exclude borrow fees, slippage and commissions. Live charts are on the site's Model tab."] },
+    { cap: "The classifier ranks short winners <strong>modestly but consistently</strong>: holdout AP 0.418 against a base rate of 0.338. Its 314 shorts at 0.70 had a median return of <strong>+9.9%</strong>, before costs.",
+      notes: ["Model <code>20261122T224917Z</code>, a <code>HistGradientBoostingClassifier</code> on 5 years of data. A short winner falls by more than 5% in 30 days. The holdout is the latest 20% of rows: 43,055 rows from 2025-10-24. Development: 169,941 rows.", "Grid: 32 combinations × 4 walk-forward folds = 128 fits, scored on average precision (AP). Best: <code>class_weight</code> balanced, learning rate 0.03, 15 leaf nodes, at least 50 samples per leaf, L2 0.", "Base rate: the share of short winners, which is also the AP of a constant predictor. The model beats it in all 4 folds and on the holdout. Holdout ROC-AUC: 0.589.", "The cutoff comes from the folds only: the highest median captured return among cutoffs with at least 100 shorts in every fold. 0.70 gave +5.53% over 3,343 fold shorts. 0.75 and 0.80 had too few.", "Consistency: the median return rises with the cutoff on the folds and on the holdout. At 0.70 the mean (+9.6%) and the median (+9.9%) agree, so outliers do not drive the result.", "ticker_history, a ticker's past share of short winners, reaches AP 0.404: much of the signal is per-ticker persistence. The model's edge is at the top: precision 0.60 against 0.52, median +9.9% against +5.9%.", "Limits: no borrow fees, slippage or commissions. The names are likely small caps that are hard to borrow, and Alpaca shorts only easy-to-borrow names.", "Limits: 314 shorts in one holdout year is about 1.2 per trading day, with overlapping 30-day windows, so the effective sample is smaller. Live cluster features read BI4 only, which has a shorter history than BT4: a known skew.", "Why the change: the 1-year and 5-year regressors never beat a constant zero on MAE (5-year: 0.12653 against 0.12646, worse in all 4 folds). Single outlier labels drove the 5-year regressor's mean short return. That led to the label guards and the classifier.", "Live charts are on the site's Model tab."] },
   ],
   svg: () => `
     <g class="rv board" data-s="0" data-u="0">
@@ -1651,30 +1652,35 @@ section({
       <div class="lab">Acceptance time (US/Eastern), drag</div>
       <input id="st-sl" type="range" min="0" max="23.75" step="0.25" value="11" aria-label="Acceptance time">
       <div id="st-txt" style="font-size:26px;font-weight:650;margin-top:8px"></div>
-      <div style="font-size:19px;color:var(--muted);margin-top:6px">Exit: the first close at least 30 calendar days after the entry day. <code>pct_change</code> = (exit − entry) / entry.</div>
+      <div style="font-size:19px;color:var(--muted);margin-top:6px">Exit: the first close at least 30 calendar days after the entry day. <code>pct_change</code> = (exit − entry) / entry. A short winner has <code>pct_change</code> below −0.05.</div>
     </div>
-    <div class="w card rv" data-s="3" data-u="3" style="left:60px;top:215px;width:1480px;padding:22px 30px">
-      <div style="display:flex;justify-content:space-between;align-items:center"><div class="lab">Holdout: latest 20% of rows, purged walk-forward split</div><span style="font-size:16px;color:var(--muted)">1-year and 5-year MAEs cover different periods: not comparable</span></div>
-      <div style="display:grid;grid-template-columns:1.15fr 1fr;gap:34px;margin-top:10px">
-        <table style="width:100%;border-collapse:collapse;font-size:22px">
-          <thead><tr style="text-align:left;color:var(--muted);font-size:16px"><th style="padding:8px 6px">Predictor</th><th>MAE, 1-year</th><th>MAE, 5-year</th><th>5-year at −5%</th></tr></thead>
-          <tbody>
-            ${[["model", "0.1216", "0.12653", "619 · +2.64%"], ["zero", "0.1193", "0.12646", "0 shorts"], ["train_mean", "0.1218", "0.12657", "0 shorts"], ["ticker_history", "0.1421", "0.13548", "2,982 · −6.42%"]].map(([a, v1, v5, sh], k) => `<tr style="border-top:1px solid var(--line)${k === 0 ? ";font-weight:700" : ""}"><td style="padding:16px 6px" class="mono">${a}</td><td>${v1}</td><td>${v5}</td><td>${sh}</td></tr>`).join("")}
-          </tbody>
-        </table>
-        <table style="width:100%;border-collapse:collapse;font-size:22px">
-          <thead><tr style="text-align:left;color:var(--muted);font-size:16px"><th style="padding:8px 6px">Model shorts at</th><th>1-year</th><th>5-year</th></tr></thead>
-          <tbody>
-            ${[["0", "7,067 · +1.8%", "28,356 · −1.44%"], ["−2%", "1,942 · +4.0%", "6,602 · −3.24%"], ["−5% (traded)", "265 · +10.8%", "619 · +2.64%"], ["−10%", "29 · too few", "51 · +5.04%"]].map(([a, b, v], k) => `<tr style="border-top:1px solid var(--line)${k === 2 ? ";font-weight:700" : ""}"><td style="padding:16px 6px" class="mono">${a}</td><td>${b}</td><td>${v}</td></tr>`).join("")}
-          </tbody>
-        </table>
+    <div class="w card rv" data-s="3" data-u="3" style="left:60px;top:215px;width:1480px;padding:20px 28px">
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="lab">Holdout: latest 20% of rows, 43,055 rows from 2025-10-24 · shorts at P ≥ 0.70</div><span style="font-size:16px;color:var(--muted)">base rate 0.338 = share of short winners = AP of a constant</span></div>
+      <table style="width:100%;border-collapse:collapse;font-size:21px;margin-top:6px">
+        <thead><tr style="text-align:left;color:var(--muted);font-size:15px"><th style="padding:6px">Predictor</th><th>AP</th><th>Precision</th><th>Shorts</th><th>Mean</th><th>Median</th><th>5% trimmed</th></tr></thead>
+        <tbody>
+          ${[["model", "0.418", "0.60", "314", "+9.6%", "+9.9%", "+11.5%"], ["ticker_history", "0.404", "0.52", "1,025", "+5.8%", "+5.9%", "+7.1%"], ["base_rate", "0.338", "–", "0", "–", "–", "–"]].map((row, k) => `<tr style="border-top:1px solid var(--line)${k === 0 ? ";font-weight:700" : ""}">${row.map((c, j) => `<td style="padding:10px 6px"${j === 0 ? ' class="mono"' : ""}>${c}</td>`).join("")}</tr>`).join("")}
+        </tbody>
+      </table>
+      <div style="display:grid;grid-template-columns:1fr 1.25fr;gap:30px;margin-top:14px">
+        <div>
+          <div class="lab">Walk-forward folds · AP against base rate</div>
+          <table style="width:100%;border-collapse:collapse;font-size:19px;margin-top:4px">
+            <thead><tr style="text-align:left;color:var(--muted);font-size:15px"><th style="padding:5px 6px">Fold</th><th>Validation period</th><th>Model AP</th><th>Base rate</th></tr></thead>
+            <tbody>
+              ${[["1", "2021-11 → 2022-12", "0.476", "0.411"], ["2", "2022-12 → 2023-12", "0.375", "0.307"], ["3", "2023-12 → 2024-11", "0.364", "0.254"], ["4", "2024-11 → 2025-09", "0.408", "0.358"]].map(row => `<tr style="border-top:1px solid var(--line)">${row.map((c, j) => `<td style="padding:8px 6px${j === 2 ? ";font-weight:700" : ""}">${c}</td>`).join("")}</tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div class="lab">Holdout median return per short, by cutoff (number of shorts below)</div>
+          <svg viewBox="0 0 760 236" style="width:100%;height:236px;overflow:visible;margin-top:4px">
+            <line x1="10" y1="180" x2="750" y2="180" stroke="var(--edge)" stroke-width="2"/>
+            ${SWEEP.map(([c, n, m], k) => { const x = 18 + k * 73, h = m / 16.36 * 150, hot = c === "0.70"; return `<rect x="${x}" y="${180 - h}" width="56" height="${Math.max(h, 2)}" rx="5" fill="${hot ? "var(--accent)" : "color-mix(in srgb,var(--accent) 35%,transparent)"}"/><text x="${x + 28}" y="${172 - h}" text-anchor="middle" class="lbl mono" style="font-size:15px${hot ? ";font-weight:700" : ""}">+${m.toFixed(1)}%</text><text x="${x + 28}" y="202" text-anchor="middle" class="lbl mono" style="font-size:15px${hot ? ";font-weight:700" : ""}">${c}</text><text x="${x + 28}" y="224" text-anchor="middle" class="lbl" style="font-size:13px">${n.toLocaleString("en-GB")}</text>`; }).join("")}
+          </svg>
+        </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:18px">
-        <div class="card" style="box-shadow:none;padding:12px 18px;background:var(--panel2)"><div class="lab">Development rows, 1-year · 5-year</div><div style="margin-top:6px;font-size:28px;font-weight:650">53,747 · 169,990</div></div>
-        <div class="card" style="box-shadow:none;padding:12px 18px;background:var(--panel2)"><div class="lab">Holdout rows, 1-year · 5-year</div><div style="margin-top:6px;font-size:28px;font-weight:650">14,639 · 43,067</div></div>
-        <div class="card" style="box-shadow:none;padding:12px 18px;background:var(--panel2)"><div class="lab">Holdout start, 1-year · 5-year</div><div style="margin-top:6px;font-size:28px;font-weight:650">2026-06-09 · 2025-10-24</div></div>
-      </div>
-      <p style="font-size:17px;color:var(--muted);margin:14px 0 0">Shorts · mean return per short; positive means the shorted stocks fell. 1-year trained locally; 5-year on Fargate, model 20261122T205816Z. No MAE edge; 5-year profit only in the tail. No borrow fees, slippage or commissions.</p>
+      <p style="font-size:16px;color:var(--muted);margin:6px 0 0">Captured return = −pct_change; positive means the shorted stock fell. Before borrow fees, slippage and commissions. 0.80: 1 short, not shown. Model 20261122T224917Z. It replaced the 5-year regressor, which never beat predicting zero on MAE.</p>
     </div>`,
   init(el) {
     const sl = $("#st-sl", el);
@@ -1714,7 +1720,8 @@ const FAQ = [
   ["Why not SageMaker?", "The model is a small scikit-learn pipeline. An endpoint bills every hour it is up. A Lambda loads the model from S3."],
   ["How do you avoid duplicate orders?", "client_order_id is the row key ticker@next print. Alpaca rejects a second order with the same id."],
   ["How do you avoid look-ahead?", "Entry is the first print after accepted_at. Values use the close before the acceptance day. The walk-forward split is purged, and the holdout is scored once."],
-  ["How does a bad model stay out of production?", "training always saves, but only the gate moves latest.json: enough development rows, the same features, a finite holdout MAE, at least one short. promote_model.sh promotes or rolls back by hand."],
+  ["Why a classifier?", "The return regressor never beat predicting zero on MAE, and single outlier labels drove its mean short return. The decision is binary anyway: short or not. The classifier ranks short winners, and the cutoff is chosen on the folds."],
+  ["How does a bad model stay out of production?", "training always saves, but only the gate moves latest.json: enough development rows, the same features, a finite holdout AP, at least one short at the cutoff. promote_model.sh promotes or rolls back by hand."],
   ["What does it cost?", "Dormant: about $0 per day. Switched on: about $1.20 per day plus usage. Batch tasks run on Fargate Spot, about 70% cheaper, with an On-Demand fallback. A $5 monthly budget emails alerts."],
   ["Why is the NAT switchable?", "It bills about $1.08 per day with no traffic. Always on, it would cost about $32 per month, over six times the budget."],
   ["Why no API for the website?", "A publisher Lambda writes static JSON. CloudFront reads the private S3 bucket through OAC; a CloudFront Function checks Basic auth against a hash in a KeyValueStore."],
@@ -1726,14 +1733,14 @@ section({
   h1: "Next steps",
   thumbStep: 0,
   steps: [
-    { cap: "The 5-year run is finished and its model promoted. Next: pull request #31 switches the live path and the weekly retrain on.",
-      notes: ["Done: target created RT4 → training with <code>PROMOTE=never</code> saved model <code>20261122T205816Z</code> → <code>scripts/promote_model.sh</code> promoted it.", "Today master has <code>switched_on = true</code>, <code>live_enabled = false</code> and <code>weekly_retrain_enabled = false</code>, so live is off.", "Pull request #31 sets <code>live_enabled = true</code> and <code>weekly_retrain_enabled = true</code>. It is merged about an hour before the presentation, after training and promotion, which are done. The apply still needs a reviewer's approval.", "Smaller images cut the cold start."] },
+    { cap: "The 5-year run is finished and its classifier promoted. Next: pull request #31 switches the live path and the weekly retrain on.",
+      notes: ["Done: target rebuilt RT4 with the label guards (215,273 rows) → training with <code>PROMOTE=never</code> saved the classifier <code>20261122T224917Z</code> → <code>scripts/promote_model.sh</code> promoted it.", "Today master has <code>switched_on = true</code>, <code>live_enabled = false</code> and <code>weekly_retrain_enabled = false</code>, so live is off.", "Pull request #31 sets <code>live_enabled = true</code> and <code>weekly_retrain_enabled = true</code>. It is merged about an hour before the presentation, after training and promotion, which are done. The apply still needs a reviewer's approval.", "Smaller images cut the cold start."] },
     { cap: "Click a card for the short answer.",
       notes: ["The cards are a prompt list for likely questions.", "Deeper answers: docs/presentation/glossary-and-faq.md.", "Close with: honest timing, honest evaluation, and a stack that costs nothing while idle."] },
   ],
   svg: () => `
     <g class="rv" data-s="0" data-u="0">
-      ${[["target", "215,334 rows → RT4 · by hand", "compute", "fargate", "done"], ["training", "PROMOTE=never · 5-year model", "ml", "model", "done"], ["Promote by hand", "20261122T205816Z", "sec", "gate", "done"], ["Switches on · PR #31", "live_enabled · weekly_retrain_enabled", "int", "sched", "next"], ["Smaller images", "faster cold starts", "ci", "image", ""]].map(([t, sub, k, i, tag], j, all) => {
+      ${[["target", "215,273 rows → RT4", "compute", "fargate", "done"], ["training", "PROMOTE=never · 5-year classifier", "ml", "model", "done"], ["Promote by hand", "20261122T224917Z", "sec", "gate", "done"], ["Switches on · PR #31", "live_enabled · weekly_retrain_enabled", "int", "sched", "next"], ["Smaller images", "faster cold starts", "ci", "image", ""]].map(([t, sub, k, i, tag], j, all) => {
         const x = 60 + (j % 3) * 500, y = 250 + Math.floor(j / 3) * 260;
         return `<g class="rv" data-s="0" data-u="0" data-d="${j + 1}">
           ${node({ x, y, w: 460, h: 96, k, i, t, sub, cls: tag === "done" ? "okk" : "" })}
@@ -1743,7 +1750,7 @@ section({
         </g>`; }).join("")}
     </g>`,
   html: () => `
-    <div class="w rv" data-s="1" data-u="1" style="left:60px;top:215px;width:1480px;display:grid;grid-template-columns:repeat(5,1fr);gap:18px">
+    <div class="w rv" data-s="1" data-u="1" style="left:60px;top:215px;width:1480px;display:grid;grid-template-columns:repeat(6,1fr);gap:16px">
       ${FAQ.map(([q, a]) => `<button class="flip faq" style="height:300px"><div class="in"><div class="fa"><h4>${q}</h4><div class="hint">click for the answer</div></div><div class="fb"><p>${a}</p></div></div></button>`).join("")}
     </div>`,
   init(el) { $$(".flip", el).forEach(f => f.addEventListener("click", () => f.classList.toggle("open"))); },
