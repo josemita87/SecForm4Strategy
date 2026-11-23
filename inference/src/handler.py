@@ -73,7 +73,7 @@ def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
     loaded = pipeline.load_model(config.probability_cutoff)
     predictions = score(loaded.pipeline, loaded.features, fresh)
     shorts = predictions.loc[predictions[Col.PROBABILITY] >= loaded.probability_cutoff, Col.KEY].tolist()
-    logger.info(f'{len(predictions)} of {len(fresh)} rows complete and scored for {tickers}; shorting {shorts}')
+    logger.info(f'{len(predictions)} of {len(fresh)} rows scored for {tickers}; shorting {shorts}')
     if retry_later := pipeline.execute_trades(
         predictions,
         loaded.probability_cutoff,
