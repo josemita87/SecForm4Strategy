@@ -62,8 +62,43 @@ html = re.sub(
 out.write_text(html)
 PY
 
-"$chrome" --headless --disable-gpu --no-pdf-header-footer \
-  --allow-file-access-from-files \
-  --print-to-pdf="$here/$name.pdf" "file://$work/report.html" 2>/dev/null
+print_pdf() {
+  "$chrome" --headless --disable-gpu --no-pdf-header-footer \
+    --allow-file-access-from-files \
+    --print-to-pdf="$1" "file://$work/report.html" 2>/dev/null
+}
+
+print_pdf "$here/$name.pdf"
+
+# Contents page numbers: Chrome has no target-counter, so a second pass writes each heading's page from the first PDF
+pdftotext="${PDFTOTEXT:-/opt/homebrew/bin/pdftotext}"
+if grep -q 'id="contents"' "$work/report.html" && [[ -x "$pdftotext" ]]; then
+  "$pdftotext" -layout "$here/$name.pdf" "$work/pass1.txt"
+  python3 -I - "$work/report.html" "$work/pass1.txt" <<'PY'
+import html as markup
+import re
+import sys
+from pathlib import Path
+
+page, text = Path(sys.argv[1]), Path(sys.argv[2])
+doc = page.read_text()
+pages = [{' '.join(line.split()) for line in sheet.splitlines()} for sheet in text.read_text().split('\f')]
+start = doc.index('id="contents"')
+end = doc.index('<h2', start + 1)
+headings = {m[1]: re.sub(r'<[^>]+>', '', m[2]) for m in re.finditer(r'<h[1-4] id="([^"]+)"[^>]*>(.*?)</h[1-4]>', doc, re.S)}
+
+
+def number(m: re.Match[str]) -> str:
+    title = ' '.join(markup.unescape(headings.get(m[1], '')).split())
+    if not (found := [i + 1 for i, lines in enumerate(pages) if title and title in lines and 'Contents' not in lines]):
+        return m[0]
+    return f'<a class="toc-link" href="#{m[1]}">{m[2]}<span class="toc-page">{found[0]}</span></a>'
+
+
+toc = re.sub(r'<a href="#([^"]+)">(.*?)</a>', number, doc[start:end], flags=re.S)
+page.write_text(doc[:start] + toc + doc[end:])
+PY
+  print_pdf "$here/$name.pdf"
+fi
 
 echo "Wrote $here/$name.pdf"

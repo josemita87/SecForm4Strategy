@@ -6,14 +6,14 @@ The AWS deployment runs the same services as the local stack, on serverless AWS 
 
 ![AWS architecture](diagrams/aws-architecture.drawio.svg)
 
-The batch path runs ECS tasks in the private subnets. The live path runs Lambda functions outside the VPC. Orange dashed outlines and lines exist only while the stack is switched on. The arrows between the batch tasks and SQS are logical: that traffic passes the NAT gateway, as the note in the private subnets states. [Network](#network) shows the routes.
+The batch path runs ECS tasks in the private subnets. The live path runs Lambda functions outside the VPC. Orange dashed outlines and lines depend on the switches ("Switches" below). The arrows between the batch tasks and SQS are logical: that traffic passes the NAT gateway, as the note in the private subnets states. [Network](#network) shows the routes.
 
 Terraform state is in the bucket `secform4strategy-tfstate-<account>`, which `infra/bootstrap` creates. The backend locks the state with S3 native locking (`use_lockfile = true`). The root module `infra/envs/demo` calls ten modules:
 
 | Module | Resources |
 | --- | --- |
 | `storage` | Data bucket `secform4strategy-data-<account>`, Glue database `secform4strategy`, Athena workgroup `secform4strategy`, one ECR repository per service, the monthly budget |
-| `network` | VPC, two public and two private subnets, internet gateway, S3 gateway endpoint, security group `secform4strategy-tasks`, and the NAT gateway while switched on |
+| `network` | VPC, two public and two private subnets, internet gateway, S3 gateway endpoint, security group `secform4strategy-tasks`, and the NAT gateway while the batch path is switched on |
 | `queues` | Five SQS queues, each with a dead-letter queue and a CloudWatch alarm, and the SNS topic `secform4strategy-queue-alerts` |
 | `iam` | The ECS execution role, one task role per service, and one Lambda role per Lambda function |
 | `ci` | The GitHub OIDC provider and the roles `secform4strategy-github-images`, `-plan` and `-apply` |
@@ -35,7 +35,7 @@ The Athena workgroup writes results to `athena-results/` and cancels any query t
 
 Each service has an ECR repository `secform4strategy/<service>`: `master-index`, `scraper`, `kafka-to-store`, `yahoo-connect`, `target`, `training`, `inference` and `site-publisher`. Tags are immutable, ECR scans each image on push, and each repository keeps its 5 newest images.
 
-The budget `secform4strategy-monthly` is $5 per month. It sends an email when actual cost passes 50% of the budget, and when forecast cost passes 100%. The recipient is `alert_email` in the git-ignored `infra/envs/demo/terraform.tfvars`.
+The budget `secform4strategy-monthly` is $10 per month. A budget only alerts; it does not cap spend. It sends an email when actual cost passes 50% of the budget, and when forecast cost passes 100%. The recipient is `alert_email` in the git-ignored `infra/envs/demo/terraform.tfvars`.
 
 ### Adapters in the Python code
 
@@ -66,22 +66,22 @@ The system has two paths. Both use serverless compute, so nothing runs and nothi
 | Work | Long, heavy jobs: the first full load of years of filings, then a weekly retrain on the new filings | One filing at a time, as SEC publishes it |
 | Compute | ECS tasks on Fargate ARM64 | Lambda functions, on the same images |
 | Trigger | Step Functions, started by EventBridge Scheduler | EventBridge Scheduler, then SQS, then an EventBridge Pipe |
-| Why | Fargate has no run-time limit; Lambda stops a run after 15 minutes | Lambda runs as soon as an event arrives and bills per invocation; speed from disclosure is the edge |
+| Why | Fargate has no run-time limit; Lambda stops a run after 15 minutes | Lambda runs as soon as an event arrives and bills per invocation; it trades the 15.1% of filings accepted in market hours at the same day's close |
 
 ### Batch path
 
 One Step Functions state machine, `retrain`, runs six ECS tasks in order:
 
-1. master-index publishes filings to `secform4strategy-filings`.
+1. The master-index service publishes filings to `secform4strategy-filings`.
 2. The scraper reads them and publishes transactions to `secform4strategy-transactions`.
-3. kafka-to-store reads the transactions and upserts them into `BT4`.
-4. yahoo-connect refreshes the prices of the tickers in the tables.
-5. target builds the labelled rows.
-6. training saves a new model to `models/` in S3, and promotes it if it passes the gate.
+3. The kafka-to-store service reads the transactions and upserts them into `BT4`.
+4. The yahoo-connect service refreshes the prices of the tickers in the tables.
+5. The target service builds the labelled rows.
+6. The training service saves a new model to `models/` in S3, and promotes it if it passes the gate.
 
-Each step runs one Fargate ARM64 task in the cluster `secform4strategy`, in the private subnets, and waits for it to stop. kafka-to-store runs with 2 vCPU and 8 GB, because each Iceberg upsert loads and merges table rows. The cluster has Container Insights enabled, so CloudWatch shows each task's CPU and memory use. Each step runs on Fargate Spot first (`spot_steps`, every step in the demo environment). A failed Spot task, whether Spot reclaimed it or the code failed, is retried on Spot after 600 seconds, at most 2 times. The step then waits another 600 seconds and runs once more on the `FARGATE` launch type (On-Demand), with one retry. The `Catch` that starts this fallback takes every error, because a RunTask failure, such as no Spot capacity at launch, arrives as `AmazonECS.Unknown`, not `States.TaskFailed`. A real code failure therefore runs 5 times before the run fails, and its retries take about 40 minutes. Each Spot step has three states (`<step>`, `<step>-wait`, `<step>-on-demand`). With all six steps on Spot, the state machine has 18 states. A step left out of `spot_steps` runs On-Demand only, retried after 600 seconds at most 3 times. Every wait outlasts the 300-second SQS visibility timeout, so a rerun finds the unfinished messages. A reclaimed task loses only its in-flight batch: Iceberg commits are atomic, writes are upserts by key, and unacknowledged messages are delivered again. The services do not handle SIGTERM, so a longer `stopTimeout` would not help. Each task writes its logs to the log group `/secform4strategy/<service>`, kept 14 days.
+Each step runs one Fargate ARM64 task in the cluster `secform4strategy`, in the private subnets, and waits for it to stop. The kafka-to-store service runs with 2 vCPU and 8 GB, because each Iceberg upsert loads and merges table rows. The cluster has Container Insights enabled, so CloudWatch shows each task's CPU and memory use. Each step runs on Fargate Spot first (`spot_steps`, every step in the demo environment). A failed Spot task, whether Spot reclaimed it or the code failed, is retried on Spot after 600 seconds, at most 2 times. The step then waits another 600 seconds and runs once more on the `FARGATE` launch type (On-Demand), with one retry. The `Catch` that starts this fallback takes every error, because a RunTask failure, such as no Spot capacity at launch, arrives as `AmazonECS.Unknown`, not `States.TaskFailed`. A real code failure therefore runs 5 times before the run fails, and its retries take about 40 minutes. Each Spot step has three states (`<step>`, `<step>-wait`, `<step>-on-demand`). With all six steps on Spot, the state machine has 18 states. A step left out of `spot_steps` runs On-Demand only, retried after 600 seconds at most 3 times. Every wait outlasts the 300-second SQS visibility timeout, so a rerun finds the unfinished messages. A reclaimed task loses only its in-flight batch: Iceberg commits are atomic, writes are upserts by key, and unacknowledged messages are delivered again. The services do not handle SIGTERM, so a longer `stopTimeout` would not help. Each task writes its logs to the log group `/secform4strategy/<service>`, kept 14 days.
 
-EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC. master-index then runs with `MODE=recent` and `DAYS_BACK=7`: it reads the master indexes of the quarters that the last 7 days touch, and publishes only the filings of those 7 days. The schedule is enabled only while both `switched_on` and `weekly_retrain_enabled` are `true`.
+EventBridge Scheduler starts `retrain` every Saturday at 06:00 UTC. The master-index service then runs with `MODE=recent` and `DAYS_BACK=7`: it reads the master indexes of the quarters that the last 7 days touch, and publishes only the filings of those 7 days. The schedule is enabled only while both `switched_on` and `weekly_retrain_enabled` are `true`.
 
 The training task runs with `PROMOTE=gated`. Training saves each run's model, and promotes it only if every gate check passes ([training.md](training.md#promotion)). A model that fails the gate stays saved, and the previous model stays promoted. Training reads the promoted model's metadata for the gate, so its task role has `models-read` as well as `models-write`.
 
@@ -118,7 +118,7 @@ Most of kafka-to-store's batch time is the Iceberg upsert, not SQS. The upsert m
 
 The scraper downloads up to `FETCH_WORKERS` filings at once. SEC answers each request in about 0.5 seconds, so several requests in flight keep the rate near the cap. `EdgarClient` spaces request starts at least `1 / SEC_MAX_RATE` seconds apart across all threads.
 
-The scraper runs with `EXIT_WHEN_EMPTY=true`. It stops at the first receive that waits its full poll timeout without a message. If it left a filing unacknowledged for retry, it exits non-zero, and Step Functions reruns it after 600 seconds.
+The scraper runs with `EXIT_WHEN_EMPTY=true`. It stops at the first receive that waits its full poll timeout without a message. If any batch left a filing unacknowledged for retry, it exits non-zero, even when a later receive finished that filing, so the step can report failure for finished work. Step Functions then reruns it after 600 seconds.
 
 The ECS task definitions read the secrets (the Alpaca keys and `SEC_USER_AGENT`) from SSM Parameter Store and pass them to the container as environment variables.
 
@@ -132,8 +132,8 @@ The images have a second limit. Each ECR repository keeps only its 5 newest imag
 
 The run `backfill-5y` started on 2026-11-20 at 18:11 UTC, with the full-load input in "Run input". It ended `FAILED`:
 
-1. master-index and the scraper processed every filing. At the end, the `filings` queue and its dead-letter queue were empty.
-2. The scraper had left filings unacknowledged for retry, so it exited non-zero, as designed.
+1. The master-index and scraper services processed every filing. At the end, the `filings` queue and its dead-letter queue were empty.
+2. The scraper exited non-zero although the work was done: a batch that hits a `RetryableError` sets the task's exit flag, and the flag stays set after a later receive finishes those filings.
 3. Step Functions retried the scraper step. Each retry failed with `CannotPullContainerError`. The run's revision `scraper:3` named an image digest that ECR had already deleted, because the lifecycle rule then kept only 2 images per repository.
 4. After its last retry, the run ended `FAILED`.
 
@@ -144,7 +144,7 @@ The remaining steps then ran on the latest revisions:
 3. target.
 4. training, with `PROMOTE=never`. The model is then promoted with `scripts/promote_model.sh` ([training.md](training.md#manual-promotion-and-rollback)).
 
-target then rebuilt `RT4` with the label guards, on its configured 2 vCPU and 16 GB in about 1.5 minutes: 215,273 labelled rows. training revision 13, overridden to 16 vCPU and 32 GB, trained the classifier on it in about 16 minutes, with `PROMOTE=never`. `scripts/promote_model.sh` promoted model `20261122T224917Z` ([training.md](training.md#5-year-results)).
+The target service then rebuilt `RT4` with the label guards, on its configured 2 vCPU and 16 GB in about 1.5 minutes: 215,273 labelled rows. Revision 13 of the training task, overridden to 16 vCPU and 32 GB, trained the classifier on it in about 16 minutes, with `PROMOTE=never`. `scripts/promote_model.sh` promoted model `20261122T224917Z` ([training.md](training.md#5-year-results)).
 
 A pinned revision works only while ECR still holds its image. For this reason each repository now keeps 5 images, and "Revisions of a running run" limits the new images during a run.
 
@@ -153,13 +153,15 @@ A pinned revision works only while ECR still holds its image. For this reason ea
 The live path runs the batch services as Lambda functions, on the same images, scoped to the tickers of each new filing:
 
 1. EventBridge Scheduler invokes `secform4strategy-live-master-index` every minute.
-2. master-index reads the first page of SEC's current Form 4 feed. It sends the filings that `secform4strategy-seen` does not hold to `secform4strategy-live-filings`, then records them.
+2. The master-index service reads the first page of SEC's current Form 4 feed. It sends the filings that `secform4strategy-seen` does not hold to `secform4strategy-live-filings`, then records them.
 3. The scraper Lambda parses each filing and sends its transactions to `secform4strategy-live-transactions`.
-4. kafka-to-store upserts the transactions into `BI4` and sends `{"tickers": [...]}` to `secform4strategy-live-tickers`.
+4. The kafka-to-store service upserts the transactions into `BI4` and sends `{"tickers": [...]}` to `secform4strategy-live-tickers`.
 5. The EventBridge Pipe `secform4strategy-live-tickers` starts one run of the state machine `secform4strategy-live-score` per batch of up to 10 messages.
 6. `live-score` runs three Lambdas in order, each passing `{"tickers": [...]}` to the next: yahoo-connect refreshes the prices, target builds the `BIR4` rows, and inference scores them and places Alpaca paper orders.
 
-The schedule is enabled only while both `switched_on` and `live_enabled` are `true`.
+The schedule is enabled while `live_enabled` is `true`, independently of `switched_on`: the live chain runs outside the VPC and needs no NAT gateway.
+
+The Pipe starts `live-score` with `invocation_type = "FIRE_AND_FORGET"`, so it deletes the `live-tickers` messages once the run starts. A run that fails after its retries loses its tickers, and no dead-letter queue holds them. `REQUEST_RESPONSE` does not work with Standard workflows, and `live-score` is a Standard workflow because the site publisher reads its execution history.
 
 The account allows 10 concurrent Lambda executions in total, shared by the live functions and the site publisher. [site.md](site.md#known-gaps) describes the risk and the fix.
 
@@ -176,7 +178,7 @@ Each function runs `<service directory>/.venv/bin/python -m awslambdaric` with t
 
 The SQS triggers report partial batch failures. A handler returns the messages it did not finish in `batchItemFailures`, and SQS delivers only those again, after the 300-second visibility timeout.
 
-Each `live-score` step is retried twice on `States.TaskFailed`, after 5 and 10 seconds. inference raises `RetryableError` when an order is left unplaced, so the step runs again. Each order carries the row key as `client_order_id`, so Alpaca rejects a duplicate. inference loads the latest model at each invocation, so a new weekly model takes effect immediately. It trades only fresh rows: rows whose latest filing was accepted within `MAX_SIGNAL_AGE_MINUTES` (default 60). The event carries tickers, so this keeps a ticker's older rows from trading late, for example after a retrain. In the session an order fills at once; outside it, Alpaca queues it for the open.
+Each `live-score` step is retried twice on `States.TaskFailed`, after 5 and 10 seconds. The inference service raises `RetryableError` when an order is left unplaced, so the step runs again. Each order carries the row key as `client_order_id`, so Alpaca rejects a duplicate. The inference service loads the latest model at each invocation, so a new weekly model takes effect immediately. It trades only fresh rows: rows whose latest filing was accepted within `MAX_SIGNAL_AGE_MINUTES` (default 60). The event carries tickers, so this keeps a ticker's older rows from trading late, for example after a retrain. In the session an order fills at once; outside it, Alpaca queues it for the open.
 
 The live Lambdas read their secrets from SSM themselves, because Lambda cannot put SSM parameters into environment variables. `SSM_PARAMETERS` names the parameters, for example `{"sec_user_agent": "/secform4strategy/sec-user-agent"}`, and `SsmSettings` reads them at cold start. The values never enter the Terraform state.
 
@@ -202,7 +204,7 @@ Warm invocations take a few seconds. A filing that arrives after a quiet period 
 | Public subnets `secform4strategy-public-0`, `-1` | `10.0.0.0/24`, `10.0.1.0/24`, one per availability zone |
 | Private subnets `secform4strategy-private-0`, `-1` | `10.0.10.0/24`, `10.0.11.0/24`, one per availability zone |
 | Public route table | `0.0.0.0/0` to the internet gateway |
-| Private route table | S3 to the gateway endpoint; `0.0.0.0/0` to the NAT gateway only while switched on |
+| Private route table | S3 to the gateway endpoint; `0.0.0.0/0` to the NAT gateway only while `switched_on = true` |
 | Security group `secform4strategy-tasks` | No inbound rules; all outbound traffic allowed |
 | NAT gateway and Elastic IP | In `secform4strategy-public-0`, only while `switched_on = true` |
 
@@ -227,7 +229,7 @@ The public subnets hold only the NAT gateway. The NAT gateway gives the private 
 
 The S3 gateway endpoint sits on the private route table. It carries all traffic from the private subnets to S3: the Iceberg data, the models and the image layers that ECR stores in S3. A gateway endpoint costs nothing, and S3 traffic through it does not pass the NAT gateway, so it adds no NAT data charges.
 
-The NAT gateway exists only while the stack is switched on, because it bills about $1.08 per day whether or not traffic flows. While the stack is dormant, the private subnets reach only S3. No task can run then: it cannot pull its image from ECR or read its secrets.
+The NAT gateway exists only while the batch path is switched on (`switched_on = true`), because it bills about $1.08 per day whether or not traffic flows. While the batch path is dormant, the private subnets reach only S3. No task can run then: it cannot pull its image from ECR or read its secrets.
 
 ## Identity
 
@@ -239,7 +241,7 @@ The `iam` module creates three kinds of role:
 | `secform4strategy-<service>` | `ecs-tasks.amazonaws.com` | The service's code in an ECS task | Only the queues and data that service uses, from `task_access` |
 | `secform4strategy-live-<service>` | `lambda.amazonaws.com` | The service's code in a Lambda function | `AWSLambdaBasicExecutionRole` (CloudWatch Logs), plus the entries in `lambda_access` |
 
-In ECS, the execution role reads the secrets from SSM and injects them as environment variables, so the task roles hold no SSM permission. In Lambda, the function's own role reads them, so the Lambda roles that use secrets hold an SSM capability. master-index and scraper hold `read-secrets`. inference and site-publisher hold `read-alpaca-keys`, which covers only the two Alpaca keys.
+In ECS, the execution role reads the secrets from SSM and injects them as environment variables, so the task roles hold no SSM permission. The injection is per task definition: only the inference task definition names the Alpaca keys. The execution role can read every parameter under `/secform4strategy/*`, so on ECS that isolation rests on the task definitions, not on IAM. In Lambda, the function's own role reads them, so the Lambda roles that use secrets hold an SSM capability. The master-index and scraper services hold `read-secrets`. The inference and site-publisher services hold `read-alpaca-keys`, which covers only the two Alpaca keys.
 
 ### Access per service
 
@@ -328,7 +330,7 @@ The queues are the platform layer of the error contract in [error-handling.md](e
 | Crash (a defect) | No ack | The invocation fails, so the whole batch | Delivered again; after 5 receives, moved to the dead-letter queue |
 | Body is not JSON | `SqsQueue` logs it and deletes it | `sqs_messages` logs it and leaves it out | Deleted |
 
-Each dead-letter queue has a CloudWatch alarm `secform4strategy-<queue>-dead-letters`. It goes into alarm when the dead-letter queue holds at least one message, checked every 5 minutes, and back to OK when it is empty. Both changes publish to the SNS topic `secform4strategy-queue-alerts`, which emails `alert_email`. The recipient confirms the subscription once, from the email AWS sends.
+Every message that exhausts its SQS retries ends in a dead-letter queue, where it waits 14 days for a manual redrive. A `PermanentError` message is deleted, so it never reaches one. Each dead-letter queue has a CloudWatch alarm `secform4strategy-<queue>-dead-letters`. It goes into alarm when the dead-letter queue holds at least one message, checked every 5 minutes, and back to OK when it is empty. Both changes publish to the SNS topic `secform4strategy-queue-alerts`, which emails `alert_email`. The recipient confirms the subscription once, from the email AWS sends. No alarm watches `ExecutionsFailed` for `retrain` or `live-score`; only the dashboard shows it.
 
 ## CI/CD
 
@@ -382,12 +384,13 @@ Only a job that runs in the GitHub environment `aws` can assume `secform4strateg
 
 | State | Cost | What is billed |
 | --- | --- | --- |
-| Dormant (`switched_on = false`) | About $0 per day | S3 storage and ECR storage. The VPC, subnets, internet gateway, S3 gateway endpoint, security group, IAM, Glue database, idle SQS queues, idle Lambda functions, the DynamoDB table on demand and the state machines cost nothing. |
-| Switched on (`switched_on = true`) | About $1.20 per day, plus usage | The NAT gateway (about $1.08 per day) and its Elastic IP (about $0.12 per day). Usage: Fargate, Lambda, Step Functions, SQS requests, DynamoDB requests, NAT data processing, Athena scans. |
+| Dormant (all switches off) | About $0 per day | S3 storage and ECR storage. The VPC, subnets, internet gateway, S3 gateway endpoint, security group, IAM, Glue database, idle SQS queues, idle Lambda functions, the DynamoDB table on demand and the state machines cost nothing. |
+| Live only (`live_enabled = true`, `switched_on = false`) | Cents to a few dollars per month | No NAT gateway and no Elastic IP. Lambda invocations, Step Functions transitions, SQS and DynamoDB requests, and the site publisher. |
+| Batch path switched on (`switched_on = true`) | About $1.20 per day, plus usage | The NAT gateway (about $1.08 per day) and its Elastic IP (about $0.12 per day). Usage: Fargate, NAT data processing, Athena scans. |
 
-The site adds the publisher's Lambda cost while switched on, about $0.86 per month for each second a publish takes ([site.md](site.md#cost)).
+The site adds the publisher's Lambda cost while its schedule runs (`switched_on` or `live_enabled`), about $0.86 per month for each second a publish takes ([site.md](site.md#cost)).
 
-The $5 monthly budget alerts at 50% of actual cost and at 100% of forecast cost.
+The $10 monthly budget alerts at 50% of actual cost and at 100% of forecast cost. It covers the live path all month plus several days with the batch path switched on. November 2026 cost more than average because of the 5-year backfill: $8.52 of usage from 1 to 23 November, covered by account credits.
 
 ## Operating
 
@@ -413,15 +416,17 @@ The provider's `allowed_account_ids` rejects any other account. A local apply fr
 
 `infra/envs/demo/switch.auto.tfvars` holds three switches. A change takes effect when it is merged to master and its apply is approved.
 
-| Switch | Default | While `true` |
-| --- | --- | --- |
-| `switched_on` | `false` | The NAT gateway exists. The two schedules below may run. |
-| `weekly_retrain_enabled` | `true` | The Saturday `retrain` schedule is enabled, if `switched_on` is `true`. |
-| `live_enabled` | `true` | The live poller schedule is enabled, if `switched_on` is `true`. |
+| Switch | Default | On master | While `true` |
+| --- | --- | --- | --- |
+| `switched_on` | `false` | `false` | The batch path is switched on: the NAT gateway exists, and the weekly `retrain` schedule may run. |
+| `weekly_retrain_enabled` | `true` | `true` | The Saturday `retrain` schedule is enabled, but only while `switched_on` is `true`. |
+| `live_enabled` | `false` | `true` | The live poller schedule is enabled, independently of `switched_on`. |
 
-`make switch-on` and `make switch-off` set `switched_on` from master, commit the change and push it. They leave the other two switches as they are. The NAT gateway takes a few minutes to create and to delete.
+The site publisher's schedule runs while `switched_on` or `live_enabled` is `true`. On master, the live path runs, there is no NAT gateway, and the batch path is dormant.
 
-Turn `weekly_retrain_enabled` off while a long manual run uses the batch queues. Turn `live_enabled` off while a full load runs the scraper at 8 requests per second: with the live path's 4.5, the total passes SEC's 10.
+`make switch-on` and `make switch-off` set `switched_on` from master, which switches the batch path, commit the change and push it. They leave the other two switches as they are. The NAT gateway takes a few minutes to create and to delete.
+
+Turn `weekly_retrain_enabled` off while a long manual run uses the batch queues. `live_enabled` must be off while a full load runs the scraper at 8 requests per second: with the live path's 4.5, the total passes SEC's 10.
 
 ### Secrets
 
@@ -471,7 +476,7 @@ Send one filing to `live-filings`. The message body is `{"accession": ..., "file
 2. Read `/aws/lambda/secform4strategy-live-kafka-to-store`. It logs `Upserted <n> of <n> transactions into BI4`.
 3. Open the newest run of `secform4strategy-live-score` in the Step Functions console. Its input holds the tickers.
 
-To test only `live-score`, send `{"tickers": ["<ticker>"]}` to `live-tickers`. target needs `RT4`, which the batch target step writes, and inference needs a model in `models/`.
+To test only `live-score`, send `{"tickers": ["<ticker>"]}` to `live-tickers`. The target service needs `RT4`, which the batch target step writes, and inference needs a model in `models/`.
 
 ## Site
 
@@ -496,7 +501,7 @@ The `site` module adds these resources:
 | No provisioned concurrency | One warm instance per live function | It costs about $10 per month per function. A cold filing reaches inference about 1 to 2 minutes later. |
 | Lambda secrets read by `SsmSettings` at cold start | Terraform reads them and sets them as environment variables | The values would enter the Terraform state. |
 | `skip_destroy` on task definitions | Terraform deregisters replaced revisions | A running `retrain` run can no longer start tasks from a deregistered revision. |
-| Fargate Spot first, On-Demand fallback | On-Demand only (`FARGATE`) | Spot (`FARGATE_SPOT`, ARM64 supported) is about 70% cheaper. After 2 Spot retries, a `Catch` waits 600 seconds and runs the step On-Demand, so repeated interruptions cannot stall a multi-day backfill. Every step is idempotent, so a reclaimed task only repeats its batch. |
-| NAT gateway only while switched on | An always-on NAT gateway | An always-on NAT gateway costs about $32 per month, more than six times the budget. |
-| S3 gateway endpoint plus NAT gateway | Interface endpoints for ECR (API and Docker), CloudWatch Logs, SQS and SSM | Five interface endpoints in two availability zones cost about $73 per month. The batch tasks need the internet for SEC EDGAR and Yahoo Finance anyway, so the NAT gateway is required. |
+| Fargate Spot first, On-Demand fallback | On-Demand only (`FARGATE`) | Spot (`FARGATE_SPOT`, ARM64 supported) is up to 70% cheaper. After 2 Spot retries, a `Catch` waits 600 seconds and runs the step On-Demand, so repeated interruptions cannot stall a multi-day backfill. Every step is idempotent, so a reclaimed task only repeats its batch. |
+| NAT gateway only while the batch path is switched on | An always-on NAT gateway | An always-on NAT gateway costs about $32 per month, more than three times the budget. The live path runs outside the VPC and needs none. |
+| S3 gateway endpoint plus NAT gateway | Interface endpoints for ECR (API and Docker), CloudWatch Logs, SQS, SSM and Glue | Six or more interface endpoints in two availability zones cost about $88 per month or more. The batch tasks need the internet for SEC EDGAR and Yahoo Finance anyway, so the NAT gateway is required. |
 | OIDC roles for CI | An IAM user with access keys stored in GitHub | A stored key lives until someone rotates it, and anyone who reads it can use it. OIDC credentials are temporary and bound to one repository and one trigger. |

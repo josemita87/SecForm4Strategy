@@ -596,7 +596,7 @@ function wipe(i, def) {
   $(".wt2", w).textContent = def.title;
   w.classList.remove("go"); void w.offsetWidth; w.classList.add("go");
 }
-const TAPE = [["up", "▲ scraper 6–7.8 filings/s"], ["eq", "■ kafka-to-store ≈ 400 rows/s"], ["dn", "▼ short at P ≥ 0.70"], ["eq", "■ qty 1 · paper"], ["eq", "■ SEC 10 req/s per client"], ["dn", "▼ NAT $0.045/h"], ["eq", "■ budget $5/month"], ["eq", "■ retrain Sat 06:00 UTC"], ["eq", "■ poll rate(1 minute)"], ["eq", "■ seen keys 7-day TTL"], ["up", "✓ 5-year model promoted"], ["up", "✓ live path: 7 live-score runs"], ["dn", "▼ cold start 10–45 s"], ["eq", "■ dormant ≈ $0/day"]];
+const TAPE = [["up", "▲ scraper 6–7.8 filings/s"], ["eq", "■ kafka-to-store ≈ 400 rows/s"], ["dn", "▼ short at P ≥ 0.70"], ["eq", "■ qty 1 · paper"], ["eq", "■ SEC 10 req/s per client"], ["dn", "▼ NAT ≈ $1.08/day, batch only"], ["eq", "■ budget $10/month"], ["eq", "■ retrain Sat 06:00 UTC"], ["eq", "■ poll rate(1 minute)"], ["eq", "■ seen keys 7-day TTL"], ["up", "✓ 5-year model promoted"], ["up", "✓ live path: 7 live-score runs"], ["dn", "▼ cold start 10–45 s"], ["eq", "■ dormant ≈ $0/day"]];
 /* ---------- section registry ---------- */
 const SECTIONS = [];
 function section(def) { SECTIONS.push(def); }
@@ -605,19 +605,19 @@ function section(def) { SECTIONS.push(def); }
 const NOTE = (k, i) => `<svg width="52" height="52" viewBox="0 0 52 52"><rect width="52" height="52" rx="13" fill="var(--k-${k})"/><g class="ig" transform="translate(14 14)">${ICON[i]}</g></svg>`;
 section({
   id: "cover", title: "Introduction", short: "Intro", bare: true, ambient: false,
-  steps: [{ cap: "", notes: ["Open with the fact: an insider's sale becomes public the moment the SEC accepts the Form 4.", "The three cards are the whole system in one sentence: a filing, a prediction, a paper order.", "The example is illustrative; XYZ is a placeholder ticker."] }],
+  steps: [{ cap: "", notes: ["≈15 s. An insider's sale becomes public the moment the SEC accepts the Form 4.", "The three cards are the whole system: a filing, a score, a paper order. XYZ is a placeholder."] }],
   html: () => `
     <div class="cv-glow"></div>
     <div class="cv-l">
       <div class="cv-eyebrow">Insider trading, read in real time</div>
       <h1 class="cv-h"><span class="grad">SecForm4</span><br>Strategy.</h1>
       <p class="cv-sub">Insider sales, read the moment the SEC publishes them, turned into paper shorts.</p>
-      <div class="cv-meta"><span>Batch and live on AWS · $0/day dormant</span><span>23 November 2026</span></div>
+      <div class="cv-meta"><span>Batch and live on AWS · $10/month budget</span><span>24 November 2026</span></div>
       <div class="cv-go">Press → to begin</div>
     </div>
     <div class="cv-r">
       <div class="note">${NOTE("ext", "doc")}<div><div class="hd"><span>SEC EDGAR</span><span>16:42:07 ET</span></div><div class="tt">Form 4 accepted</div><div class="bd">An officer of Example Corp sold 12,500 shares of XYZ.</div></div></div>
-      <div class="note">${NOTE("ml", "model")}<div><div class="hd"><span>SecForm4Strategy</span><span>now</span></div><div class="tt">P(drop of more than 5%): 0.74</div><div class="bd">At or above the 0.70 cutoff. Insider sale (D).</div></div></div>
+      <div class="note">${NOTE("ml", "model")}<div><div class="hd"><span>SecForm4Strategy</span><span>now</span></div><div class="tt">Score for a drop of more than 5%: 0.74</div><div class="bd">At or above the 0.70 cutoff. Insider sale (D).</div></div></div>
       <div class="note">${NOTE("int", "short")}<div><div class="hd"><span>Alpaca · Paper</span><span>now</span></div><div class="tt">Short placed: sell 1 XYZ</div><div class="bd">client_order_id XYZ@next print</div></div></div>
       <div class="cv-fine">Illustrative example. XYZ is a placeholder.</div>
     </div>`,
@@ -635,17 +635,17 @@ section({
   step(el, s, r) {
     if (s === 1) r.later(() => stamp(el, 470, 625, "Filed", { rot: -6, sub: "≤ 2 business days later" }), 700);
     if (s === 2) r.later(() => flash(el), 1050);
-    if (s === 3) r.later(() => stamp(el, 1200, 706, "Speed is the edge", { rot: -6 }), 650);
+    if (s === 3) r.later(() => stamp(el, 1200, 706, "15.1% in session", { rot: -6 }), 650);
   },
   steps: [
     { cap: "Directors, officers and owners of more than 10% are <strong>insiders</strong>. They trade their own company's stock.",
-      notes: ["An insider is a director, an officer or an owner of more than 10% of the company.", "Insiders know things the market does not.", "The project tests one question: do insider sales come before price drops?"] },
+      notes: ["≈1 min for this section. Insiders: directors, officers and owners of more than 10%.", "The hypothesis: insider sales come before the stock underperforms, and the market has not priced that in at publication."] },
     { cap: "Each trade must reach the SEC on a <strong>Form 4</strong> within <strong>2 business days</strong>. EDGAR publishes it at <code>accepted_at</code>.",
-      notes: ["The trade date is often days before the disclosure.", "<code>accepted_at</code> is the moment the SEC accepted the filing and made it public.", "A trader can act only after <code>accepted_at</code>. The trade date is a model feature, never a clock for the label."] },
+      notes: ["A Form 4 is due within 2 business days. EDGAR publishes it at <code>accepted_at</code>.", "A trader can act only after <code>accepted_at</code>: it is the only clock for labels."] },
     { cap: "Insider sales can come before price drops. The model estimates the chance of a drop after the disclosure.",
-      notes: ["The price line is illustrative, not real data.", "Not every sale is bad news: tax withholding and gifts also reduce a holding. The features carry these flags.", "The label: a drop of more than 5% in the 30 days from the first price after disclosure."] },
-    { cap: "The edge is <strong>speed from disclosure to trade</strong>. An order minutes after <code>accepted_at</code> captures more of the move.",
-      notes: ["The fast trader enters near the price at disclosure; the slow one enters after part of the drop.", "This is why the system has a live path on Lambda next to the weekly batch.", "Everything after this slide serves one goal: act soon after <code>accepted_at</code>, without look-ahead."] },
+      notes: ["The price line is illustrative.", "A \"short winner\" falls by more than 5% in the 30 days after the entry."] },
+    { cap: "Speed from disclosure matters for the <strong>15.1%</strong> of filings accepted in market hours. For the other 85%, the race starts at the next open.",
+      notes: ["Measured in RT4: 32,434 of 215,273 rows, Monday to Friday 09:30–16:00 ET.", "Outside market hours nobody can trade before the open, so a pre-open batch would reach the same entry price.", "So the live path adds two things: same-day-close trades for in-session filings, and one implementation for both paths."] },
   ],
   svg: () => `
     ${node({ s: 0, dl: 1, x: 80, y: 225, w: 230, k: "ext", i: "person", t: "Director" })}
@@ -686,13 +686,13 @@ section({
   h1: "From a filing to a paper short",
   steps: [
     { cap: "Each new Form 4 becomes <strong>features</strong>: one row per ticker and next market print.",
-      notes: ["target groups every transaction of a ticker before the same next print into one row.", "Features: insider counts in the last 30 days, USD values traded and held, roles, transaction flags, market cap, sector.", "Every USD value uses the close of the last trading day before the acceptance day, so nothing is unknown at disclosure."] },
-    { cap: "A scikit-learn <strong>classifier</strong> gives each row the probability of a <strong>short winner</strong>: a drop of more than 5% in 30 days.",
-      notes: ["The classifier is a <code>HistGradientBoostingClassifier</code> inside a scikit-learn <code>Pipeline</code>.", "A short winner has <code>pct_change</code> below −0.05 (<code>short_return</code> in <code>training/src/spec.yaml</code>). <code>pct_change</code> runs from the next print to the first close at least 30 calendar days later.", "Training uses a purged walk-forward split: the latest 20% of rows is the holdout, scored once."] },
-    { cap: "The rule: <strong>short</strong> when the probability is at least <code>0.70</code>, for insider sales only (<code>acquired_disposed = D</code>).",
-      notes: ["Try the slider: move the probability across 0.70.", "Switch to a purchase (A): the pipeline filters on <code>ACQUIRED_DISPOSED=D</code>, so no order.", "Training chooses the cutoff on the development folds, never the holdout, and stores it with the model as <code>probability_cutoff</code>. A promotion moves the model and its cutoff together.", "inference refuses a model without a cutoff."] },
+      notes: ["≈45 s. Only enough ML to motivate the design.", "One row per ticker and next market print. USD values use the last close before the acceptance day."] },
+    { cap: "A scikit-learn <strong>classifier</strong> gives each row a score for a <strong>short winner</strong>: a drop of more than 5% in 30 days.",
+      notes: ["A <code>HistGradientBoostingClassifier</code> on a purged walk-forward split; the latest 20% of rows is the holdout.", "The outputs are scores, not probabilities: <code>class_weight=balanced</code> pushes them up, so 97% of holdout rows score at least 0.30. A score of 0.70 marks the top of the ranking; its measured precision is 0.60."] },
+    { cap: "The rule: <strong>short</strong> when the score is at least <code>0.70</code>, for insider sales only (<code>acquired_disposed = D</code>).",
+      notes: ["The 0.70 cutoff is chosen on the folds only and saved with the model; a promotion moves both.", "Purchases (A) never trade."] },
     { cap: "Alpaca receives a paper order: sell 1 share, market, good until cancelled. <code>client_order_id</code> is the row key.",
-      notes: ["<code>QTY=1</code>; the account is paper trading, so no real money moves.", "The row key <code>&lt;ticker&gt;@&lt;next print&gt;</code> is the <code>client_order_id</code>. Alpaca rejects a duplicate id, so a rerun never places the same order twice.", "Press R to replay the flow."] },
+      notes: ["Paper account, 1 share.", "The row key is the <code>client_order_id</code>, so a retry never doubles an order (R5)."] },
   ],
   svg: () => `
     ${node({ s: 0, id: "s2-f", x: 40, y: 220, w: 270, k: "ext", i: "doc", t: "Form 4 filing", sub: "SEC EDGAR" })}
@@ -715,9 +715,9 @@ section({
         <div style="width:420px">
           <div class="lab">Transaction direction</div>
           <div style="margin:10px 0 26px">${seg("s2-dir", ["Sale · D", "Purchase · A"])}</div>
-          <div class="lab">Probability of a short winner</div>
+          <div class="lab">Score for a short winner</div>
           <div id="s2-val" style="font-size:64px;font-weight:760;letter-spacing:-.03em;margin:4px 0 2px;font-variant-numeric:tabular-nums">0.78</div>
-          <input id="s2-sl" type="range" min="0" max="1" step="0.01" value="0.78" aria-label="Probability of a short winner">
+          <input id="s2-sl" type="range" min="0" max="1" step="0.01" value="0.78" aria-label="Score for a short winner">
         </div>
         <div style="flex:1">
           <svg viewBox="0 0 980 210" style="width:100%;height:230px;overflow:visible">
@@ -752,7 +752,7 @@ section({
     const chip = $("#s2-chip", el), why = $("#s2-why", el);
     chip.className = "tag " + (short ? "bad" : "");
     chip.textContent = short ? "Paper short" : "No order";
-    why.textContent = short ? "sell 1 share · market · gtc" : !sale ? "purchases (A) are not traded" : "probability is below the 0.70 cutoff";
+    why.textContent = short ? "sell 1 share · market · gtc" : !sale ? "purchases (A) are not traded" : "score is below the 0.70 cutoff";
     tog(el, "#s2-r", "okk", short); tog(el, "#s2-r", "badk", !short);
     tog(el, "#s2-a, #s2-e4", "off", !short);
     return short;
@@ -770,6 +770,34 @@ section({
   },
 });
 
+/* ===================== Constraint → decision ===================== */
+const DECIDE = [
+  ["Business", "<b>R1</b> React within minutes of <code>accepted_at</code>", "<b>Lambda + SQS</b> live path; cold starts accepted (D1, D5, D8)"],
+  ["Data, ML", "<b>R2</b> Years of history; multi-day jobs", "<b>Fargate</b> under <b>Step Functions</b>; Spot with an On-Demand fallback (D2, D6)"],
+  ["Constraint", "<b>R3</b> SEC: 10 requests per second per client", "One <b>rate budget</b>: batch 5 + live 4.5 (D13)"],
+  ["ML", "<b>R4</b> No look-ahead; one feature implementation", "<b>Same images</b> on Fargate and Lambda; one <b>Iceberg</b> store (D3, D10)"],
+  ["Data", "<b>R5</b> Upserts, reprocessing, at-least-once", "Deterministic keys; <b>SQS</b> with DLQs; <code>client_order_id</code> (D9)"],
+  ["ML, business", "<b>R6</b> A bad model never trades", "<code>save</code> vs <code>promote</code>; the <b>promotion gate</b> (D11)"],
+  ["Constraint", "<b>R7</b> $10 per month; on/off batch path", "Serverless; <b>NAT only for batch</b>; live path outside the VPC (D12, D14, D19)"],
+  ["Security", "<b>R8</b> Secrets and trading keys; public repository", "<b>SSM</b>; one role per service; <b>OIDC</b>; encrypted plan (D15–D18)"],
+  ["Business", "<b>R9</b> Show the client, not the system", "<b>CloudFront</b> + private S3; publisher Lambda; no API (D21–D23)"],
+  ["Operations", "<b>R10</b> Operate a multi-day backfill", "DLQ alarms, dashboard, <code>make status</code>; pinned revisions, 5 images (D7, D20)"],
+];
+const DTAG = { "Business": "acc", "ML": "good", "ML, business": "good", "Data, ML": "", "Data": "", "Constraint": "", "Security": "", "Operations": "" };
+section({
+  id: "decisions", title: "Requirements → decisions", short: "R1–R10",
+  h1: "Ten requirements, each answered on AWS",
+  steps: [
+    { cap: "The report's ten requirements, <strong>R1–R10</strong>. Each maps to the AWS decisions that meet it.",
+      notes: ["≈1¼ min. The thesis: every service answers a requirement.", "The next sections zoom into these rows: compute, orchestration, storage, network, security, cost.", "Rejected in one breath: Lambda for everything, an always-on container, Airflow on MWAA, RDS, interface endpoints, IAM user keys."] },
+  ],
+  html: () => `
+    <div class="w" style="left:60px;top:196px;width:1480px">
+      <div class="cd" style="grid-template-columns:1fr 46px 1.1fr;margin-bottom:4px"><div class="hd">Requirement · source</div><i></i><div class="hd">AWS decision</div></div>
+      ${DECIDE.map(([src, c, d], k) => `<div class="cd rv" data-s="0" data-d="${k + 1}" style="grid-template-columns:1fr 46px 1.1fr;margin-bottom:3px"><div><span class="tag ${DTAG[src]}" style="margin-right:10px;vertical-align:2px">${src}</span>${c}</div><i>→</i><div>${d}</div></div>`).join("")}
+    </div>`,
+});
+
 /* ===================== Architecture ===================== */
 const ADAPTERS = {
   // port: [local, aws, tests]  each [class, outside system]
@@ -785,12 +813,8 @@ section({
   id: "architecture", thumbStep: 0, title: "Architecture", short: "Architecture",
   h1: "Seven services, one image each, one shared clients package",
   steps: [
-    { cap: "Seven Python 3.14 services. Each is its own uv project and container image, with one job.",
-      notes: ["SEC side: master-index lists filings, scraper parses them, kafka-to-store upserts them.", "Prices side: yahoo-connect stores daily prices, target builds rows and labels.", "ML side: training fits and saves the model, inference scores rows and places orders.", "The name kafka-to-store comes from the local Redpanda stack; on AWS the same code reads SQS."] },
-    { cap: "Services see only <strong>ports</strong> (Python Protocols). <code>main.py</code> is the composition root that builds the <strong>adapters</strong>.",
-      notes: ["Ports live in <code>secform4strategy_clients.ports</code>; adapters implement them for one outside system.", "Only <code>main.py</code> reads the configuration and builds clients.", "Click Local / AWS / Unit tests: the service code stays the same, only the adapters change."] },
-    { cap: "Environment variables choose the backend. The same code runs on a laptop and on AWS.",
-      notes: ["<code>QUEUE__BACKEND</code>: kafka or sqs. <code>MODEL_STORE__BACKEND</code>: local or s3. <code>PYICEBERG_CATALOG__DEFAULT__TYPE</code>: sql or glue.", "Each SDK is an optional extra of the package, so an image installs only what its service uses.", "Unit tests use typed in-memory fakes such as <code>FakeMessageQueue</code>. Mocks are banned."] },
+    { cap: "Seven services, one container image each. The <strong>batch path</strong> runs them on ECS Fargate, the <strong>live path</strong> on Lambda.",
+      notes: ["≈30 s. Seven services plus the site publisher: eight images.", "The same image runs on both paths, so training and scoring compute features with one implementation (D3, R4).", "One feature store: Iceberg tables on S3 with the Glue catalog. Deterministic keys make every write an upsert (D10)."] },
   ],
   svg: () => {
     const A = { s: 0, u: 0 };
@@ -885,84 +909,6 @@ section({
   },
 });
 
-/* ===================== Constraint → decision ===================== */
-const DECIDE = [
-  ["data", "The full load runs for days; Lambda stops at 15 minutes", "<b>Fargate tasks</b> under <b>Step Functions</b>"],
-  ["business", "Live filings arrive in bursts; most minutes bring none", "<b>Lambda + SQS</b>: per event, nothing billed while idle"],
-  ["business", "Budget: <b>$5 per month</b>", "A <b>switchable NAT</b>; no interface endpoints (about $73/month)"],
-  ["business", "SEC allows <b>10 requests per second</b> per <code>User-Agent</code>", "One <b>shared rate budget</b>: batch 5 + live 4.5"],
-  ["model", "Look-ahead risk: a feature or label from after disclosure", "<code>accepted_at</code> as the clock + a <b>purged walk-forward split</b>"],
-  ["engineering", "The repository is public", "<b>OIDC</b> roles, no stored key + an <b>encrypted saved plan</b>"],
-  ["model", "Fat-tailed, noisy return labels", "A <b>classifier</b> on short winners + <b>label plausibility guards</b>"],
-  ["model", "A bad model loses money", "The <b>promotion gate</b> (finite holdout AP); promote and roll back by hand"],
-  ["engineering", "Parallel Iceberg commits to one table conflict", "One batch writer per table; live gathers a burst into <b>one commit</b>"],
-  ["business", "$5 budget; batch steps are idempotent and can be rerun", "<b>Fargate Spot</b> (about 70% cheaper) with an <b>On-Demand fallback</b>"],
-];
-const DTAG = { business: "acc", model: "good", data: "", engineering: "" };
-section({
-  id: "decisions", title: "Constraint → decision", short: "Decisions",
-  h1: "Each cloud decision answers a constraint",
-  steps: [
-    { cap: "The <strong>business</strong>, the <strong>model</strong> and the <strong>engineering</strong> set the constraints. The AWS services follow from them.",
-      notes: ["This is the thesis of the talk: no service is here for its own sake.", "The next chapters zoom into these rows one by one.", "Rejected alternatives: Lambda for everything, an always-on container, On-Demand-only Fargate, interface endpoints, an IAM user with keys, a model registry service."] },
-  ],
-  html: () => `
-    <div class="w" style="left:60px;top:205px;width:1480px">
-      <div class="cd" style="grid-template-columns:1fr 46px 1.1fr;margin-bottom:8px"><div class="hd">Constraint · source</div><i></i><div class="hd">Decision on AWS</div></div>
-      ${DECIDE.map(([src, c, d], k) => `<div class="cd rv" data-s="0" data-d="${k + 1}" style="grid-template-columns:1fr 46px 1.1fr;margin-bottom:9px"><div><span class="tag ${DTAG[src]}" style="margin-right:10px;vertical-align:2px">${src}</span>${c}</div><i>→</i><div>${d}</div></div>`).join("")}
-    </div>`,
-});
-
-/* ===================== Feature store ===================== */
-section({
-  id: "featurestore", thumbStep: 1, title: "Feature store", short: "Store",
-  h1: "One feature store, two systems: Iceberg on S3 + Glue",
-  steps: [
-    { cap: "The feature store is a set of <strong>Apache Iceberg</strong> tables in S3, with the <strong>AWS Glue</strong> catalog.",
-      notes: ["Training system: BT4 transactions, then RT4 labelled rows, then a model.", "P holds adjusted daily prices per ticker and day.", "Every row has a deterministic key, so a redelivered message or a rerun upserts the same row. No duplicates.", "Why Iceberg: upserts on plain S3 objects, so it costs only storage while idle. RDS would bill every hour.", "Athena can query the same tables; its workgroup cancels any query over 1 GiB."] },
-    { cap: "The inference system uses the same code: BI4 transactions, then BIR4 rows without a label, then scores.",
-      notes: ["<code>SYSTEM_TRAINING</code> or <code>SYSTEM_INFERENCE</code> selects the configuration of kafka-to-store, yahoo-connect and target.", "target also reads RT4 in inference: <code>avg_target_expanding</code> uses only labels known before the row's <code>accepted_at</code>.", "One store and one code path for both systems: no skew between training and scoring.", "Click the toggle to switch the highlighted path."] },
-  ],
-  svg: () => {
-    const card = (x, y, title, lines, opts = {}) => `<g ${opts.id ? `id="${opts.id}"` : ""} class="fg ${opts.cls || ""}"${opts.sys ? ` data-sys="${opts.sys}"` : ""}><rect class="nb" x="${x}" y="${y}" width="380" height="170" rx="16"/>
-      <rect x="${x}" y="${y}" width="8" height="170" rx="4" fill="var(--k-data)"/>
-      <text x="${x + 26}" y="${y + 42}" style="font-size:28px;font-weight:760" class="mono">${title}</text>
-      ${lines.map((l, k) => `<text x="${x + 26}" y="${y + 78 + k * 27}" class="lbl">${l}</text>`).join("")}</g>`;
-    return `<g class="rv" data-s="0">
-      ${card(60, 215, `<tspan class="t-sys">BT4</tspan> · <tspan class="i-sys">BI4</tspan>`, ["one row per transaction", "key: hash of accession, table, position", "written by kafka-to-store"])}
-      ${card(60, 420, "P", ["one row per ticker and day", "key: ticker@date", "adjusted open and close, splits"])}
-      ${edge({ d: "M440 300 C 480 300, 490 395, 525 405" })}
-      ${edge({ d: "M440 505 C 480 505, 490 430, 525 425" })}
-      ${node({ x: 525, y: 380, w: 250, k: "compute", i: "fargate", t: "target", sub: "next print, features" })}
-      ${card(850, 215, "RT4", ["training rows: features + label", "label: pct_change, label_known_at", "key: ticker@next print"], { id: "fg-rt4" })}
-      ${card(850, 420, "BIR4", ["inference rows: features only", "no label", "key: ticker@next print"], { id: "fg-bir4", sys: "i" })}
-      <g data-sys="t">${edge({ d: "M775 405 C 810 405, 810 300, 850 300" })}</g>
-      <g data-sys="i">${edge({ d: "M775 425 C 810 425, 810 505, 850 505" })}</g>
-      <g data-sys="i"><path class="edge warnedge" d="M960 385 C 930 400, 830 430, 780 418" marker-end="url(#ahw)"/></g>
-      <g data-sys="i" class="warnpill"><rect x="512" y="470" width="276" height="36" rx="18"/><text x="650" y="494" text-anchor="middle">reads earlier RT4 labels</text></g>
-      <g data-sys="t">${edge({ d: "M1230 300 H1300" })}${node({ x: 1300, y: 264, w: 260, k: "compute", i: "fargate", t: "training", sub: "RT4 → model" })}</g>
-      <g data-sys="i">${edge({ d: "M1230 505 H1300" })}${node({ x: 1300, y: 469, w: 260, k: "compute", i: "fargate", t: "inference", sub: "BIR4 → orders" })}</g>
-      ${node({ x: 60, y: 690, w: 450, k: "store", i: "s3", t: "S3 data bucket", sub: "warehouse/ holds the Iceberg files" })}
-      ${node({ x: 575, y: 690, w: 450, k: "data", i: "table", t: "AWS Glue catalog", sub: "database secform4strategy" })}
-      ${node({ x: 1090, y: 690, w: 450, k: "data", i: "logs", t: "Athena workgroup", sub: "SQL on the same tables, 1 GiB cap" })}
-      <text x="800" y="812" text-anchor="middle" class="lbl">Every row has a deterministic key. A rerun upserts the same row, so tables never hold duplicates.</text>
-      <text x="800" y="842" text-anchor="middle" class="lbl">Both systems share the tables: no skew between training and scoring, and only storage bills while idle.</text>
-    </g>`;
-  },
-  html: () => `
-    <div class="w rv" data-s="0" style="left:1300px;top:366px">${seg("s3-sys", ["Training", "Inference"])}</div>`,
-  init(el) {
-    segOn(el, "s3-sys", v => this.sys(el, v));
-  },
-  sys(el, v) {
-    segSet(el, "s3-sys", v);
-    $$("[data-sys]", el).forEach(e => e.classList.toggle("off", e.dataset.sys !== (v ? "i" : "t")));
-    $$(".t-sys", el).forEach(e => e.style.fill = v ? "var(--faint)" : "var(--accent)");
-    $$(".i-sys", el).forEach(e => e.style.fill = v ? "var(--accent)" : "var(--faint)");
-  },
-  step(el, s) { this.sys(el, s); },
-});
-
 /* ===================== Batch pipeline ===================== */
 const STEPS6 = ["master-index", "scraper", "kafka-to-store", "yahoo-connect", "target", "training"];
 section({
@@ -970,13 +916,11 @@ section({
   h1: "One state machine retrains the model every week",
   steps: [
     { cap: "Step Functions machine <code>secform4strategy-retrain</code> runs six steps in order.",
-      notes: ["master-index lists the filings, scraper parses them, kafka-to-store stores them.", "yahoo-connect refreshes prices, target builds labelled rows, training saves a model.", "Each state uses <code>ecs:runTask.sync</code>: Step Functions waits for the task to stop."] },
+      notes: ["≈1 min. <code>secform4strategy-retrain</code> runs six ECS tasks, each awaited with <code>runTask.sync</code>.", "Step Functions bills per state transition and costs nothing idle; Airflow on MWAA runs around the clock (D6)."] },
     { cap: "Each step is an <strong>ECS task on Fargate Spot (ARM64)</strong> with an On-Demand fallback. EventBridge Scheduler starts the machine on <strong>Saturday 06:00 UTC</strong>.",
-      notes: ["Schedule: <code>cron(0 6 ? * SAT *)</code>, time zone UTC.", "Tasks run in the private subnets with no public IP.", "Spot first: capacity provider <code>FARGATE_SPOT</code>, retried on <code>States.TaskFailed</code> after 600 s, at most 2 times, so 3 Spot attempts.", "Then a <code>Catch</code> on <code>States.ALL</code> waits 600 s and runs the step with launch type <code>FARGATE</code> (On-Demand), retried once. <code>States.ALL</code>, because a failed RunTask (no Spot capacity) arrives as <code>AmazonECS.Unknown</code>.", "Every wait is 600 s, longer than the 300 s SQS visibility timeout, so unfinished messages are visible again.", "Spot is about 70% cheaper. Every step is idempotent, so a reclaimed task loses only its in-flight batch. A code failure now runs 5 times, not 4: about 40 minutes of retries, not 30.", "Fargate has no run-time limit; Lambda stops after 15 minutes. That is why batch is on Fargate.", "Step Functions bills per state transition and costs nothing idle; Airflow on MWAA runs around the clock."] },
-    { cap: "training saves a new model folder. <code>latest.json</code> moves only if the promotion gate passes (<code>PROMOTE=gated</code>). Ad-hoc runs use <code>PROMOTE=never</code>.",
-      notes: ["Each folder holds <code>model.joblib</code> and <code>model.meta.json</code>. inference loads only what <code>latest.json</code> names.", "The gate checks: at least 50,000 development rows, and at least 80% of the current model's; the same feature-group version and features; holdout rows and a finite holdout average precision (AP); at least one short at the probability cutoff.", "It does not compare AP with the current model, because each model holds out a different period.", "<code>scripts/promote_model.sh</code> lists the saved models and promotes one by hand. That is also the rollback."] },
-    { cap: "The first full load is the <strong>same machine</strong>, started once with overrides in its input.",
-      notes: ["The weekly run starts with input <code>{}</code>: master-index uses <code>MODE=recent</code>, <code>DAYS_BACK=7</code>.", "A full load overrides master-index to <code>MODE=historical</code>, raises the scraper to 8 SEC requests per second and kafka-to-store to 10,000 rows per batch.", "Every task is incremental: upserts by key, per-ticker start dates. A retry redoes only what failed."] },
+      notes: ["Fargate has no run-time limit; Lambda stops at 15 minutes, and EC2 would add instances to patch (D2).", "Spot first, up to 70% cheaper: 3 attempts 600 s apart, then a <code>Catch</code> runs the step On-Demand. Idempotent steps lose only the in-flight batch.", "The Saturday schedule runs only while <code>switched_on</code> is true."] },
+    { cap: "The training service saves a new model folder. <code>latest.json</code> moves only if the promotion gate passes (<code>PROMOTE=gated</code>). Ad-hoc runs use <code>PROMOTE=never</code>.",
+      notes: ["Training always saves; only <code>PROMOTE=gated</code> moves <code>latest.json</code> (D11, R6).", "The gate checks rows, the feature contract, a finite holdout AP and at least one short at the cutoff.", "<code>scripts/promote_model.sh</code> promotes or rolls back by hand. The gated path has not yet run end to end on AWS."] },
   ],
   svg: () => `
     ${node({ s: 0, id: "b-sch", x: 50, y: 210, w: 430, k: "int", i: "sched", t: "EventBridge Scheduler", sub: "cron(0 6 ? * SAT *) · UTC", submono: true })}
@@ -1084,22 +1028,20 @@ section({
   id: "live", thumbStep: 3, title: "Live path", short: "Live path",
   h1: "The live path: from filing to paper short, serverless",
   ambientMs: 1100,
-  quiet: [5, 6],
+  quiet: [5],
   steps: [
     { cap: "EventBridge Scheduler starts the poller every minute. DynamoDB keeps each seen key for 7 days.",
-      notes: ["The poller is master-index in <code>MODE=live</code>: it reads the SEC current-filings feed.", "Table <code>secform4strategy-seen</code> skips filings already sent; TTL deletes each key after 7 days.", "Schedule <code>rate(1 minute)</code>, no retries: the next poll covers a missed one."] },
+      notes: ["≈1½ min. EventBridge Scheduler polls the SEC feed every minute; DynamoDB skips filings already sent.", "Lambda bills per invocation, so an idle minute costs nothing; an always-on container would bill around the clock (D1)."] },
     { cap: "SQS <code>live-filings</code> triggers the scraper Lambda: at most 2 at a time, 2.25 SEC requests per second each.",
-      notes: ["2 × 2.25 = 4.5 requests per second for the live path, beside the batch scraper's 5. Both send one <code>User-Agent</code>, and SEC allows 10 per client.", "The handler reports partial batch failures: only unfinished messages are delivered again.", "Each queue has a dead-letter queue after 5 receives."] },
-    { cap: "kafka-to-store collects up to 100 transactions for 5 s, so one Iceberg commit serves a burst. It writes <code>BI4</code>.",
-      notes: ["One Iceberg commit per batch: the 5 s window gathers a filing burst into one upsert. Parallel commits to one table conflict.", "At most 2 kafka-to-store Lambdas run at a time (<code>maximum_concurrency</code> 2).", "After the commit, the handler sends the batch's tickers to <code>live-tickers</code> as one message."] },
+      notes: ["2 scraper Lambdas × 2.25 = 4.5 SEC requests per second.", "Partial batch failures: SQS redelivers only unfinished messages; after 5 receives, the DLQ."] },
+    { cap: "The kafka-to-store service collects up to 100 transactions for 5 s, so one Iceberg commit serves a burst. It writes <code>BI4</code>.",
+      notes: ["A 5 s window gathers a burst into one Iceberg commit, because parallel commits to one table conflict."] },
     { cap: "An <strong>EventBridge Pipe</strong> starts <code>live-score</code>: yahoo-connect → target → inference, then an Alpaca paper short.",
-      notes: ["The Pipe reads up to 10 ticker messages and starts one execution, fire and forget.", "The state machine merges the tickers with JSONata and passes them through three Lambdas.", "Each state retries <code>States.TaskFailed</code> twice: after 5 s, then 10 s.", "<code>client_order_id</code> = row key, so a retry never doubles an order."] },
+      notes: ["The Pipe starts <code>live-score</code> fire-and-forget: a run that fails after its retries loses its tickers, with no DLQ. Known gap.", "<code>live-score</code> is a Standard workflow, because the site reads its execution history."] },
     { cap: "One filing, end to end. <span class=\"tag acc\">simulated run</span>",
-      notes: ["This is an animation, not a recording. Ticker XYZ is a placeholder.", "Chapter 12 shows the real runs: filings for AMZN, TGT, DGICA and IMTX crossed this path end to end.", "Press R or the button to replay."] },
+      notes: ["An animation, not a recording; XYZ is a placeholder.", "Earlier real runs (AMZN, TGT, DGICA, IMTX) verified this wiring before the classifier was promoted."] },
     { cap: "The Lambdas run the <strong>same container images</strong> as the batch tasks, with a different entry point.",
-      notes: ["Batch: ECS runs <code>main.py</code>, a loop until the queue is empty.", "Live: Lambda runs <code>python -m awslambdaric handler.handle</code>; <code>handler.py</code> sits beside <code>main.py</code> and calls the same functions, for example <code>store()</code>.", "One image per service, one build, two runtimes. <code>HOME=/tmp</code> because the image file system is read-only."] },
-    { cap: "ECS injects secrets from SSM. Lambda cannot, so <code>SsmSettings</code> reads them once, at cold start.",
-      notes: ["<code>SSM_PARAMETERS</code> maps a settings field to a parameter name.", "Values stay <code>SecretStr</code> until the adapter hands them to its SDK.", "Parameters are created with the AWS CLI, never in Terraform, so values never enter the state."] },
+      notes: ["One image, two entry points: <code>main.py</code> on ECS, <code>awslambdaric</code> on Lambda (D3).", "The trade-off: about 1 GB images, so cold starts of 10–45 s. For the 85% filed outside market hours, that delay changes nothing."] },
   ],
   svg: () => `<g id="l-dia" style="transition:opacity .6s">
     ${node({ s: 0, id: "l-sch", x: 40, y: 205, w: 215, k: "int", i: "sched", t: "Scheduler", sub: "rate(1 minute)", submono: true })}
@@ -1204,7 +1146,7 @@ section({
 
 /* ===================== AWS infrastructure ===================== */
 const MODULES = [
-  ["storage", "store", "s3", "S3 data bucket, Glue database, Athena workgroup with 7 saved queries, ECR repositories, $5 budget"],
+  ["storage", "store", "s3", "S3 data bucket, Glue database, Athena workgroup with 7 saved queries, ECR repositories, $10 budget"],
   ["network", "data", "net", "VPC, 2 public and 2 private subnets, S3 gateway endpoint, switchable NAT"],
   ["queues", "int", "sqs", "5 SQS queues, each with a dead-letter queue and an email alarm"],
   ["iam", "sec", "shield", "ECS execution role, one task role per service, one role per Lambda"],
@@ -1220,13 +1162,13 @@ section({
   h1: "Terraform builds it. Three switches control it.",
   steps: [
     { cap: "Root module <code>infra/envs/demo</code> calls ten modules. State lives in S3 with native locking.",
-      notes: ["Region us-east-1, one account; <code>allowed_account_ids</code> rejects any other.", "Terraform owns every AWS resource, including ECR repositories and the CI roles. CI owns the images and the plan and apply runs.", "<code>site</code> serves the password-protected study website: CloudFront, a private S3 bucket and a publisher Lambda that writes <code>data/*.json</code> every minute and after each <code>live-score</code> run.", "Secrets are created with the AWS CLI, never in Terraform."] },
+      notes: ["≈1½ min. Ten Terraform modules in <code>us-east-1</code>; state in S3 with native locking.", "Terraform over CloudFormation or the CDK: its saved plan is exactly what the reviewer approves (D18)."] },
     { cap: "ECS tasks run in <strong>private subnets</strong>, behind the NAT and a free S3 gateway endpoint. The Lambdas run <strong>outside the VPC</strong>.",
-      notes: ["Only the ECS tasks need the VPC: Fargate runs a task only in <code>awsvpc</code> mode.", "Private subnets have no public IP and the security group has no inbound rules: nothing on the internet can open a connection.", "NAT carries the tasks' calls to SEC, Yahoo, ECR, SQS, Glue, SSM and Logs. The S3 gateway endpoint carries S3 and the ECR image layers.", "No batch task calls Alpaca. Only the live inference Lambda places orders, and only the live poller Lambda uses DynamoDB.", "The Lambdas run outside the VPC, in Lambda's own network. They reach SEC, Yahoo, Alpaca, S3 and the AWS APIs directly, with no NAT and no fixed IP. Inside the VPC they would protect nothing and would need the NAT always on.", "NAT: $0.045 per hour plus $0.045 per GB processed. S3 traffic through the gateway endpoint adds no NAT charge.", "Five interface endpoints in two AZs would cost about $73 per month; the tasks need the NAT for the internet anyway."] },
-    { cap: "<code>switched_on</code> creates the NAT. Each schedule runs only when its own switch is also on.",
-      notes: ["Try the toggles and presets. <strong>Today</strong> is <code>switch.auto.tfvars</code> on master: on, weekly retrain off, live off. They stayed off after the backfill.", "<strong>After PR #31</strong>: pull request #31 turns the weekly retrain and live on. It is merged about an hour before the presentation.", "Weekly schedule = <code>switched_on && weekly_retrain_enabled</code>. Live poll = <code>switched_on && live_enabled</code>.", "Dormant costs about $0 per day: only S3 and ECR storage. Switched on: about $1.20 per day plus usage.", "<code>make switch-on</code> commits the variable; CI applies it after approval."] },
+      notes: ["Only Fargate needs the VPC. The Lambdas run outside it and do not depend on the NAT (D12).", "One NAT in one AZ saves a second NAT's hourly cost; the trade-off is an AZ dependency for batch egress.", "No-NAT alternative: six or more interface endpoints, about $88 per month or more, and the tasks need the internet anyway (D14)."] },
+    { cap: "<code>switched_on</code> switches the batch path and its NAT. <code>live_enabled</code> runs the live path on its own, with no NAT.",
+      notes: ["On master: <code>switched_on = false</code>, <code>weekly_retrain_enabled = true</code>, <code>live_enabled = true</code>. Live runs, no NAT, batch dormant.", "Dormant: about $0 per day. Live only: cents to a few dollars per month. Batch switched on: about $1.20 per day plus usage.", "During a full load <code>live_enabled</code> must be off: 8 + 4.5 would exceed the SEC's 10."] },
     { cap: "Failures and cost reach an inbox: dead-letter alarms by email, and a monthly budget.",
-      notes: ["A message that fails 5 receives moves to its dead-letter queue. A CloudWatch alarm on depth > 0 emails through SNS topic <code>secform4strategy-queue-alerts</code>.", "Budget <code>secform4strategy-monthly</code>: $5. Email at 50% of actual cost and 100% of forecast.", "RetryableError: no ack, SQS delivers again after 300 s. PermanentError: logged, then acked."] },
+      notes: ["Every message that exhausts its SQS retries waits 14 days in a DLQ, with an email alarm (D20).", "Gaps: a <code>PermanentError</code> skips the DLQ, and no alarm watches <code>ExecutionsFailed</code>.", "Budget $10: 1–23 November used $8.52 during the backfill, covered by credits. A budget alerts; it does not cap spend."] },
   ],
   svg: () => `
     <g class="rv" data-s="0" data-u="0">
@@ -1243,7 +1185,7 @@ section({
       <text class="ft" x="100" y="308">Public subnets · 2 AZs</text>
       <rect x="85" y="440" width="560" height="395" rx="14" fill="none" stroke="var(--line)" stroke-width="1.5"/>
       <text class="ft" x="630" y="463" text-anchor="end">Private subnets · no inbound</text>
-      ${node({ id: "n-nat", x: 105, y: 322, w: 265, k: "data", i: "nat", t: "NAT gateway + EIP", sub: "$0.045/h + $0.045/GB" })}
+      ${node({ id: "n-nat", x: 105, y: 322, w: 265, k: "data", i: "nat", t: "NAT gateway + EIP", sub: "≈ $1.20/day · batch only" })}
       ${node({ id: "n-igw", x: 390, y: 322, w: 240, k: "data", i: "globe", t: "Internet gateway" })}
       ${node({ id: "n-far", x: 105, y: 485, w: 300, k: "compute", i: "fargate", t: "ECS Fargate tasks", sub: "retrain steps · Spot first", sid: "n-far-s" })}
       ${node({ id: "n-gw", x: 340, y: 735, w: 285, k: "store", i: "s3", t: "S3 gateway endpoint", sub: "free: S3, ECR layers" })}
@@ -1279,7 +1221,7 @@ section({
       ${node({ x: 760, y: 240, w: 300, k: "sec", i: "bell", t: "CloudWatch alarm", sub: "DLQ depth > 0" })}
       ${edge({ d: "M1060 276 H1120" })}
       ${node({ x: 1120, y: 240, w: 420, k: "int", i: "bell", t: "SNS queue-alerts", sub: "email to the operator" })}
-      ${node({ x: 60, y: 375, w: 380, k: "sec", i: "dollar", t: "Budget $5 / month", sub: "secform4strategy-monthly" })}
+      ${node({ x: 60, y: 375, w: 380, k: "sec", i: "dollar", t: "Budget $10 / month", sub: "1–23 Nov: $8.52, credits" })}
       ${edge({ d: "M440 411 H500" })}
       ${node({ x: 500, y: 375, w: 560, k: "int", i: "bell", t: "Email", sub: "at 50% of actual cost, 100% of forecast" })}
       <g transform="translate(60 525)">
@@ -1298,15 +1240,15 @@ section({
       <div class="sw" style="border-bottom:0"><code>live_enabled</code><button class="toggle" data-k="lv" aria-label="live_enabled"></button></div>
       <div style="display:flex;gap:6px;margin:6px 0 10px;flex-wrap:wrap">
         <button class="btn ghost" style="padding:6px 10px;font-size:14.5px" data-p="0">Dormant</button>
-        <button class="btn ghost" style="padding:6px 10px;font-size:14.5px" data-p="1">Today</button>
-        <button class="btn ghost" style="padding:6px 10px;font-size:14.5px" data-p="2">After PR #31</button>
+        <button class="btn ghost" style="padding:6px 10px;font-size:14.5px" data-p="1">On master</button>
+        <button class="btn ghost" style="padding:6px 10px;font-size:14.5px" data-p="2">Batch + live</button>
       </div>
       <div id="n-cost" style="border-top:1px solid var(--line);padding-top:10px"></div>
     </div>`,
   init(el) {
-    this.st = { on: true, wk: false, lv: false };
+    this.st = { on: false, wk: true, lv: true };
     $$(".toggle", el).forEach(b => b.addEventListener("click", () => { this.st[b.dataset.k] = !this.st[b.dataset.k]; this.apply(el); }));
-    const presets = [{ on: false, wk: true, lv: true }, { on: true, wk: false, lv: false }, { on: true, wk: true, lv: true }];
+    const presets = [{ on: false, wk: true, lv: false }, { on: false, wk: true, lv: true }, { on: true, wk: true, lv: true }];
     $$("[data-p]", el).forEach(b => b.addEventListener("click", () => { this.st = { ...presets[+b.dataset.p] }; this.apply(el); }));
     this.apply(el);
   },
@@ -1315,44 +1257,42 @@ section({
     if (this.lastOn !== undefined && this.lastOn !== on && el.classList.contains("cur") && !RM.matches) {
       const g = $("#n-net", el); g.classList.remove("powerdown", "powerup"); void g.getBBox(); g.classList.add(on ? "powerup" : "powerdown");
       $$(".stampfx", el).forEach(x => x.parentNode.removeChild(x));
-      if (!on) stamp(el, 600, 560, "Lights out", { rot: -6, big: true, sub: "≈ $0 per day" });
+      if (!on) stamp(el, 600, 560, lv ? "Batch off" : "Lights out", { rot: -6, big: true, sub: lv ? "no NAT · live path runs" : "≈ $0 per day" });
     }
     this.lastOn = on;
     $$(".toggle", el).forEach(b => b.classList.toggle("on", this.st[b.dataset.k]));
-    $$(".toggle[data-k=wk], .toggle[data-k=lv]", el).forEach(b => b.style.opacity = on ? 1 : .55);
+    $$(".toggle[data-k=wk]", el).forEach(b => b.style.opacity = on ? 1 : .55);
     tog(el, "#n-nat, [data-nat]", "off", !on);
     tog(el, "#n-far", "off", !on);
-    tog(el, "#n-lam, [data-lam]", "off", !(on && lv));
+    tog(el, "#n-lam, [data-lam]", "off", !lv);
     tog(el, "#n-wk, [data-wk]", "off", !(on && wk));
-    tog(el, "#n-lv, [data-lv]", "off", !(on && lv));
+    tog(el, "#n-lv, [data-lv]", "off", !lv);
     $("#n-far-s", el).textContent = on ? "retrain steps · Spot first" : "cannot pull images";
-    $("#n-lam-s", el).textContent = on && lv ? "live path · outside the VPC" : "idle: poll schedule off";
+    $("#n-lam-s", el).textContent = lv ? "live path · outside the VPC" : "idle: poll schedule off";
     $("#n-wk-s", el).textContent = on && wk ? "Sat 06:00 UTC → retrain" : "schedule DISABLED";
-    $("#n-lv-s", el).textContent = on && lv ? "every minute → poller" : "schedule DISABLED";
+    $("#n-lv-s", el).textContent = lv ? "every minute → poller" : "schedule DISABLED";
     $("#n-cost", el).innerHTML = on
-      ? `<div style="font-size:30px;font-weight:760">≈ $1.20 <span style="font-size:17px;color:var(--muted);font-weight:500">per day + usage</span></div><div style="font-size:15.5px;color:var(--muted)">NAT $1.08 + Elastic IP $0.12 per day; NAT data $0.045/GB</div>`
+      ? `<div style="font-size:30px;font-weight:760">≈ $1.20 <span style="font-size:17px;color:var(--muted);font-weight:500">per day + usage</span></div><div style="font-size:15.5px;color:var(--muted)">NAT $1.08 + Elastic IP $0.12 per day, plus usage</div>`
+      : lv
+      ? `<div style="font-size:30px;font-weight:760">Cents <span style="font-size:17px;color:var(--muted);font-weight:500">to a few $ per month</span></div><div style="font-size:15.5px;color:var(--muted)">No NAT. Lambda, Step Functions, SQS and DynamoDB requests; publisher ≈ $1/month.</div>`
       : `<div style="font-size:30px;font-weight:760">≈ $0 <span style="font-size:17px;color:var(--muted);font-weight:500">per day</span></div><div style="font-size:15.5px;color:var(--muted)">S3 and ECR storage only. No task can run.</div>`;
   },
   step(el, s) {
     if (s === 1) { this.st = { on: true, wk: true, lv: true }; this.apply(el); }
-    if (s === 2) { this.st = { on: true, wk: false, lv: false }; this.apply(el); }
+    if (s === 2) { this.st = { on: false, wk: true, lv: true }; this.apply(el); }
   },
 });
 
 /* ===================== Engineering and delivery ===================== */
 const GATES = [["ruff", "lint and format"], ["pydoclint", "docstrings"], ["bandit", "security"], ["validate-config", "every spec.yaml"], ["unit tests", "each project in its own env"], ["mypy", "separate job, non-blocking"]];
 section({
-  id: "delivery", thumbStep: 2, title: "Engineering and delivery", short: "Delivery",
+  id: "delivery", thumbStep: 1, title: "Security and delivery", short: "Security",
   h1: "From pull request to AWS, with no stored keys",
   steps: [
     { cap: "A pull request gets a read-only plan. A merge saves an <strong>encrypted plan</strong> of master; after approval in <code>aws</code>, apply runs exactly that plan.",
-      notes: ["Pull requests run <code>quality</code> and a read-only <code>terraform plan</code>.", "A merge that changes <code>infra/</code> or <code>site/</code> plans master with <code>-out=tfplan</code>, encrypts the plan (AES-256 with PBKDF2, key in <code>TFPLAN_KEY</code>) and keeps it 1 day. The repository is public, and a saved plan holds sensitive values in plain text.", "The apply job waits for a reviewer in the GitHub environment <code>aws</code>, which admits only master, then applies exactly the saved plan. If the state changed, Terraform refuses it.", "<code>images.yml</code> builds the <code>linux/arm64</code> images after a successful <code>quality</code> run on master and pushes them to ECR.", "Terraform reads the newest image when it plans. After a code-only merge, a manual <code>terraform</code> run (<code>workflow_dispatch</code>) after <code>images</code> deploys the new images."] },
+      notes: ["≈1 min. A merge saves an encrypted plan (AES-256, kept 1 day); the apply waits for approval and applies exactly that plan (D18).", "The repository is public, and a plain saved plan holds sensitive values."] },
     { cap: "Each workflow gets <strong>temporary</strong> AWS credentials through OIDC. GitHub stores no AWS key.",
-      notes: ["GitHub issues a token; AWS STS exchanges it for one role, bound to one repository and one trigger.", "The plan role reads every resource and writes only the lock file. It serves pull requests and master plans, so a pull request cannot change infrastructure.", "The apply role has AdministratorAccess, but only jobs in the <code>aws</code> environment can assume it."] },
-    { cap: "Quality gates run on every commit. <code>quality-static</code> is the only required check; tests use typed in-memory fakes.",
-      notes: ["<code>make quality-static</code> is also the pre-commit hook: ruff, pydoclint, bandit, validate-config, unit tests.", "The ruleset on master requires a pull request whose <code>quality-static</code> check passes.", "In CI, mypy (<code>make type-check</code>, one run per service) is a separate, non-blocking job: <code>continue-on-error: true</code>.", "Fakes implement the same Protocols as the adapters; <code>unittest.mock</code> and <code>pytest_mock</code> are banned."] },
-    { cap: "Lesson learned: a deploy during a long run must not break the running execution.",
-      notes: ["A Step Functions run names exact task-definition revisions. By default Terraform deregisters a replaced revision, and ECS cannot start an <code>INACTIVE</code> one.", "<code>skip_destroy = true</code> keeps the revision active. But a revision also needs its image.", "During <code>backfill-5y</code>, ECR kept only 2 images per repository. New scraper images were pushed, ECR deleted the pinned one, and the retries failed with <code>CannotPullContainerError</code>.", "Each repository now keeps 5 images. During a multi-day run, push at most four new images of a service whose step has not started."] },
+      notes: ["OIDC: temporary credentials bound to one repository and trigger; GitHub stores no AWS key (D17).", "Secrets: SSM SecureString parameters, created outside Terraform (D16). One role per service: among task and Lambda roles, only inference and the publisher read the Alpaca keys (D15).", "The study website is static: a publisher Lambda writes JSON, CloudFront with OAC and Basic auth serves it, and there is no API (D21–D23)."] },
   ],
   svg: () => `
     <g id="d-dia" style="transition:opacity .6s">
@@ -1445,11 +1385,9 @@ section({
   h1: "Speed under a shared limit, then measure before scaling",
   steps: [
     { cap: "SEC allows <strong>10 requests per second per client</strong>. Batch and live send one <code>User-Agent</code>, so they share one budget.",
-      notes: ["SEC identifies a client by its <code>User-Agent</code>. Every service sends the same one, from <code>SEC_USER_AGENT</code>.", "The batch tasks leave through the NAT's Elastic IP. The live Lambdas leave from Lambda's own network, with no fixed IP. The budget is shared all the same.", "Weekly batch scraper: <code>SEC_MAX_RATE=5</code>. Live: 2 scraper Lambdas × 2.25 = 4.5. Together 9.5.", "The 5-year backfill runs the scraper at 8 per second, so the live poll is off meanwhile.", "The poller has its own cap of 1 per second but makes one feed request per minute.", "An SEC rate-limit 403 locks the client out for about 10 minutes, so the shared cap protects both paths at once."] },
+      notes: ["≈45 s. Batch and live send one <code>User-Agent</code>, so they share one budget (D13).", "Batch 5 + live 4.5 + poller about 0.02 = about 9.5 requests per second. If the budget breaks, a 403 locks the client out for about 10 minutes.", "Trade-off: the split reserves 4.5 for live even when idle, so batch runs at half the limit, and nothing enforces the sum. A shared token bucket in DynamoDB was the rejected alternative."] },
     { cap: "At <code>SEC_MAX_RATE=8</code> the scraper runs at <strong>6–7.8 filings per second</strong>: a year of filings in hours, five years in about two days.",
-      notes: ["Four settings get close to the cap: 12 fetch workers, one rate limiter shared by the threads, a 5 s retry pause, a send buffer of 200.", "About 155,000 to 192,000 filings with transactions per year: about 5.5 to 9 hours at 7.8 to 6 per second.", "About 1.05 million filings in 5 years: 37 to 49 hours. That is why the full load runs on Fargate, not Lambda."] },
-    { cap: "kafka-to-store: the cost is <strong>per row, on one core</strong>. One full core helps; bigger batches and more writers do not.",
-      notes: ["Measured during <code>backfill-5y</code>: a 10,000-row batch took about 40 s at 0.5 vCPU and about 25 s at 2 vCPU.", "A 30,000-row batch took about 75 s at 2 vCPU: three times the rows, three times the time. About 400 rows per second.", "The time goes to the pandas cleaning and pyiceberg's upsert merge, on one core. Parallel SQS calls barely changed it.", "More tasks would not help: parallel Iceberg commits to one table conflict, and the second one redoes its upsert.", "Next: profile one batch, then an append-then-deduplicate write for full loads."] },
+      notes: ["1,048,560 filings from January 2021 to November 2026, at 6–7.8 per second: 37–49 hours.", "No 15-minute Lambda can run that load, so it runs on Fargate (R2)."] },
   ],
   svg: () => `
     <g class="rv" data-s="0" data-u="0">
@@ -1501,7 +1439,7 @@ section({
       <div class="lab">Batch scraper · SEC_MAX_RATE=8</div>
       <div style="font-size:64px;font-weight:760;letter-spacing:-.03em;margin:6px 0 0">6–7.8 <span style="font-size:24px;color:var(--muted);font-weight:500">filings per second</span></div>
       <div class="lab" style="margin-top:30px">Time to scrape, at 7.8 → 6 per second</div>
-      ${[["1 year", "≈ 180,000 filings", 6.4, 8.3, "6–8 h"], ["5 years", "≈ 1.05 million filings", 37.4, 48.6, "37–49 h"]].map(([t, n, a, b, lab]) => `
+      ${[["1 year", "166,886–191,909 filings", 5.9, 8.9, "6–9 h"], ["5 years", "1,048,560 filings", 37.3, 48.5, "37–49 h"]].map(([t, n, a, b, lab]) => `
       <div style="margin-top:18px">
         <div style="display:flex;justify-content:space-between;font-size:19px"><span><b>${t}</b> <span style="color:var(--muted)">${n}</span></span><b class="mono">${lab}</b></div>
         <div style="position:relative;height:22px;border-radius:11px;background:var(--panel2);margin-top:8px;overflow:hidden">
@@ -1556,9 +1494,9 @@ section({
   h1: "Operations: the 5-year backfill",
   steps: [
     { cap: "<code>backfill-5y</code> scraped every filing, then <strong>failed</strong>. Every step is now <strong>done</strong> on 5 years of data.",
-      notes: ["<code>backfill-5y</code> started on 2026-11-20 at 18:11 UTC: the <code>retrain</code> machine with the full-load input.", "master-index finished. The scraper processed every filing; the <code>filings</code> queue and its DLQ were empty at the end. It exited non-zero, as designed, because it had left filings for a retry.", "Each retry failed with <code>CannotPullContainerError</code>. The run ended <code>FAILED</code>; the last four steps did not start.", "The remaining steps then ran on the latest revisions.", "yahoo-connect finished at 20:43 UTC on 2026-11-22: 160 batches in about 2 h 25 min. Batches slowed from about 35 s to about 80 s as P grew to about 23M rows, because each batch upserts into P. It was the slowest step.", "target first took about 2 minutes, overridden to 8 vCPU and 60 GB. After the label guards, it rebuilt RT4 in about 1.5 minutes on its configured 2 vCPU / 16 GB: 265,525 disclosure rows across 7,994 tickers gave 215,273 labelled rows. The guards removed 61 rows.", "training (revision 13) took about 16 minutes, 22:33–22:49 UTC, overridden to 16 vCPU, 32 GB and <code>PROMOTE=never</code>. It saved the classifier <code>20261122T224917Z</code> (git 303401c). <code>scripts/promote_model.sh</code> promoted it in place of <code>20261122T205816Z</code>, the superseded 5-year regressor.", "The regressor run was the first <code>training</code> run on Fargate, about 10 minutes. Container Insights: target peaked at about 1 vCPU and 3.7 GB, training used all 16 vCPU and about 20 GB. The configured sizes (target 2 vCPU / 16 GB, training 4 vCPU / 16 GB) cover the weekly runs; the training override only shortens the run.", "The earlier 1-year runs on AWS were stopped by hand. The 1-year model was trained locally on a 16-core laptop."] },
+      notes: ["≈1 min. <code>backfill-5y</code> started on 2026-11-20 at 18:11 UTC with the full-load input.", "The scraper finished its work but exited non-zero: its exit flag stays set after a redelivery succeeds. The retries hit <code>CannotPullContainerError</code>.", "The remaining steps ran on the latest revisions; training saved the classifier <code>20261122T224917Z</code> in about 16 minutes on 16 vCPU."] },
     { cap: "Cause: ECR deleted the pinned revision's image. Upserts by key let the remaining steps run afterwards, with nothing repeated.",
-      notes: ["The run pinned <code>scraper:3</code>, which names an image digest. ECR then kept only 2 images per repository, and newer scraper images were pushed during the run.", "<code>skip_destroy</code> kept the revision active, but a revision without its image cannot start a task. Each repository now keeps 5.", "The scraper's transactions stayed in <code>secform4strategy-transactions</code>, which keeps messages for 4 days. Every step upserts by key, so no work is repeated and no row is duplicated.", "Measure before scaling: one full core helped kafka-to-store; more tasks and bigger batches did not. Container Insights now shows each task's CPU and memory."] },
+      notes: ["The pinned revision's image was gone: ECR kept 2 images. Each repository now keeps 5 (D7).", "Upserts by key and a 4-day queue retention let the rest run, with nothing repeated.", "Measure before scaling: one full vCPU helped kafka-to-store; more tasks and bigger batches did not."] },
   ],
   svg: () => `
     ${frame({ s: 0, x: 40, y: 215, w: 1520, h: 150, t: "Step Functions · backfill-5y · started 2026-11-20 18:11 UTC" })}
@@ -1575,10 +1513,10 @@ section({
         <p style="margin-top:10px">The 1-year runs on AWS were <b>stopped by hand</b>. The 1-year model was trained <b>locally</b>, on a 16-core laptop, with the merged training code.</p>
       </div>
       <div class="card" style="padding:20px 26px">
-        <div class="lab">Switches on master today · PR #31 turns both on</div>
+        <div class="lab">Switches on master · live path on, batch path dormant</div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;align-items:flex-start">
-          <span class="chip"><span class="dot" style="background:var(--good)"></span><code>switched_on = true</code></span>
-          <span class="chip"><span class="dot"></span><code>weekly_retrain_enabled = false</code> · <code>live_enabled = false</code></span>
+          <span class="chip"><span class="dot" style="background:var(--good)"></span><code>live_enabled = true</code> · <code>weekly_retrain_enabled = true</code></span>
+          <span class="chip"><span class="dot"></span><code>switched_on = false</code>: no NAT; the retrain runs only while it is on</span>
         </div>
       </div>
     </div>
@@ -1601,14 +1539,14 @@ section({
   id: "results", thumbStep: 3, title: "Results", short: "Results",
   h1: "Results: the system works end to end",
   steps: [
-    { cap: "The live path ran end to end on real filings: <strong>AMZN, TGT, DGICA and IMTX</strong>. AWS records <strong>7 successful</strong> <code>live-score</code> runs.",
-      notes: ["Each filing went from the SEC feed through the poller, scraper and kafka-to-store to <code>live-score</code>, and inference scored it.", "Alpaca paper orders were placed and then cancelled, to verify three things: the broker wiring, the <code>client_order_id</code> idempotency and the IAM path to the Alpaca keys.", "The measured cold starts on the next step come from these runs."] },
+    { cap: "The live path's wiring ran end to end on real filings: <strong>AMZN, TGT, DGICA and IMTX</strong>. AWS records <strong>7 successful</strong> <code>live-score</code> runs.",
+      notes: ["≈1½ min. These earlier runs verified the wiring before the classifier was promoted; no live classifier result is claimed.", "Paper orders were placed and cancelled to check the broker, <code>client_order_id</code> and the IAM path to the keys."] },
     { cap: "Known trade-off: about 1 GB images make cold starts slow. A filing after an idle period reaches inference <strong>about 1–2 min after the poll</strong>.",
-      notes: ["Cold invocations: scraper 10 s, yahoo-connect 39 s, kafka-to-store 45 s. Warm ones take a few seconds.", "A first cold start exceeds Lambda's 10 s initialization limit; Lambda repeats the initialization inside the invocation, which succeeds.", "Provisioned concurrency: about $10 per month per function, about $60 for six, twelve times the budget. Declined.", "Follow-up: smaller images."] },
+      notes: ["Provisioned concurrency: about $10 per month per function, about $60 for six, six times the budget. Declined (D5).", "Cold starts matter only for the 15.1% in session; smaller images are the fix."] },
     { cap: "Design decision: the label enters at the <strong>next price print</strong> after disclosure, the 09:30 open or the 16:00 close.",
-      notes: ["Daily bars give two prices a trader can act on each day: the open and the close.", "In session: entry at that day's close. Before the open or after the close: entry at the next open.", "Exit: the first close at least 30 calendar days after the entry day.", "This is a data-availability choice. Intraday prices would tighten the entry; daily bars keep the label honest and reproducible."] },
+      notes: ["In session: entry at the same day's close. Outside market hours: the next open.", "Exit: the first close at least 30 calendar days after the entry day."] },
     { cap: "The classifier ranks short winners <strong>modestly but consistently</strong>: holdout AP 0.418 against a base rate of 0.338. Its 314 shorts at 0.70 had a median return of <strong>+9.9%</strong>, before costs.",
-      notes: ["Model <code>20261122T224917Z</code>, a <code>HistGradientBoostingClassifier</code> on 5 years of data. A short winner falls by more than 5% in 30 days. The holdout is the latest 20% of rows: 43,055 rows from 2025-10-24. Development: 169,941 rows.", "Grid: 32 combinations × 4 walk-forward folds = 128 fits, scored on average precision (AP). Best: <code>class_weight</code> balanced, learning rate 0.03, 15 leaf nodes, at least 50 samples per leaf, L2 0.", "Base rate: the share of short winners, which is also the AP of a constant predictor. The model beats it in all 4 folds and on the holdout. Holdout ROC-AUC: 0.589.", "The cutoff comes from the folds only: the highest median captured return among cutoffs with at least 100 shorts in every fold. 0.70 gave +5.53% over 3,343 fold shorts. 0.75 and 0.80 had too few.", "Consistency: the median return rises with the cutoff on the folds and on the holdout. At 0.70 the mean (+9.6%) and the median (+9.9%) agree, so outliers do not drive the result.", "ticker_history, a ticker's past share of short winners, reaches AP 0.404: much of the signal is per-ticker persistence. The model's edge is at the top: precision 0.60 against 0.52, median +9.9% against +5.9%.", "Limits: no borrow fees, slippage or commissions. The names are likely small caps that are hard to borrow, and Alpaca shorts only easy-to-borrow names.", "Limits: 314 shorts in one holdout year is about 1.2 per trading day, with overlapping 30-day windows, so the effective sample is smaller. Live cluster features read BI4 only, which has a shorter history than BT4: a known skew.", "Why the change: the 1-year and 5-year regressors never beat a constant zero on MAE (5-year: 0.12653 against 0.12646, worse in all 4 folds). Single outlier labels drove the 5-year regressor's mean short return. That led to the label guards and the classifier.", "Live charts are on the site's Model tab."] },
+      notes: ["AP 0.418 against a base rate of 0.338; 314 shorts at 0.70, precision 0.60, median +9.9% (mean +9.6%), before costs.", "<code>ticker_history</code> reaches AP 0.404, so the ranking edge is small. Short SPY over the same windows: −1.33% per trade.", "Caveats: no borrow fees or costs, hard-to-borrow names; 314 overlapping trades in one holdout year; that holdout informed the redesign."] },
   ],
   svg: () => `
     <g class="rv board" data-s="0" data-u="0">
@@ -1680,7 +1618,7 @@ section({
           </svg>
         </div>
       </div>
-      <p style="font-size:16px;color:var(--muted);margin:6px 0 0">Captured return = −pct_change; positive means the shorted stock fell. Before borrow fees, slippage and commissions. 0.80: 1 short, not shown. Model 20261122T224917Z. It replaced the 5-year regressor, which never beat predicting zero on MAE.</p>
+      <p style="font-size:16px;color:var(--muted);margin:6px 0 0">Captured return = −pct_change; positive means the shorted stock fell. Before borrow fees, slippage and commissions. Short SPY over the same windows: −1.33% per trade. 0.80: 1 short, not shown. Model 20261122T224917Z. It replaced the 5-year regressor, which never beat predicting zero on MAE.</p>
     </div>`,
   init(el) {
     const sl = $("#st-sl", el);
@@ -1721,26 +1659,26 @@ const FAQ = [
   ["How do you avoid duplicate orders?", "client_order_id is the row key ticker@next print. Alpaca rejects a second order with the same id."],
   ["How do you avoid look-ahead?", "Entry is the first print after accepted_at. Values use the close before the acceptance day. The walk-forward split is purged, and the holdout is scored once."],
   ["Why a classifier?", "The return regressor never beat predicting zero on MAE, and single outlier labels drove its mean short return. The decision is binary anyway: short or not. The classifier ranks short winners, and the cutoff is chosen on the folds."],
-  ["How does a bad model stay out of production?", "training always saves, but only the gate moves latest.json: enough development rows, the same features, a finite holdout AP, at least one short at the cutoff. promote_model.sh promotes or rolls back by hand."],
-  ["What does it cost?", "Dormant: about $0 per day. Switched on: about $1.20 per day plus usage. Batch tasks run on Fargate Spot, about 70% cheaper, with an On-Demand fallback. A $5 monthly budget emails alerts."],
-  ["Why is the NAT switchable?", "It bills about $1.08 per day with no traffic. Always on, it would cost about $32 per month, over six times the budget."],
+  ["How does a bad model stay out of production?", "The training service always saves, but only the gate moves latest.json: enough development rows, the same features, a finite holdout AP, at least one short at the cutoff. promote_model.sh promotes or rolls back by hand."],
+  ["What does it cost?", "Live path only: cents to a few dollars per month, with no NAT. Batch switched on: about $1.20 per day plus usage, on Fargate Spot (up to 70% cheaper) with an On-Demand fallback. A $10 monthly budget emails alerts; November's backfill month used $8.52 by the 23rd, covered by credits."],
+  ["Why is the NAT switchable?", "It bills about $1.08 per day with no traffic. Always on, it would cost about $32 per month, over three times the budget. Only the batch path needs it; the live Lambdas run outside the VPC."],
   ["Why no API for the website?", "A publisher Lambda writes static JSON. CloudFront reads the private S3 bucket through OAC; a CloudFront Function checks Basic auth against a hash in a KeyValueStore."],
-  ["What about the Lambda concurrency limit of 10?", "maximum_concurrency 2 on each SQS trigger keeps the queue consumers inside the quota. A burst can still throttle a live-score step; a quota increase is a follow-up."],
-  ["Why one IAM role per service?", "A compromised service can do only its own job. Only inference and the site publisher read the Alpaca keys; training cannot place orders."],
+  ["What about the Lambda concurrency limit of 10?", "maximum_concurrency 2 on each SQS trigger keeps the queue consumers inside the quota. A burst can still throttle a live-score step, and a failed run loses its tickers (the Pipe starts it fire-and-forget); a quota increase and a Catch to a queue are follow-ups."],
+  ["Why one IAM role per service?", "A compromised service can do only its own job. Among task and Lambda roles, only inference and the site publisher read the Alpaca keys; training cannot place orders. On ECS the shared execution role injects secrets per task definition."],
 ];
 section({
-  id: "next", title: "Next steps and Q&A", short: "Next · Q&A",
-  h1: "Next steps",
+  id: "next", title: "Limitations and Q&A", short: "Limits",
+  h1: "Limitations and next steps",
   thumbStep: 0,
   steps: [
-    { cap: "The 5-year run is finished and its classifier promoted. Next: pull request #31 switches the live path and the weekly retrain on.",
-      notes: ["Done: target rebuilt RT4 with the label guards (215,273 rows) → training with <code>PROMOTE=never</code> saved the classifier <code>20261122T224917Z</code> → <code>scripts/promote_model.sh</code> promoted it.", "Today master has <code>switched_on = true</code>, <code>live_enabled = false</code> and <code>weekly_retrain_enabled = false</code>, so live is off.", "Pull request #31 sets <code>live_enabled = true</code> and <code>weekly_retrain_enabled = true</code>. It is merged about an hour before the presentation, after training and promotion, which are done. The apply still needs a reviewer's approval.", "Smaller images cut the cold start."] },
+    { cap: "The evidence is <strong>modest</strong>, and two cloud gaps have known fixes.",
+      notes: ["≈30 s, then questions.", "Model: costs and borrow, a small overlapping sample, and one holdout year that was reused. The next untouched period is the real test.", "Cloud: catch failed <code>live-score</code> runs and alarm on <code>ExecutionsFailed</code>; clear the scraper's exit flag; smaller images.", "Close: the platform is the deliverable. It keeps scoring live filings and can test the next untouched period at almost no standing cost."] },
     { cap: "Click a card for the short answer.",
-      notes: ["The cards are a prompt list for likely questions.", "Deeper answers: docs/presentation/glossary-and-faq.md.", "Close with: honest timing, honest evaluation, and a stack that costs nothing while idle."] },
+      notes: ["Click a card for the short answer. Deeper answers: docs/presentation/glossary-and-faq.md.", "Close with: honest timing, honest evaluation, and a batch path that costs nothing while switched off."] },
   ],
   svg: () => `
     <g class="rv" data-s="0" data-u="0">
-      ${[["target", "215,273 rows → RT4", "compute", "fargate", "done"], ["training", "PROMOTE=never · 5-year classifier", "ml", "model", "done"], ["Promote by hand", "20261122T224917Z", "sec", "gate", "done"], ["Switches on · PR #31", "live_enabled · weekly_retrain_enabled", "int", "sched", "next"], ["Smaller images", "faster cold starts", "ci", "image", ""]].map(([t, sub, k, i, tag], j, all) => {
+      ${[["Costs and borrow", "returns before fees · hard-to-borrow names", "ml", "model", "limit"], ["Small, overlapping sample", "314 shorts in one holdout year", "data", "table", "limit"], ["Holdout reused", "next untouched period is the test", "sec", "gate", "limit"], ["Catch failed live-score runs", "Catch to a queue · alarm on ExecutionsFailed", "int", "sched", "next"], ["Smaller images", "faster in-session cold starts", "ci", "image", "next"]].map(([t, sub, k, i, tag], j, all) => {
         const x = 60 + (j % 3) * 500, y = 250 + Math.floor(j / 3) * 260;
         return `<g class="rv" data-s="0" data-u="0" data-d="${j + 1}">
           ${node({ x, y, w: 460, h: 96, k, i, t, sub, cls: tag === "done" ? "okk" : "" })}
@@ -1755,7 +1693,7 @@ section({
     </div>`,
   init(el) { $$(".flip", el).forEach(f => f.addEventListener("click", () => f.classList.toggle("open"))); },
   step(el, s, r) {
-    $(".head h1", el).textContent = s === 1 ? "Questions" : "Next steps";
+    $(".head h1", el).textContent = s === 1 ? "Questions" : "Limitations and next steps";
     if (s === 1) { $$(".flip", el).forEach(f => f.classList.remove("open")); r.later(() => stamp(el, 1390, 128, "Your questions", { rot: -8 }), 600); }
   },
 });

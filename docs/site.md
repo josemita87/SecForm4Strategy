@@ -108,7 +108,7 @@ The role has the `lakehouse-read`, `models-read` and `read-alpaca-keys` capabili
 
 | Trigger | Input | When |
 | --- | --- | --- |
-| Schedule `secform4strategy-site-publish`, `rate(1 minute)` | `{"mode": "all"}` | Enabled while `switched_on` is `true` |
+| Schedule `secform4strategy-site-publish`, `rate(1 minute)` | `{"mode": "all"}` | Enabled while `switched_on` or `live_enabled` is `true` |
 | EventBridge rule `secform4strategy-site-live-score-finished` | `{"mode": "live"}` | A `live-score` run ends as `SUCCEEDED`, `FAILED`, `TIMED_OUT` or `ABORTED` |
 
 A finished `live-score` run therefore reaches `data/live.json` within seconds. `health.json` and `portfolio.json` are at most about a minute old. `model.json` changes only when the model version changes, and `explore.json` every 15 minutes. CloudFront adds up to 5 seconds of cache to each file.
