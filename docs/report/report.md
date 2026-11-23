@@ -431,7 +431,7 @@ The `iam` module creates three kinds of role:
 | `lakehouse-write` | `lakehouse-read` plus `glue:CreateTable`, `glue:UpdateTable`, `s3:PutObject` and `s3:DeleteObject` on `warehouse/*` |
 | `models-read` / `models-write` | `s3:GetObject` / `s3:PutObject` on `models/*` |
 | `seen-keys` | `dynamodb:BatchGetItem`, `dynamodb:BatchWriteItem` on `secform4strategy-seen` |
-| `read-secrets` | `ssm:GetParameters` on `/secform4strategy/*` |
+| `read-secrets` | `ssm:GetParameters` on `/secform4strategy/sec-user-agent` only |
 | `read-alpaca-keys` | `ssm:GetParameters` on the two Alpaca key parameters only |
 
 For example, the scraper task can only receive from `filings` and send to `transactions`. It cannot touch the lakehouse. training can read the lakehouse and write models, but it cannot place orders or read secrets. Only inference and the site publisher can read the Alpaca keys.

@@ -792,7 +792,7 @@ These are the sizes in `infra/envs/demo/main.tf`, which the weekly runs use. The
 | `lakehouse-write` | `lakehouse-read` plus `glue:CreateTable`, `glue:UpdateTable`, `s3:PutObject` and `s3:DeleteObject` on `warehouse/*` |
 | `models-read` / `models-write` | `s3:GetObject` / `s3:PutObject` on `models/*` |
 | `seen-keys` | `dynamodb:BatchGetItem`, `dynamodb:BatchWriteItem` on `secform4strategy-seen` |
-| `read-secrets` | `ssm:GetParameters` on `/secform4strategy/*` |
+| `read-secrets` | `ssm:GetParameters` on `/secform4strategy/sec-user-agent` only |
 | `read-alpaca-keys` | `ssm:GetParameters` on the two Alpaca key parameters only |
 
 ### B.6 CI/CD workflows and OIDC roles (Section 5.6)

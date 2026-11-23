@@ -283,7 +283,7 @@ Each entry grants these actions:
 | | `s3:ListBucket` | The data bucket |
 | `models-write` | `s3:PutObject` | `models/*` |
 | `seen-keys` | `dynamodb:BatchGetItem`, `dynamodb:BatchWriteItem` | The table `secform4strategy-seen` |
-| `read-secrets` | `ssm:GetParameters` | `/secform4strategy/*` |
+| `read-secrets` | `ssm:GetParameters` | `/secform4strategy/sec-user-agent` only |
 | `read-alpaca-keys` | `ssm:GetParameters` | `/secform4strategy/alpaca-api-key` and `/secform4strategy/alpaca-api-secret` |
 
 `glue:CreateDatabase` is part of both lakehouse capabilities because the feature store creates its namespace when it is missing. The SQS trigger of a Lambda function needs `sqs:GetQueueAttributes`.
