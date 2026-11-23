@@ -114,6 +114,23 @@ function lineItem(run, tone, text) {
   </div>`;
 }
 
+// Why a finished run scored nothing, from the publisher's skip field; older live.json has none
+const SKIP = {
+  no_sale: ['Not a sale', 'only insider sales are scored'],
+  stale: ['Older than 60 min', ''],
+};
+
+function skippedCard(run) {
+  const [title, sub] = SKIP[run.skip] ?? ['Nothing to score', ''];
+  const tickers = (run.tickers ?? []).join(', ');
+  const took = (t(run.stopped_at) - t(run.started_at)) / 1000;
+  return `<article class="card skipped">
+    ${tickers ? `<div class="skipped-ticker">${esc(tickers)}</div>` : ''}
+    <div class="skipped-text"><b>${esc(title)} &middot; skipped</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>
+    <div class="skipped-meta"><span>${esc(etTime(run.started_at))}${Number.isFinite(took) ? ` &middot; ${esc(dur(took))}` : ''}</span><span class="pill skipped-pill">Skipped</span></div>
+  </article>`;
+}
+
 function itemsFor(run, fallbackCutoff) {
   const cutoff = isNum(run.probability_cutoff) ? run.probability_cutoff : fallbackCutoff;
   const status = run.status ?? 'UNKNOWN';
@@ -128,9 +145,10 @@ function itemsFor(run, fallbackCutoff) {
   for (const f of filings) {
     items.push({ id: `${run.id}|${f.key}`, sig: JSON.stringify([f, cutoff, run.steps, run.started_at]), markup: () => filingCard(run, f, cutoff), card: true });
   }
-  if (!filings.length && !FAILED.has(status) && status !== 'RUNNING') {
-    const text = status === 'SUCCEEDED' ? 'no fresh rows to score' : `run ${esc(status.toLowerCase())}`;
-    items.push({ id: `${run.id}|empty`, sig: JSON.stringify([status, run.stopped_at]), markup: () => lineItem(run, 'quiet', esc(text)) });
+  if (!filings.length && status === 'SUCCEEDED') {
+    items.push({ id: `${run.id}|empty`, sig: JSON.stringify([status, run.stopped_at, run.skip, run.tickers]), markup: () => skippedCard(run) });
+  } else if (!filings.length && !FAILED.has(status) && status !== 'RUNNING') {
+    items.push({ id: `${run.id}|empty`, sig: JSON.stringify([status, run.stopped_at]), markup: () => lineItem(run, 'quiet', `run ${esc(status.toLowerCase())}`) });
   }
   return items;
 }
@@ -250,7 +268,7 @@ export function createLive(root) {
     const h = health;
     if (!h) return;
     const sw = h.switches ?? {};
-    $('#h-switches').innerHTML = [['stack', 'Stack'], ['live_poller', 'Live poller'], ['weekly_retrain', 'Weekly retrain']]
+    $('#h-switches').innerHTML = [['live_poller', 'Live poller'], ['weekly_retrain', 'Weekly retrain']]
       .map(([k, label]) => `<span class="chip ${sw[k] === true ? 'good' : 'muted'}">${esc(label)} ${sw[k] === true ? 'on' : sw[k] === false ? 'off' : DASH}</span>`).join('');
     const r = h.live_runs_24h ?? {};
     $('#h-ok').textContent = num(r.succeeded);

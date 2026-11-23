@@ -29,11 +29,9 @@ a.toc-link {
   color: #444;
 }
 
-/* Every chapter and appendix starts on a new page (report.css); h3 sections run on */
-h2 + h3 { break-before: avoid; }
+
 
 /* Short tables stay on one page */
-[id="62-measurements"] + table,
 [id="c6-cicd-workflows-and-oidc-roles-section-56"] ~ table + table:not([id="c7-dashboard-and-make-status-section-58"] ~ *) {
   break-inside: avoid;
 }
@@ -54,22 +52,14 @@ h2#contents { break-after: avoid; }
 h2#contents + ol, h2#contents + ol + p + ul { break-inside: avoid; }
 
 /* The holdout cutoff sweep follows the predictor table, compact and on one page */
-[id="71-the-5-year-classifier"] ~ table + table:not([id="72-the-superseded-regressor"] ~ *) {
+[id="61-the-5-year-classifier"] ~ table + table:not([id="62-the-superseded-regressor"] ~ *) {
   break-inside: avoid;
 }
 
 
-/* Section 5.3 sets slightly tighter, so its last paragraph stays on its page before the landscape network figure */
-[id="53-storage-lakehouse-and-models"] ~ :is(p, ul):not([id="53-storage-lakehouse-and-models"] ~ .figure.wide ~ *) {
-  margin-bottom: 1.6mm;
-  line-height: 1.4;
-}
 
-/* Sections 5.4 and 5.5 set slightly tighter, so they end before the landscape CI/CD figure */
-.figure.wide:has([id="54-network"]) ~ :is(p, ul):not(.figure.wide:has([id="56-cicd-and-deployment"]) ~ *) {
-  margin-bottom: 1.6mm;
-  line-height: 1.4;
-}
+
+
 
 /* The tables of Section 5.7 are short: each stays on one page */
 [id="57-cost-and-switches"] ~ table:not([id="58-observability-and-operations"] ~ *) {
@@ -86,3 +76,14 @@ td[style*="right"], th[style*="right"] {
 [id="43-terraform-layout"] ~ table:not([id="5-architecture-decisions-by-area"] ~ *) {
   break-inside: avoid;
 }
+
+/* The repository layout table keeps its short output column on one line */
+[id="code-structure-and-the-pipeline"] + p + table th:nth-child(3),
+[id="code-structure-and-the-pipeline"] + p + table td:nth-child(3) {
+  white-space: nowrap;
+}
+
+/* Chapters run on; only the appendices start a new page */
+h2 { break-before: auto; }
+h2, h3, h4 { break-after: avoid; }
+#appendix-a-decision-log { break-before: page; }
