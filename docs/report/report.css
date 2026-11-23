@@ -224,3 +224,22 @@ pre code {
   text-align: left;
   margin-top: 0;
 }
+
+/* Layout fixes for the results and closing chapters */
+#appendix-c-glossary + table td {
+  padding-top: 0.8mm;
+  padding-bottom: 0.8mm;
+}
+
+[id="74-short-return-by-cutoff"] + table,
+[id="102-engineering"] + table {
+  break-inside: avoid;
+}
+
+[id="11-conclusion"] {
+  break-before: auto;
+}
+
+[id="37-baselines-and-metrics"] + table td:first-child code {
+  white-space: nowrap;
+}

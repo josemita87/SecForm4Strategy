@@ -2,7 +2,7 @@
 
 **A serverless ML system on AWS that turns SEC Form 4 insider-trading filings into a short-side equity signal.**
 
-When a corporate insider sells their own company's stock, they must disclose it to the SEC on a Form 4 within two business days. SecForm4Strategy ingests those filings as they are published, joins each one to the stock's price action *after it became public*, trains a model to predict the return that follows, and shorts the names it expects to fall, paper-traded through Alpaca.
+When a corporate insider sells their own company's stock, they must disclose it to the SEC on a Form 4 within two business days. SecForm4Strategy ingests those filings as they are published, joins each one to the stock's price action *after it became public*, trains a classifier to estimate the chance that the stock falls by more than 5% over the next 30 days, and shorts the names it rates most likely to fall, paper-traded through Alpaca.
 
 > **Project status: portfolio / research.** An end-to-end systems-and-ML engineering showcase, not a production trading system or investment advice. It runs on AWS (account `100118195151`, region `us-east-1`), defined entirely in Terraform: a weekly batch path on ECS Fargate, a per-minute live path on Lambda, and a password-protected study website on CloudFront. The same services also run locally on Docker Compose. Trading is paper only.
 
@@ -25,7 +25,7 @@ When a corporate insider sells their own company's stock, they must disclose it 
 
 ### Result so far
 
-On one year of data, the model does not beat a constant zero prediction on mean absolute error: holdout MAE 0.1216 against 0.1193. Its most negative predictions still rank well: the 265 holdout rows predicted below -5% fell by 10.8% on average, before costs. The project delivers infrastructure that can test the insider-selling hypothesis rigorously, not a proven trading strategy. The full write-up is [docs/report/report.md](docs/report/report.md).
+On five years of data, the classifier ranks short winners modestly but consistently better than chance: holdout average precision 0.418 against a 0.338 base rate. At its probability cutoff of 0.70, its 314 holdout shorts captured a median return of +9.9%, before borrow fees and costs. A naive per-ticker baseline reaches 0.404 average precision, so much of the signal is ticker persistence. The project delivers infrastructure that can test the insider-selling hypothesis rigorously, not a proven trading strategy. The full write-up is [docs/report/report.md](docs/report/report.md).
 
 ---
 
@@ -76,7 +76,7 @@ A filing accepted after the close enters at the next open; one accepted during t
 
 ![Walk-forward validation timeline](docs/report/diagrams/validation-timeline.drawio.svg)
 
-Training keeps the latest 20% of rows as a holdout and scores it once. A grid search runs over 4 expanding walk-forward folds of the earlier rows and picks the lowest mean validation MAE. Every split drops the rows whose 30-day label ends inside the period it is scored on. The rules are in [docs/training.md](docs/training.md).
+Training keeps the latest 20% of rows as a holdout and scores it once. A grid search runs over 4 expanding walk-forward folds of the earlier rows and picks the highest mean validation average precision. The probability cutoff is chosen on the same folds and stored with the model. Every split drops the rows whose 30-day label ends inside the period it is scored on. The rules are in [docs/training.md](docs/training.md).
 
 ### The data model
 
@@ -106,7 +106,7 @@ Services depend on the Protocols in `secform4strategy_clients.ports`, never on c
 | **sec-feature-pipeline/kafka-to-store** | Consumes transactions, casts and validates them, and upserts them into `BT4` / `BI4`. |
 | **prices-feature-pipeline/yahoo_connect** | Refreshes daily bars for the transactions' tickers into `P`, never mixing price bases and never storing a provisional close. |
 | **prices-feature-pipeline/target** | Collapses transactions into one row per ticker and next market print, adds insider clusters, company context and values, computes labels, and writes `RT4` / `BIR4`. |
-| **training** | Purged walk-forward grid search with a time holdout ([docs/training.md](docs/training.md)), a scikit-learn pipeline (preprocessing + gradient-boosted regressor), baselines, a short-side simulation; saves the pipeline with its metadata as a new version, and promotes it only through a gate ([docs/training.md](docs/training.md#promotion)). |
+| **training** | Purged walk-forward grid search with a time holdout ([docs/training.md](docs/training.md)), a scikit-learn pipeline (preprocessing + gradient-boosted classifier of short winners), baselines, a short-side simulation; saves the pipeline with its metadata as a new version, and promotes it only through a gate ([docs/training.md](docs/training.md#promotion)). |
 | **inference** | Loads the saved pipeline, scores the newest `BIR4` rows and places short orders through Alpaca. On the live path it trades only rows accepted within the last 60 minutes. |
 | **site-publisher** | Reads the runs, queues, lakehouse, model and Alpaca paper account, and writes the study website's `data/*.json`. |
 | **packages/secform4strategy-clients** | The ports, their adapters (EDGAR, SQS, Kafka, Iceberg, DynamoDB, yfinance, Alpaca, local and S3 model stores, SSM settings) and typed fakes for tests. See its [README](packages/secform4strategy-clients/README.md). |
@@ -146,7 +146,7 @@ Each service is its own `uv` project (`pyproject.toml`, `uv.lock`, Dockerfile, `
 - **Feature store:** Apache Iceberg via `pyiceberg`, on S3 with a Glue catalog (a SQLite catalog locally).
 - **Filings:** SEC EDGAR over `httpx`, rate-limited; Form 4 XML declared as `pydantic-xml` models.
 - **Market data:** `yfinance`.
-- **ML:** scikit-learn `HistGradientBoostingRegressor` in a `Pipeline` with its preprocessing.
+- **ML:** scikit-learn `HistGradientBoostingClassifier` in a `Pipeline` with its preprocessing.
 - **Broker:** Alpaca (paper trading) via `alpaca-py`.
 - **Config:** `pydantic-settings` for environment and secrets, one YAML `spec.yaml` per service for static specs.
 - **Quality gate:** ruff (lint + format), pydoclint, bandit, mypy and pytest, from one shared config; run by `make`, the pre-commit hook and GitHub Actions.

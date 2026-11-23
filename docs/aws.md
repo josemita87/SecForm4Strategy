@@ -137,12 +137,14 @@ The run `backfill-5y` started on 2026-11-20 at 18:11 UTC, with the full-load inp
 3. Step Functions retried the scraper step. Each retry failed with `CannotPullContainerError`. The run's revision `scraper:3` named an image digest that ECR had already deleted, because the lifecycle rule then kept only 2 images per repository.
 4. After its last retry, the run ended `FAILED`.
 
-The remaining steps run as tasks started by hand, on the latest revisions:
+The remaining steps then ran on the latest revisions:
 
 1. kafka-to-store, with 2 vCPU, 8 GB and `BUFFER_SIZE=30000`.
 2. yahoo-connect.
 3. target.
 4. training, with `PROMOTE=never`. The model is then promoted with `scripts/promote_model.sh` ([training.md](training.md#manual-promotion-and-rollback)).
+
+target then rebuilt `RT4` with the label guards, on its configured 2 vCPU and 16 GB in about 1.5 minutes: 215,273 labelled rows. training revision 13, overridden to 16 vCPU and 32 GB, trained the classifier on it in about 16 minutes, with `PROMOTE=never`. `scripts/promote_model.sh` promoted model `20261122T224917Z` ([training.md](training.md#5-year-results)).
 
 A pinned revision works only while ECR still holds its image. For this reason each repository now keeps 5 images, and "Revisions of a running run" limits the new images during a run.
 
@@ -168,7 +170,7 @@ The account allows 10 concurrent Lambda executions in total, shared by the live 
 | kafka-to-store | `live-transactions`, batches of up to 100, waiting at most 5 s | 2048 MB, 240 s; at most 2 at a time |
 | yahoo-connect | `live-score` | 2048 MB, 180 s |
 | target | `live-score` | 2048 MB, 180 s |
-| inference | `live-score` | 2048 MB, 180 s; `QTY=1`, `PREDICTION_THRESHOLD=-0.05` |
+| inference | `live-score` | 2048 MB, 180 s; `QTY=1`; shorts each row whose probability of a short winner is at least the model's `probability_cutoff` |
 
 Each function runs `<service directory>/.venv/bin/python -m awslambdaric` with the handler `handler.handle`, or `src.handler.handle` for yahoo-connect and target. `awslambdaric` is the Lambda runtime interface client: it receives events from the Lambda service and calls the handler. Each handler sits beside the service's `main.py` and calls the same functions as the batch loop. The functions run outside the VPC, with `HOME=/tmp`, because the image's file system is read-only. Each function writes its logs to `/aws/lambda/secform4strategy-live-<service>`, kept 14 days.
 
@@ -275,7 +277,7 @@ Each entry grants these actions:
 | | `s3:GetObject` | `warehouse/*` |
 | | `s3:ListBucket` | The data bucket |
 | `lakehouse-write` | The `lakehouse-read` Glue actions, plus `glue:CreateTable`, `glue:UpdateTable` | The Glue catalog, the database and its tables |
-| | `s3:GetObject`, `s3:PutObject` | `warehouse/*` |
+| | `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` | `warehouse/*` |
 | | `s3:ListBucket` | The data bucket |
 | `models-read` | `s3:GetObject` | `models/*` |
 | | `s3:ListBucket` | The data bucket |
