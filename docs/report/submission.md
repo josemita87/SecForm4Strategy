@@ -244,7 +244,7 @@ A filing after a quiet period still reaches inference about 1 to 2 minutes after
 
 Each task and function size comes from a measurement. For example, kafka-to-store went from 0.5 to 2 vCPU because a 10,000-row batch took about 40 seconds at 0.5 vCPU and about 25 seconds at 2 vCPU (Section 6.2). Appendix C.1 lists every size.
 
-The account allows 10 concurrent Lambda executions in total, shared by the live functions and the site publisher. The `maximum_concurrency` of 2 on each SQS trigger keeps the two queue consumers inside that quota. The same limit of 2 caps the live scrapers' share of the SEC rate (R3, Section 5.4). Section 8.1 describes the remaining risk.
+At the time of writing (2026-11-23), the account allows 10 concurrent Lambda executions in total, shared by the live functions and the site publisher. An increase to 1,000, the AWS default, has been requested through Service Quotas. The `maximum_concurrency` of 2 on each SQS trigger keeps the two queue consumers inside that quota. The same limit of 2 caps the live scrapers' share of the SEC rate (R3, Section 5.4). Section 8.1 describes the remaining risk.
 
 ### 5.2 Orchestration and messaging
 
@@ -703,7 +703,7 @@ No `retrain` run has finished all six steps on AWS in one state-machine run. The
 | Clear the scraper's exit flag when redelivery succeeds | A finished scraper step no longer reports failure, so `retrain` does not rerun it through the Spot retries and the On-Demand fallback. |
 | Make the Terraform apply wait for the `images` workflow | A plan made before the build ends deploys the previous image. |
 | Smaller images for the live Lambdas | The about 1 GB images cause cold starts of up to 45 seconds. |
-| A higher Lambda concurrency quota | The account allows 10 concurrent executions, shared by the live functions and the publisher, so a burst of filings can throttle a `live-score` step, which fails its run after two retries. A quota increase through Service Quotas would remove that risk. Lambda keeps 100 executions unreserved, so reserved concurrency for the scoring steps needs a quota above 100. |
+| A higher Lambda concurrency quota | The account allows 10 concurrent executions, shared by the live functions and the publisher, so a burst of filings can throttle a `live-score` step, which fails its run after two retries. An increase to 1,000 was requested through Service Quotas on 2026-11-23 and was pending at the time of writing; it removes that risk. Lambda keeps 100 executions unreserved, so reserved concurrency for the scoring steps needs a quota above 100. |
 | Exclude `use1-az3` from the private subnets | The private subnets take the first two availability zones that AWS reports as available, today `use1-az1` and `use1-az2`. Fargate ARM64 is not available in `use1-az3`, and nothing in the network module excludes it, so a change in that list could place a subnet where the tasks cannot run. |
 | Custom domain with an ACM certificate | Names the project and allows HSTS preload; about $15 per year. |
 | AWS WAF rate-based rule on the site | Limits password guessing; about $6 per month. |
