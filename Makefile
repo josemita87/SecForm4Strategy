@@ -1,4 +1,4 @@
-.PHONY: lint format type-check security docstrings validate-config test-unit test-unit-fast quality quality-static \
+.PHONY: lint format type-check security security-scan docstrings validate-config test-unit test-unit-fast quality quality-static \
 	start-redpanda stop-redpanda inference-sec inference-prices inference-model training-sec training-prices \
 	training-model lakehouse-summary switch-on switch-off status
 
@@ -34,6 +34,11 @@ docstrings:
 	uv run pydoclint .
 security:
 	uv run bandit -c pyproject.toml -r . --severity-level high
+# Trivy gate of the quality workflow: lockfile vulnerabilities, secrets and Terraform misconfigurations (.trivyignore)
+security-scan:
+	trivy fs --scanners vuln,secret --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+		--skip-dirs '**/.venv' --skip-dirs .claude .
+	trivy config --severity HIGH,CRITICAL --exit-code 1 infra/
 # Every spec.yaml feature-group catalog parses against the FeatureGroupSpec schema
 validate-config:
 	PYTHONPATH=$(CLIENTS_SRC) uv run python -c "import glob, pathlib; \

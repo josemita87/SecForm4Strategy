@@ -3,6 +3,9 @@ FROM python:3.14-slim
 # Bring in the uv binary from the official image
 COPY --from=ghcr.io/astral-sh/uv:0.9.7 /uv /uvx /bin/
 
+# Debian security updates; pip goes, as uv manages the environment and pip's vendored packages carry CVEs
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/* && pip uninstall -y pip
+
 # Repo layout replicated under /repo, built from the repo root (docs/development.md)
 ENV SVC_DIR=/repo/sec-feature-pipeline/kafka-to-store
 # Add src to the PYTHONPATH

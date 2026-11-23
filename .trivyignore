@@ -1,0 +1,13 @@
+# Accepted Trivy findings, one ID per line, each with its reason; sections refer to docs/report/submission.md
+
+# The state, data and site buckets use SSE-S3 (AES256): a customer managed KMS key adds $1 per month plus a charge per request against the $10 budget (R7, Section 5.7)
+AWS-0132
+
+# The task security group allows all egress and no ingress: tasks reach SEC EDGAR, Yahoo Finance and AWS APIs through the NAT gateway (Section 5.4)
+AWS-0104
+
+# The queue alerts topic carries only CloudWatch alarm notifications, and CloudWatch cannot publish to a topic encrypted with the AWS managed SNS key (Section 5.8)
+AWS-0095
+
+# No WAF on the site distribution: it costs about $6 per month, and the CloudFront Function password check guards the site (Sections 5.9 and 8.1)
+AWS-0011
