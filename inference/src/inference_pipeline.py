@@ -37,9 +37,10 @@ class LoadedModel(NamedTuple):
 
 
 def score(model: Pipeline, features: Sequence[str], rows: pd.DataFrame) -> pd.DataFrame:
-    """Return the complete, distinct rows with the model's probability of a short winner for each.
+    """Return the distinct, identifiable rows with the model's probability of a short winner for each.
 
-    The pipeline applies the preprocessing fitted at training time, on arrays in the trained feature order.
+    Rows with missing features are scored, as training keeps them. Every missing feature reaches the pipeline as
+    None, the value the feature store gave a missing category at training time; the scaler reads it as NaN.
 
     Args:
         model: The trained pipeline.
@@ -47,11 +48,14 @@ def score(model: Pipeline, features: Sequence[str], rows: pd.DataFrame) -> pd.Da
         rows: Disclosure rows from BIR4.
 
     Returns:
-        The rows with no missing value, each with a ``probability`` column; empty when no row is complete.
+        The rows with a key, a ticker and an acceptance time, each with a ``probability`` column; empty when
+        there are none.
     """
-    if (complete := rows.drop_duplicates().dropna()).empty:
-        return complete.assign(**{Col.PROBABILITY: pd.Series(dtype=float)})
-    return complete.assign(**{Col.PROBABILITY: model.predict_proba(complete[list(features)].to_numpy())[:, 1]})
+    if (scorable := rows.drop_duplicates().dropna(subset=[Col.KEY, Col.TICKER, Col.ACCEPTED_AT])).empty:
+        return scorable.assign(**{Col.PROBABILITY: pd.Series(dtype=float)})
+    X = scorable[list(features)].to_numpy(object)
+    X[pd.isna(X)] = None
+    return scorable.assign(**{Col.PROBABILITY: model.predict_proba(X)[:, 1]})
 
 
 class InferencePipeline:
