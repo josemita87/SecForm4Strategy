@@ -360,7 +360,7 @@ The live path runs the batch services as Lambda functions, on the same container
 | target | `live-score` | 2048 MB, 180 s |
 | inference | `live-score` | 2048 MB, 180 s; `QTY=1`; the cutoff comes from the model metadata |
 
-At the time of writing (2026-11-23), the account allows 10 concurrent Lambda executions in total; an increase to 1,000 has been requested, shared by the live functions and the site publisher. Section 10.2 describes the risk and the fix.
+The account's Lambda concurrency quota was raised from 10 to 1,000 executions on 2026-11-23; the live functions and the site publisher share it. Section 10.2 describes the risk and the fix.
 
 **Same images, two runtimes.** Each function runs `<service directory>/.venv/bin/python -m awslambdaric`. `awslambdaric` is the Lambda runtime interface client: it receives events from the Lambda service and calls the handler. Each handler sits beside the service's `main.py` and calls the same functions as the batch loop. Training and live scoring therefore share one feature implementation, so the features cannot drift apart between them. The functions set `HOME=/tmp`, because the image's file system is read-only.
 
