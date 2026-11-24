@@ -12,6 +12,8 @@ variable "functions" {
     memory      = optional(number, 1024)
     timeout     = optional(number, 120)
     environment = optional(map(string), {})
+    # 1 makes the function a single writer: overlapping live-score runs queue for it instead of writing the same table at once
+    reserved_concurrency = optional(number)
     trigger = optional(object({
       queue_arn       = string
       batch_size      = optional(number, 10)

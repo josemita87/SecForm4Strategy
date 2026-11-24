@@ -38,6 +38,8 @@ resource "aws_lambda_function" "service" {
   memory_size   = each.value.memory
   timeout       = each.value.timeout
 
+  reserved_concurrent_executions = each.value.reserved_concurrency
+
   image_config {
     entry_point = ["${each.value.directory}/.venv/bin/python", "-m", "awslambdaric"]
     command     = [each.value.handler]
@@ -132,7 +134,11 @@ locals {
         }
         Output = "{% $states.result.Payload %}"
         # Lambda's transient errors, and handlers raising RetryableError (e.g. orders left unplaced)
-        Retry = [{ ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 5, MaxAttempts = 2, BackoffRate = 2 }]
+        # A single-writer step is throttled while another run uses it: wait for it, up to about 10 minutes
+        Retry = [
+          { ErrorEquals = ["Lambda.TooManyRequestsException"], IntervalSeconds = 5, MaxAttempts = 25, BackoffRate = 1.5, MaxDelaySeconds = 30, JitterStrategy = "FULL" },
+          { ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 5, MaxAttempts = 2, BackoffRate = 2 },
+        ]
       },
       index == length(var.score_steps) - 1 ? { End = true } : { Next = var.score_steps[index + 1] },
     )
