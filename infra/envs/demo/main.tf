@@ -330,6 +330,23 @@ module "site" {
   })
 }
 
+# A failed run loses its input (the Pipe starts live-score fire-and-forget), so the operator hears of it at once
+resource "aws_cloudwatch_metric_alarm" "failed_runs" {
+  for_each            = { live-score = module.live.score_state_machine_arn, retrain = module.retrain.state_machine_arn }
+  alarm_name          = "secform4strategy-${each.key}-failed-runs"
+  alarm_description   = "A ${each.key} execution failed, timed out or was aborted; see its history in Step Functions"
+  namespace           = "AWS/States"
+  metric_name         = "ExecutionsFailed"
+  dimensions          = { StateMachineArn = each.value }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [module.queues.alerts_topic_arn]
+}
+
 output "site" {
   value = module.site
 }

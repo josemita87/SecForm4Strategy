@@ -360,7 +360,7 @@ The live path runs the batch services as Lambda functions, on the same container
 | target | `live-score` | 2048 MB, 180 s |
 | inference | `live-score` | 2048 MB, 180 s; `QTY=1`; the cutoff comes from the model metadata |
 
-The account's Lambda concurrency quota was raised from 10 to 1,000 executions on 2026-11-23; the live functions and the site publisher share it. Section 10.2 describes the risk and the fix.
+The account's Lambda concurrency quota was raised from 10 to 1,000 executions on 2026-11-23; the live functions and the site publisher share it. The writers to `P` and `BIR4` (yahoo-connect and target) have a reserved concurrency of 1, so overlapping `live-score` runs wait for them.
 
 **Same images, two runtimes.** Each function runs `<service directory>/.venv/bin/python -m awslambdaric`. `awslambdaric` is the Lambda runtime interface client: it receives events from the Lambda service and calls the handler. Each handler sits beside the service's `main.py` and calls the same functions as the batch loop. Training and live scoring therefore share one feature implementation, so the features cannot drift apart between them. The functions set `HOME=/tmp`, because the image's file system is read-only.
 
@@ -506,6 +506,7 @@ The budget `secform4strategy-monthly` is $10 per month. It emails `alert_email` 
 ### 4.10 Monitoring
 
 - **Dead-letter alarms.** Every message that exhausts its SQS retries ends in a DLQ. Each DLQ has a CloudWatch alarm `secform4strategy-<queue>-dead-letters`. It goes into alarm when the DLQ holds at least one message, checked every 5 minutes, and publishes to the SNS topic `secform4strategy-queue-alerts`, which emails `alert_email`.
+- **Failed-run alarms.** One alarm per state machine, `secform4strategy-<workflow>-failed-runs` for `retrain` and `live-score`, fires when `ExecutionsFailed` is above 0 in 5 minutes and publishes to the same topic. A failed `live-score` run loses its tickers, so the operator hears of it at once.
 - **Dashboard.** The CloudWatch dashboard `secform4strategy` shows:
   - queue depths, messages processed per minute, and the backlog ETA of `filings` and `transactions`;
   - DLQ depths;
@@ -664,7 +665,7 @@ Services never write `except Exception`.
 | `PermanentError` | Logs it, then acks | Logs it, leaves it out of `batchItemFailures` | Deleted |
 | Crash (a defect) | No ack | The whole batch fails | Delivered again; after 5 receives, moved to the DLQ |
 
-Retries happen at two time scales: seconds in the adapter and minutes on the platform (SQS redelivery, Step Functions `Retry`). A DLQ does not retry. A message that exhausts its SQS retries waits there for 14 days, with an alarm, for a manual redrive. Two failures bypass the DLQs: a `PermanentError` is logged and deleted, and a failed `live-score` run has no DLQ (Section 10.2). Every task is incremental. Upserts by deterministic key and per-ticker start dates mean a rerun redoes only what failed.
+Retries happen at two time scales: seconds in the adapter and minutes on the platform (SQS redelivery, Step Functions `Retry`). A DLQ does not retry. A message that exhausts its SQS retries waits there for 14 days, with an alarm, for a manual redrive. Two failures bypass the DLQs: a `PermanentError` is logged and deleted, and a failed `live-score` run has no DLQ, only an alarm (Section 10.2). Every task is incremental. Upserts by deterministic key and per-ticker start dates mean a rerun redoes only what failed.
 
 ### 6.5 Tests without mocks
 
@@ -904,10 +905,8 @@ The next research steps:
 | Append-then-deduplicate write for full loads | kafka-to-store appends each batch without matching keys against the whole `BT4` table, and one pass removes duplicate keys at the end. A full load then no longer slows as the table grows. |
 | Iceberg maintenance: expire snapshots, compact data files | Every commit adds a snapshot and small files. Athena `OPTIMIZE` and `VACUUM` stay under the 1 GiB scan limit, because the largest table, `P`, holds about 650 MB including old snapshots. |
 | Clear the scraper's exit flag when redelivery succeeds | A finished scraper step no longer reports failure, so `retrain` does not rerun it through the Spot retries and the On-Demand fallback. |
-| A higher Lambda concurrency quota | The account allows 10 concurrent Lambda executions, shared by the live functions and the publisher, so a burst of filings can throttle a `live-score` step. Lambda keeps 100 executions unreserved, so reserved concurrency for the scoring steps needs a quota above 100. |
-| Catch failed `live-score` runs | The Pipe starts `live-score` with `invocation_type = "FIRE_AND_FORGET"`, so a run that fails after its retries loses its tickers, and no DLQ holds them. A `Catch` that sends the tickers to a queue with an alarm closes the gap; a Pipe DLQ catches only runs that fail to start, and `REQUEST_RESPONSE` does not work with Standard workflows. |
+| Catch failed `live-score` runs | The Pipe starts `live-score` with `invocation_type = "FIRE_AND_FORGET"`, so it deletes the `live-tickers` messages once the run starts. A run that fails after its retries loses its tickers, and the failed-run alarm reports it. A replay has little value: a late trade is worth nothing, and the 60-minute stale check would skip it. A `Catch` in `live-score` that sends the tickers to a queue would keep them for inspection; a Pipe DLQ catches only runs that fail to start. `REQUEST_RESPONSE` does not work with Standard workflows. |
 | Keep `PermanentError` messages | A `PermanentError` message is logged and acknowledged, so it never reaches a DLQ. |
-| Alarm on failed runs | No alarm watches `ExecutionsFailed` for `retrain` or `live-score`; only the dashboard shows it. |
 | Exclude `use1-az3` from the private subnets | Fargate ARM64 is not available there, and nothing in the network module excludes it. |
 | Make the Terraform apply wait for the `images` workflow | A plan made before the build ends deploys the previous image. |
 | Smaller images for the live Lambdas | The about 1 GB images cause cold starts of up to 45 seconds. |
@@ -963,7 +962,7 @@ Borrow costs, a small effective sample and one holdout year still limit the evid
 | Identity | CI roles | `secform4strategy-github-images`, `-github-plan`, `-github-apply` |
 | Secrets | SSM parameters | `/secform4strategy/sec-user-agent`, `/secform4strategy/alpaca-api-key`, `/secform4strategy/alpaca-api-secret` |
 | Monitoring | Dashboard | `secform4strategy` |
-| Monitoring | Alarms | `secform4strategy-<queue>-dead-letters` (5) |
+| Monitoring | Alarms | `secform4strategy-<queue>-dead-letters` (5), `secform4strategy-<workflow>-failed-runs` (2) |
 | Monitoring | Log groups | `/secform4strategy/<service>`, `/aws/lambda/secform4strategy-live-<service>`, `/aws/lambda/secform4strategy-site-publisher` |
 | Cost | Budget | `secform4strategy-monthly` ($5) |
 | Site | S3 bucket | `secform4strategy-site-<account>` |

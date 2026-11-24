@@ -1044,7 +1044,7 @@ const P_LIVE = ({
     { cap: "The kafka-to-store service collects up to 100 transactions for 5 s, so one Iceberg commit serves a burst. It writes <code>BI4</code>.",
       notes: ["A 5 s window gathers a burst into one Iceberg commit, because parallel commits to one table conflict."] },
     { cap: "An <strong>EventBridge Pipe</strong> starts <code>live-score</code>: yahoo-connect → target → inference, then an Alpaca paper short.",
-      notes: ["The Pipe starts <code>live-score</code> fire-and-forget: a run that fails after its retries loses its tickers, with no DLQ. A known limit.", "<code>live-score</code> is a Standard workflow, because the site reads its execution history."] },
+      notes: ["The Pipe starts <code>live-score</code> fire-and-forget: a run that fails after its retries loses its tickers, with no DLQ. No replay by design: a late trade is worth nothing, and the 60-minute stale check would skip it. An alarm emails on every failed run.", "<code>live-score</code> is a Standard workflow, because the site reads its execution history."] },
     { cap: "One filing, end to end. <span class=\"tag acc\">simulated run</span>",
       notes: ["An animation, not a recording; XYZ is a placeholder.", "Earlier real runs (AMZN, TGT, DGICA, IMTX) verified this wiring before the classifier was promoted."] },
     { cap: "The Lambdas run the <strong>same container images</strong> as the batch tasks, with a different entry point.",
@@ -1184,7 +1184,7 @@ const P_INFRA = ({
     { cap: "<code>switched_on</code> switches the batch path and its NAT. <code>live_enabled</code> runs the live path on its own, with no NAT.",
       notes: ["On master: <code>switched_on = false</code>, <code>weekly_retrain_enabled = true</code>, <code>live_enabled = true</code>. Live runs, no NAT, batch dormant.", "Dormant: about $0 per day. Live only: cents to a few dollars per month. Batch switched on: about $1.20 per day plus usage.", "During a full load <code>live_enabled</code> must be off: 8 + 4.5 would exceed the SEC's 10."] },
     { cap: "Failures and cost reach an inbox: dead-letter alarms by email, and a monthly budget.",
-      notes: ["Every message that exhausts its SQS retries waits 14 days in a DLQ, with an email alarm (D20).", "Gaps: a <code>PermanentError</code> skips the DLQ, and no alarm watches <code>ExecutionsFailed</code>.", "Budget $10: 1–23 November used $8.52 during the backfill, covered by credits. A budget alerts; it does not cap spend."] },
+      notes: ["Every message that exhausts its SQS retries waits 14 days in a DLQ, with an email alarm (D20).", "Failed <code>retrain</code> and <code>live-score</code> runs email through the same topic (<code>ExecutionsFailed</code> alarm). Known limit: a <code>PermanentError</code> skips the DLQ.", "Budget $10: 1–23 November used $8.52 during the backfill, covered by credits. A budget alerts; it does not cap spend."] },
   ],
   svg: () => `
     <g class="rv" data-s="0" data-u="0">
@@ -1234,7 +1234,7 @@ const P_INFRA = ({
       ${edge({ d: "M340 276 H400" })}
       ${node({ x: 400, y: 240, w: 300, k: "int", i: "sqs", t: "Dead-letter queues", sub: "after 5 receives" })}
       ${edge({ d: "M700 276 H760" })}
-      ${node({ x: 760, y: 240, w: 300, k: "sec", i: "bell", t: "CloudWatch alarm", sub: "DLQ depth > 0" })}
+      ${node({ x: 760, y: 240, w: 300, k: "sec", i: "bell", t: "CloudWatch alarm", sub: "DLQ depth · failed runs" })}
       ${edge({ d: "M1060 276 H1120" })}
       ${node({ x: 1120, y: 240, w: 420, k: "int", i: "bell", t: "SNS queue-alerts", sub: "email to the operator" })}
       ${node({ x: 60, y: 375, w: 380, k: "sec", i: "dollar", t: "Budget $10 / month", sub: "1–23 Nov: $8.52, credits" })}
@@ -1843,13 +1843,13 @@ const P_COST = ({
     <div class="w rv" data-s="1" data-u="1" style="left:790px;top:226px;width:770px">
       <div class="lab">Guardrails</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px">
-        ${[["dollar", "sec", "Budget", "$10 · 50% / 100% · alerts only"], ["table", "data", "Athena", "cap 1 GiB per query"], ["logs", "data", "Logs", "kept 14 days"], ["bell", "sec", "DLQ alarm", "SQS → CloudWatch → SNS → email"]].map(([i, k, t, d]) => `<div class="card" style="padding:14px 16px;display:flex;gap:12px;align-items:center"><svg width="42" height="42" viewBox="0 0 44 44"><rect width="44" height="44" rx="11" fill="var(--k-${k})"/><g class="ig" transform="translate(10 10)">${ICON[i]}</g></svg><div><div style="font-weight:750;font-size:19px">${t}</div><div style="color:var(--muted);font-size:15px">${d}</div></div></div>`).join("")}
+        ${[["dollar", "sec", "Budget", "$10 · 50% / 100% · alerts only"], ["table", "data", "Athena", "cap 1 GiB per query"], ["logs", "data", "Logs", "kept 14 days"], ["bell", "sec", "Alarms", "DLQs · failed runs → SNS → email"]].map(([i, k, t, d]) => `<div class="card" style="padding:14px 16px;display:flex;gap:12px;align-items:center"><svg width="42" height="42" viewBox="0 0 44 44"><rect width="44" height="44" rx="11" fill="var(--k-${k})"/><g class="ig" transform="translate(10 10)">${ICON[i]}</g></svg><div><div style="font-weight:750;font-size:19px">${t}</div><div style="color:var(--muted);font-size:15px">${d}</div></div></div>`).join("")}
       </div>
       <div class="lab" style="margin-top:20px">Observability</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:10px">
         ${[["logs", "data", "Dashboard", "queues · runs · errors"], ["fargate", "compute", "Container Insights", "task CPU, memory"], ["check", "ci", "make status", "about 15 s"]].map(([i, k, t, d]) => `<div class="card" style="padding:14px 14px;display:flex;gap:10px;align-items:center"><svg width="38" height="38" viewBox="0 0 44 44"><rect width="44" height="44" rx="11" fill="var(--k-${k})"/><g class="ig" transform="translate(10 10)">${ICON[i]}</g></svg><div><div style="font-weight:750;font-size:17px">${t}</div><div style="color:var(--muted);font-size:14px">${d}</div></div></div>`).join("")}
       </div>
-      <div style="display:flex;gap:12px;margin-top:20px">${["no alarm on failed runs", "Pipe has no DLQ"].map(t => `<span style="background:var(--warn);color:#fff;font-weight:800;font-size:15px;padding:7px 14px;border-radius:999px">known limit · ${t}</span>`).join("")}</div>
+      <div style="display:flex;gap:12px;margin-top:20px">${["Pipe has no DLQ · no replay by design"].map(t => `<span style="background:var(--warn);color:#fff;font-weight:800;font-size:15px;padding:7px 14px;border-radius:999px">known limit · ${t}</span>`).join("")}</div>
     </div></div>`,
 });
 
@@ -2444,7 +2444,7 @@ section({
     { cap: "Three cost states behind three switches: the live path runs for cents, and only the batch path needs the NAT gateway (<strong>D19</strong>).",
       notes: ["≈1¼ min, 3 steps. Section 5.7. The pressure: a $10 budget, and a NAT gateway that bills about $1.08 per day with no traffic.", "The choice: everything else is serverless, so one switch on the NAT gateway covers almost all fixed cost; $10 covers the live path all month plus several switched-on batch days.", "Rejected: an always-on stack. During a full load <code>live_enabled</code> must be off: 8 + 4.5 would exceed the SEC's 10."] },
     { cap: "The backfill month: <strong>$8.52 of $10</strong>; guardrails and observability catch mistakes (<strong>D20</strong>).",
-      notes: ["Sections 5.7 and 5.8. The NAT gateway was the largest item, because the stack ran switched on from 2026-11-20 for the backfill.", "Rejected: third-party monitoring or X-Ray; CloudWatch already holds the logs and metrics, and stays in the free tier.", "Budget secform4strategy-monthly emails at 50% of actual and 100% of forecast; it alerts, it does not cap. Athena cancels queries above 1 GiB; logs keep 14 days; one DLQ alarm per queue through SNS to email. Dashboard free up to 50 metrics; make status in about 15 s. Known gaps: no ExecutionsFailed alarm, and the Pipe has no DLQ."] },
+      notes: ["Sections 5.7 and 5.8. The NAT gateway was the largest item, because the stack ran switched on from 2026-11-20 for the backfill.", "Rejected: third-party monitoring or X-Ray; CloudWatch already holds the logs and metrics, and stays in the free tier.", "Budget secform4strategy-monthly emails at 50% of actual and 100% of forecast; it alerts, it does not cap. Athena cancels queries above 1 GiB; logs keep 14 days; one DLQ alarm per queue and one failed-run alarm per state machine, through SNS to email. Dashboard free up to 50 metrics; make status in about 15 s. Known limit: the Pipe has no DLQ, by design, since a late trade is worth nothing."] },
     { cap: "Availability and recovery: the live path is highly available in the region (<strong>D27</strong>); batch and data accept longer recovery (R7).",
       notes: ["Section 5.8. AWS keeps each regional service available across AZs; the project chooses which redundancy to pay for.", "RTO is the time to recover; RPO the data that can be lost. A lost table is rebuilt from EDGAR and Yahoo in about 2 days; a lost model is re-promoted in minutes."] },
   ],
