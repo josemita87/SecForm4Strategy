@@ -163,7 +163,7 @@ The schedule is enabled while `live_enabled` is `true`, independently of `switch
 
 The Pipe starts `live-score` with `invocation_type = "FIRE_AND_FORGET"`, so it deletes the `live-tickers` messages once the run starts. A run that fails after its retries loses its tickers, and no dead-letter queue holds them. `REQUEST_RESPONSE` does not work with Standard workflows, and `live-score` is a Standard workflow because the site publisher reads its execution history.
 
-At the time of writing (2026-11-23), the account allows 10 concurrent Lambda executions in total; an increase to 1,000 has been requested, shared by the live functions and the site publisher. [site.md](site.md#known-gaps) describes the risk and the fix.
+The account's Lambda concurrency quota was raised from 10 to 1,000 executions on 2026-11-23; the live functions and the site publisher share it. [site.md](site.md#known-gaps) describes the risk and the fix.
 
 | Function | Trigger | Settings |
 | --- | --- | --- |

@@ -1639,7 +1639,7 @@ const FAQ = [
   ["What does it cost?", "Live path only: cents to a few dollars per month, with no NAT. Batch switched on: about $1.20 per day plus usage, on Fargate Spot (up to 70% cheaper) with an On-Demand fallback. A $10 monthly budget emails alerts; November's backfill month used $8.52 by the 23rd, covered by credits."],
   ["Why is the NAT switchable?", "It bills about $1.08 per day with no traffic. Always on, it would cost about $32 per month, over three times the budget. Only the batch path needs it; the live Lambdas run outside the VPC."],
   ["Why no API for the website?", "A publisher Lambda writes static JSON. CloudFront reads the private S3 bucket through OAC; a CloudFront Function checks Basic auth against a hash in a KeyValueStore."],
-  ["What about the Lambda concurrency limit of 10?", "maximum_concurrency 2 on each SQS trigger keeps the queue consumers inside the quota. A burst can still throttle a live-score step, and a failed run loses its tickers (the Pipe starts it fire-and-forget); an increase to 1,000 was requested on 23 November, and a Catch to a queue is the other follow-up."],
+  ["What about the Lambda concurrency limit?", "The quota was raised from 10 to 1,000 on 23 November. The live writers to P and BIR4 run one at a time (reserved concurrency 1), so overlapping runs queue instead of writing the same table at once."],
   ["Why one IAM role per service?", "A compromised service can do only its own job. Among task and Lambda roles, only inference and the site publisher read the Alpaca keys; training cannot place orders. On ECS the shared execution role injects secrets per task definition."],
 ];
 const S_QA = ({
