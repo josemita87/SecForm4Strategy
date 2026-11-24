@@ -260,6 +260,8 @@ module "live" {
       memory      = 2048
       timeout     = 180
       environment = merge(local.lakehouse, local.inference_run, { BUFFER_SIZE = "50" })
+      # One writer to P at a time (D25): overlapping runs with the same ticker would upsert duplicate rows
+      reserved_concurrency = 1
     }
     target = {
       role_arn    = module.iam.lambda_role_arns.target
@@ -268,6 +270,8 @@ module "live" {
       memory      = 2048
       timeout     = 180
       environment = merge(local.lakehouse, local.inference_run, { DELTA_PERIOD = "30" })
+      # One writer to BIR4 at a time (D25)
+      reserved_concurrency = 1
     }
     inference = {
       role_arn  = module.iam.lambda_role_arns.inference
