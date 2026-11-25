@@ -214,6 +214,8 @@ module "live" {
   source = "../../modules/live"
   name   = "secform4strategy"
   poller = "master-index"
+  # Weekdays, New York time: every minute 08:00-15:59, and at 07:55 20 feed pages of 100 entries (about 1,000 filings, each listed per filer)
+  poll_schedule = { every = "cron(* 8-15 ? * MON-FRI *)", catch_up = "cron(55 7 ? * MON-FRI *)", catch_up_pages = 20 }
   # The live chain runs outside the VPC, so it needs no NAT gateway and no switched_on
   schedule_enabled  = var.live_enabled
   score_steps       = ["yahoo-connect", "target", "inference"]
@@ -224,7 +226,7 @@ module "live" {
       directory = "/repo/sec-feature-pipeline/master-index"
       handler   = "handler.handle"
       memory    = 512
-      timeout   = 60
+      timeout   = 120
       environment = merge(local.sqs, local.sec_secrets, {
         OUTPUT_QUEUE = local.queues["live-filings"], BUFFER_SIZE = "100", MODE = "live"
         SEEN_TABLE   = "secform4strategy-seen", SEEN_DAYS = "7", SEC_MAX_RATE = "1"

@@ -243,7 +243,7 @@ export function createLive(root) {
     const enabled = live?.poller_enabled ?? health?.switches?.live_poller;
     const poller = $('#st-poller');
     poller.dataset.state = enabled === true ? 'on' : enabled === false ? 'off' : 'unknown';
-    $('#st-poller-text').textContent = enabled === true ? 'Polling SEC every minute' : enabled === false ? 'Poller switched off' : 'Poller state unknown';
+    $('#st-poller-text').textContent = enabled === true ? 'Polling SEC on weekdays, 07:55–16:00 ET' : enabled === false ? 'Poller switched off' : 'Poller state unknown';
     $('#st-threshold').textContent = isNum(live?.probability_cutoff) ? `p \u2265 ${prob(live.probability_cutoff, 0)}` : DASH;
     const model = health?.model;
     $('#st-model').textContent = model?.version ?? DASH;

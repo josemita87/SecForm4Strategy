@@ -152,14 +152,16 @@ A pinned revision works only while ECR still holds its image. For this reason ea
 
 The live path runs the batch services as Lambda functions, on the same images, scoped to the tickers of each new filing:
 
-1. EventBridge Scheduler invokes `secform4strategy-live-master-index` every minute.
+1. EventBridge Scheduler invokes `secform4strategy-live-master-index` every minute from 08:00 to 15:59 ET, Monday to Friday (`secform4strategy-live-poll`).
 2. The master-index service reads the first page of SEC's current Form 4 feed. It sends the filings that `secform4strategy-seen` does not hold to `secform4strategy-live-filings`, then records them.
 3. The scraper Lambda parses each filing and sends its transactions to `secform4strategy-live-transactions`.
 4. The kafka-to-store service upserts the transactions into `BI4` and sends `{"tickers": [...]}` to `secform4strategy-live-tickers`.
 5. The EventBridge Pipe `secform4strategy-live-tickers` starts one run of the state machine `secform4strategy-live-score` per batch of up to 10 messages.
 6. `live-score` runs three Lambdas in order, each passing `{"tickers": [...]}` to the next: yahoo-connect refreshes the prices, target builds the `BIR4` rows, and inference scores them and places Alpaca paper orders.
 
-The schedule is enabled while `live_enabled` is `true`, independently of `switched_on`: the live chain runs outside the VPC and needs no NAT gateway.
+A second schedule, `secform4strategy-live-catch-up`, invokes master-index at 07:55 ET, Monday to Friday, with `{"num_pages": 20}`. That poll reads 20 feed pages of 100 entries. The feed lists each filing once per filer, so 20 pages hold about 1,000 filings. Most Form 4s that arrive after the 15:59 poll are accepted from 16:00 to 22:00 ET, and some from 06:00 to 09:00 ET. The catch-up sends the new ones before the open, so inference places their orders for the open. It normally ends before the 08:00 poll starts. If the two overlap, a filing can be sent twice, and the downstream upserts and client order ids absorb the repeat. The `poll_schedule` variable of the `live` module holds both cron expressions, in `America/New_York` time, and the page count.
+
+Both schedules are enabled while `live_enabled` is `true`, independently of `switched_on`: the live chain runs outside the VPC and needs no NAT gateway.
 
 The Pipe starts `live-score` with `invocation_type = "FIRE_AND_FORGET"`, so it deletes the `live-tickers` messages once the run starts. A run that fails after its retries loses its tickers, and no dead-letter queue holds them. `REQUEST_RESPONSE` does not work with Standard workflows, and `live-score` is a Standard workflow because the site publisher reads its execution history.
 
@@ -167,7 +169,7 @@ The account's Lambda concurrency quota was raised from 10 to 1,000 executions on
 
 | Function | Trigger | Settings |
 | --- | --- | --- |
-| master-index | Schedule, every minute | 512 MB, 60 s; `SEC_MAX_RATE=1`; `SEEN_DAYS=7` |
+| master-index | Schedules: every minute 08:00 to 15:59 ET, and 20 pages at 07:55 ET, on weekdays | 512 MB, 120 s; `SEC_MAX_RATE=1`; `SEEN_DAYS=7` |
 | scraper | `live-filings`, batches of 10 | 1024 MB, 120 s; at most 2 at a time, each at `SEC_MAX_RATE=2.25` with `FETCH_WORKERS=4` |
 | kafka-to-store | `live-transactions`, batches of up to 100, waiting at most 5 s | 2048 MB, 240 s; at most 2 at a time |
 | yahoo-connect | `live-score` | 2048 MB, 180 s |
@@ -178,7 +180,9 @@ Each function runs `<service directory>/.venv/bin/python -m awslambdaric` with t
 
 The SQS triggers report partial batch failures. A handler returns the messages it did not finish in `batchItemFailures`, and SQS delivers only those again, after the 300-second visibility timeout.
 
-Each `live-score` step is retried twice on `States.TaskFailed`, after 5 and 10 seconds. The inference service raises `RetryableError` when an order is left unplaced, so the step runs again. Each order carries the row key as `client_order_id`, so Alpaca rejects a duplicate. The inference service loads the latest model at each invocation, so a new weekly model takes effect immediately. It trades only fresh rows: rows whose latest filing was accepted within `MAX_SIGNAL_AGE_MINUTES` (default 60). The event carries tickers, so this keeps a ticker's older rows from trading late, for example after a retrain. In the session an order fills at once; outside it, Alpaca queues it for the open.
+Each `live-score` step is retried twice on `States.TaskFailed`, after 5 and 10 seconds. The inference service raises `RetryableError` when an order is left unplaced, so the step runs again. Each order carries the row key as `client_order_id`, so Alpaca rejects a duplicate. The inference service loads the latest model at each invocation, so a new weekly model takes effect immediately. It trades only fresh rows. In a session, a row is fresh when its latest filing was accepted within `MAX_SIGNAL_AGE_MINUTES` (default 60). Outside a session, and in its first 60 minutes, the 60 minutes count back from the last close, so every filing accepted since the close stays fresh until an hour after the open, even when the morning queue runs late. The inference service reads the sessions from Alpaca's market calendar, which includes holidays and early closes. The event carries tickers, so this rule keeps a ticker's older rows from trading late, for example after a retrain. In the session an order fills at once; outside it, Alpaca queues it for the open.
+
+yahoo-connect and target have a reserved concurrency of 1, so a `live-score` step that calls one while another run uses it fails with `Lambda.TooManyRequestsException`. The step retries it up to 64 times, with waits from 5 seconds growing to at most 60 seconds, each drawn at random below that bound. The 64 waits add up to about 30 minutes on average, and to at most about 60 minutes, before the step fails. After the catch-up, the runs for the night's filings queue this way before the open.
 
 The live Lambdas read their secrets from SSM themselves, because Lambda cannot put SSM parameters into environment variables. `SSM_PARAMETERS` names the parameters, for example `{"sec_user_agent": "/secform4strategy/sec-user-agent"}`, and `SsmSettings` reads them at cold start. The values never enter the Terraform state.
 

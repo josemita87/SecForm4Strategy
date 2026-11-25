@@ -10,12 +10,13 @@ import importlib
 import sys
 import types
 from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
 from pydantic import SecretStr
 from secform4strategy_clients.ports import PermanentError, RetryableError
-from secform4strategy_clients.records import BrokerAccount, BrokerOrder, BrokerPosition, EquityPoint
+from secform4strategy_clients.records import BrokerAccount, BrokerOrder, BrokerPosition, EquityPoint, MarketSession
 
 
 def _fresh(monkeypatch, module):
@@ -45,6 +46,9 @@ class _FakeOrder(_FakeModel): ...
 
 
 class _FakePortfolioHistory(_FakeModel): ...
+
+
+class _FakeCalendar(_FakeModel): ...
 
 
 #: What the fake account reads return: one account, position, order and equity history.
@@ -78,11 +82,25 @@ _READS = {
         )
     ],
     'history': _FakePortfolioHistory(timestamp=[1763650800, 1763737200], equity=[1000.0, None]),
+    # alpaca-py parses the calendar's times as naive New York wall-clock times
+    'calendar': [
+        _FakeCalendar(
+            date=date(2026, 11, 27),
+            open=datetime.fromisoformat('2026-11-27T09:30'),
+            close=datetime.fromisoformat('2026-11-27T13:00'),
+        ),
+        _FakeCalendar(
+            date=date(2026, 11, 30),
+            open=datetime.fromisoformat('2026-11-30T09:30'),
+            close=datetime.fromisoformat('2026-11-30T16:00'),
+        ),
+        {'raw': 'skipped'},
+    ],
 }
 
 
 def _install_fake_alpaca(monkeypatch, outcomes):
-    """Install a fake alpaca-py whose ``submit_order`` returns or raises each outcome in turn."""
+    """Install a fake alpaca-py: ``submit_order`` returns or raises each outcome in turn, ``get_calendar`` raises it."""
     calls = {'client': {}, 'orders': [], 'reads': []}
 
     class _FakeTradingClient:
@@ -109,6 +127,12 @@ def _install_fake_alpaca(monkeypatch, outcomes):
             calls['reads'].append(request)
             return _READS['history']
 
+        def get_calendar(self, filters):
+            calls['reads'].append(filters)
+            if outcomes:
+                raise outcomes.pop(0)
+            return _READS['calendar']
+
     def _module(name, **attrs):
         module = types.ModuleType(name)
         module.__dict__.update(attrs)
@@ -128,6 +152,7 @@ def _install_fake_alpaca(monkeypatch, outcomes):
     )
     _module(
         'alpaca.trading.models',
+        Calendar=_FakeCalendar,
         Order=_FakeOrder,
         PortfolioHistory=_FakePortfolioHistory,
         Position=_FakePosition,
@@ -136,6 +161,7 @@ def _install_fake_alpaca(monkeypatch, outcomes):
     _module(
         'alpaca.trading.requests',
         OrderRequest=types.SimpleNamespace,
+        GetCalendarRequest=types.SimpleNamespace,
         GetOrdersRequest=types.SimpleNamespace,
         GetPortfolioHistoryRequest=types.SimpleNamespace,
     )
@@ -211,6 +237,24 @@ def test_alpaca_reads_parse_the_account(monkeypatch):
         {'status': 'all', 'limit': 50},
         {'period': '1M', 'timeframe': '1D'},
     ]
+
+
+def test_alpaca_sessions_are_new_york_times(monkeypatch):
+    client, calls = _alpaca(monkeypatch, [])
+    new_york = ZoneInfo('America/New_York')
+    assert client.sessions(date(2026, 11, 27), date(2026, 11, 30)) == (
+        MarketSession(datetime(2026, 11, 27, 9, 30, tzinfo=new_york), datetime(2026, 11, 27, 13, 0, tzinfo=new_york)),
+        MarketSession(datetime(2026, 11, 30, 9, 30, tzinfo=new_york), datetime(2026, 11, 30, 16, 0, tzinfo=new_york)),
+    )
+    assert client.sessions(date(2026, 11, 27), date(2026, 11, 30))[0].close == datetime(2026, 11, 27, 18, 0, tzinfo=UTC)
+    assert vars(calls['reads'][0]) == {'start': date(2026, 11, 27), 'end': date(2026, 11, 30)}
+
+
+@pytest.mark.parametrize(('status', 'error'), [(503, RetryableError), (None, RetryableError), (403, PermanentError)])
+def test_alpaca_calendar_errors_are_classified(monkeypatch, status, error):
+    client, _ = _alpaca(monkeypatch, [_FakeAPIError(status, 'calendar')])
+    with pytest.raises(error, match='Calendar'):
+        client.sessions(date(2026, 11, 27), date(2026, 11, 30))
 
 
 # --- KafkaClient ---

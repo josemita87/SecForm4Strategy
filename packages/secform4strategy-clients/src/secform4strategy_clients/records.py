@@ -109,6 +109,13 @@ class BrokerOrder(NamedTuple):
     filled_avg_price: float | None
 
 
+class MarketSession(NamedTuple):
+    """One trading day's regular session; early closes end at their own time."""
+
+    open: datetime
+    close: datetime
+
+
 class EquityPoint(NamedTuple):
     """The account's equity at one time."""
 

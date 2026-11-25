@@ -1,4 +1,4 @@
-"""Filings become messages keyed by accession, with their filing time as ISO 8601.
+"""Filings become messages keyed by accession, with their filing time as ISO 8601; a poll may ask for more pages.
 
 Under test:
     sec-feature-pipeline/master-index/src/main.py
@@ -6,8 +6,9 @@ Under test:
 
 from datetime import UTC, date, datetime
 
+import pytest
 import xxhash
-from main import build_messages, filed_since, publish_new, quarters_between
+from main import PollEvent, build_messages, filed_since, publish_new, quarters_between
 from secform4strategy_clients.fakes.messaging import FakeMessageQueue
 from secform4strategy_clients.fakes.seen import FakeSeenKeys
 from secform4strategy_clients.records import Filing
@@ -88,3 +89,21 @@ class TestPublishNew:
         queue = FakeMessageQueue()
         assert publish_new([LIVE], FakeSeenKeys({LIVE.accession}), queue, 'filings') == 0
         assert queue.sent == {}
+
+
+class TestPollEvent:
+    """The minute poll sends no pages and reads ``NUM_PAGES``; the catch-up asks for more."""
+
+    def test_an_empty_event_asks_for_no_pages(self) -> None:
+        assert PollEvent.model_validate({}).num_pages is None
+
+    def test_the_catch_up_asks_for_its_pages(self) -> None:
+        assert PollEvent.model_validate({'num_pages': 20}).num_pages == 20
+
+    def test_other_scheduler_fields_are_ignored(self) -> None:
+        assert PollEvent.model_validate({'num_pages': 3, 'source': 'scheduler'}).num_pages == 3
+
+    @pytest.mark.parametrize('pages', [0, -1, '20', 2.5, True])
+    def test_pages_must_be_a_positive_integer(self, pages: object) -> None:
+        with pytest.raises(ValueError, match='num_pages'):
+            PollEvent.model_validate({'num_pages': pages})

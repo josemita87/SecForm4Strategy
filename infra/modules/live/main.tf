@@ -101,9 +101,10 @@ resource "aws_iam_role_policy" "invoke_poller" {
 }
 
 resource "aws_scheduler_schedule" "poll" {
-  name                = "${var.name}-live-poll"
-  schedule_expression = "rate(1 minute)"
-  state               = var.schedule_enabled ? "ENABLED" : "DISABLED"
+  name                         = "${var.name}-live-poll"
+  schedule_expression          = var.poll_schedule.every
+  schedule_expression_timezone = "America/New_York"
+  state                        = var.schedule_enabled ? "ENABLED" : "DISABLED"
 
   flexible_time_window {
     mode = "OFF"
@@ -114,6 +115,29 @@ resource "aws_scheduler_schedule" "poll" {
     role_arn = aws_iam_role.scheduler.arn
 
     # The next poll a minute later covers a missed one
+    retry_policy {
+      maximum_retry_attempts = 0
+    }
+  }
+}
+
+# One deep poll before the session collects the filings disclosed since the last minute poll
+resource "aws_scheduler_schedule" "catch_up" {
+  name                         = "${var.name}-live-catch-up"
+  schedule_expression          = var.poll_schedule.catch_up
+  schedule_expression_timezone = "America/New_York"
+  state                        = var.schedule_enabled ? "ENABLED" : "DISABLED"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_lambda_function.service[var.poller].arn
+    role_arn = aws_iam_role.scheduler.arn
+    input    = jsonencode({ num_pages = var.poll_schedule.catch_up_pages })
+
+    # Lambda's asynchronous retries rerun a failed catch-up; the scheduler adds none
     retry_policy {
       maximum_retry_attempts = 0
     }
@@ -134,9 +158,9 @@ locals {
         }
         Output = "{% $states.result.Payload %}"
         # Lambda's transient errors, and handlers raising RetryableError (e.g. orders left unplaced)
-        # A single-writer step is throttled while another run uses it: wait for it, up to about 10 minutes
+        # A single-writer step is throttled while another run uses it: wait for it, about 30 minutes on average and at most about 60
         Retry = [
-          { ErrorEquals = ["Lambda.TooManyRequestsException"], IntervalSeconds = 5, MaxAttempts = 25, BackoffRate = 1.5, MaxDelaySeconds = 30, JitterStrategy = "FULL" },
+          { ErrorEquals = ["Lambda.TooManyRequestsException"], IntervalSeconds = 5, MaxAttempts = 64, BackoffRate = 1.5, MaxDelaySeconds = 60, JitterStrategy = "FULL" },
           { ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 5, MaxAttempts = 2, BackoffRate = 2 },
         ]
       },

@@ -1,20 +1,23 @@
 """Inference scores rows with gaps as training does, shorts those at the cutoff, and refuses a model without one.
 
+A row stays fresh from the last close to the next open, so filings disclosed overnight trade at the open.
+
 Under test:
     inference/src/inference_pipeline.py
 """
 
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
 import pytest
 import sklearn
-from inference_pipeline import InferencePipeline, OrderSpec, score
+from inference_pipeline import InferencePipeline, OrderSpec, score, signal_cutoff
 from secform4strategy_clients.fakes.models import FakeModelStore
-from secform4strategy_clients.records import ModelMetadata, Scores
+from secform4strategy_clients.records import MarketSession, ModelMetadata, Scores
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.pipeline import Pipeline
@@ -154,3 +157,61 @@ class TestTrades:
         inference, broker = pipeline(METADATA)
         inference.execute_trades(score(MODEL, FEATURES, ROWS), 0.999, ORDER)
         assert broker.placed == []
+
+
+NEW_YORK = ZoneInfo('America/New_York')
+HOUR = timedelta(hours=1)
+
+
+def at(day: int, hour: int, minute: int = 0) -> datetime:
+    """A New York time in November 2026."""
+    return datetime(2026, 11, day, hour, minute, tzinfo=NEW_YORK)
+
+
+#: Alpaca's November 2026 sessions: Thanksgiving (26th) is closed and the day after closes at 13:00
+SESSIONS = (
+    *(MarketSession(at(day, 9, 30), at(day, 16)) for day in (16, 17, 18, 19, 20, 23, 24, 25)),
+    MarketSession(at(27, 9, 30), at(27, 13)),
+    MarketSession(at(30, 9, 30), at(30, 16)),
+)
+
+
+class TestSignalCutoff:
+    """In a session a row trades for an hour; outside one and in the first hour, the hour counts from the last close."""
+
+    def test_in_a_session_a_row_trades_for_an_hour(self) -> None:
+        assert signal_cutoff(at(24, 11), SESSIONS, HOUR) == at(24, 10)
+
+    def test_in_the_first_hour_overnight_rows_still_trade(self) -> None:
+        assert signal_cutoff(at(24, 9, 45), SESSIONS, HOUR) == at(23, 15)
+        assert signal_cutoff(at(24, 10, 30), SESSIONS, HOUR) == at(24, 9, 30)
+
+    def test_after_the_dst_change_the_cutoff_keeps_friday_edt_close(self) -> None:
+        friday = datetime(2026, 10, 30, 16, tzinfo=NEW_YORK)
+        sessions = (MarketSession(datetime(2026, 10, 30, 9, 30, tzinfo=NEW_YORK), friday), *SESSIONS)
+        assert signal_cutoff(datetime(2026, 11, 2, 8, tzinfo=NEW_YORK), sessions, HOUR) == friday - HOUR
+
+    def test_before_the_open_the_hour_counts_from_the_last_close(self) -> None:
+        assert signal_cutoff(at(24, 8), SESSIONS, HOUR) == at(23, 15)
+
+    def test_after_the_close_the_hour_counts_from_the_close(self) -> None:
+        assert signal_cutoff(at(23, 16, 30), SESSIONS, HOUR) == at(23, 15)
+
+    def test_monday_before_the_open_reaches_back_to_friday(self) -> None:
+        assert signal_cutoff(at(23, 8), SESSIONS, HOUR) == at(20, 15)
+
+    def test_a_holiday_reaches_back_to_the_day_before(self) -> None:
+        assert signal_cutoff(at(27, 8), SESSIONS, HOUR) == at(25, 15)
+
+    def test_an_early_close_counts_from_its_own_time(self) -> None:
+        assert signal_cutoff(at(27, 12, 30), SESSIONS, HOUR) == at(27, 11, 30)
+        assert signal_cutoff(at(27, 14), SESSIONS, HOUR) == at(27, 12)
+
+    def test_the_weekend_reaches_back_to_friday(self) -> None:
+        assert signal_cutoff(at(28, 12), SESSIONS, HOUR) == at(27, 12)
+
+    def test_the_cutoff_holds_for_a_utc_now(self) -> None:
+        assert signal_cutoff(at(24, 8).astimezone(UTC), SESSIONS, HOUR) == at(23, 15)
+
+    def test_without_sessions_a_row_trades_for_an_hour(self) -> None:
+        assert signal_cutoff(at(28, 12), (), HOUR) == at(28, 11)

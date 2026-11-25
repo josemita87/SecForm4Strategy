@@ -1053,8 +1053,8 @@ const P_LIVE = ({
   ambientMs: 1100,
   quiet: [5, 6],
   steps: [
-    { cap: "EventBridge Scheduler starts the poller every minute. DynamoDB keeps each seen key for 7 days.",
-      notes: ["EventBridge Scheduler polls the SEC feed every minute; DynamoDB skips filings already sent.", "Lambda bills per invocation, so an idle minute costs nothing; an always-on container would bill around the clock (D1)."] },
+    { cap: "EventBridge Scheduler starts the poller every minute of the trading day, and at 07:55 ET for the night's filings. DynamoDB keeps each seen key for 7 days.",
+      notes: ["EventBridge Scheduler polls the SEC feed every minute from 08:00 to 15:59 ET on weekdays; a 20-page poll at 07:55 ET collects the filings accepted overnight, which trade at the open. DynamoDB skips filings already sent.", "Lambda bills per invocation, so an idle minute costs nothing; an always-on container would bill around the clock (D1)."] },
     { cap: "SQS <code>live-filings</code> triggers the scraper Lambda: at most 2 at a time, 2.25 SEC requests per second each.",
       notes: ["2 scraper Lambdas × 2.25 = 4.5 SEC requests per second.", "Partial batch failures: SQS redelivers only unfinished messages; after 5 receives, the DLQ."] },
     { cap: "The kafka-to-store service collects up to 100 transactions for 5 s, so one Iceberg commit serves a burst. It writes <code>BI4</code>.",
@@ -1067,7 +1067,7 @@ const P_LIVE = ({
       notes: ["One image, two entry points: <code>main.py</code> on ECS, <code>awslambdaric</code> on Lambda (D3).", "The trade-off: about 1 GB images, so cold starts of 10–45 s. For the 85% filed outside market hours, that delay changes nothing."] },
   ],
   svg: () => `<g id="l-dia" style="transition:opacity .6s">
-    ${node({ s: 0, id: "l-sch", x: 40, y: 205, w: 215, k: "int", i: "sched", t: "Scheduler", sub: "rate(1 minute)", submono: true })}
+    ${node({ s: 0, id: "l-sch", x: 40, y: 205, w: 215, k: "int", i: "sched", t: "Scheduler", sub: "weekdays 08–16 ET", submono: true })}
     ${edge({ s: 0, id: "l-e1", d: "M255 241 H300" })}
     ${node({ s: 0, id: "l-poll", x: 300, y: 205, w: 255, k: "compute", i: "lambda", t: "poller λ", sub: "master-index · live" })}
     ${edge({ s: 0, id: "l-edd", d: "M427 277 V352", cls: "dashed" })}
@@ -1234,7 +1234,7 @@ const P_INFRA = ({
       ${edge({ id: "n-l2", d: "M1010 522 V578", data: { lam: 1 } })}
       ${node({ id: "n-s3", x: 850, y: 578, w: 320, k: "store", i: "s3", t: "S3 data bucket", sub: "warehouse/ · models/" })}
       ${node({ id: "n-wk", x: 850, y: 690, w: 320, k: "int", i: "sched", t: "weekly-retrain", sub: "Sat 06:00 UTC → retrain", sid: "n-wk-s" })}
-      ${node({ id: "n-lv", x: 850, y: 785, w: 320, k: "int", i: "sched", t: "live-poll", sub: "every minute → poller", sid: "n-lv-s" })}
+      ${node({ id: "n-lv", x: 850, y: 785, w: 320, k: "int", i: "sched", t: "live-poll", sub: "weekdays 08–16 ET → poller", sid: "n-lv-s" })}
       ${edge({ id: "n-e8", d: "M510 322 V215 H1205 V268 H1230", data: { nat: 1 } })}
       ${edge({ id: "n-l3", d: "M1170 486 H1205 V268 H1230", data: { lam: 1 } })}
       ${edge({ id: "n-e9", d: "M1205 268 V356 H1230", data: { nat: 1, noamb: 1 } })}
@@ -1294,7 +1294,7 @@ const P_INFRA = ({
     $("#n-far-s", el).textContent = on ? "retrain steps · Spot first" : "cannot pull images";
     $("#n-lam-s", el).textContent = lv ? "live path · outside the VPC" : "idle: poll schedule off";
     $("#n-wk-s", el).textContent = on && wk ? "Sat 06:00 UTC → retrain" : "schedule DISABLED";
-    $("#n-lv-s", el).textContent = lv ? "every minute → poller" : "schedule DISABLED";
+    $("#n-lv-s", el).textContent = lv ? "weekdays 08–16 ET → poller" : "schedule DISABLED";
     $("#n-cost", el).innerHTML = on
       ? `<div style="font-size:30px;font-weight:760">≈ $1.20 <span style="font-size:17px;color:var(--muted);font-weight:500">per day + usage</span></div><div style="font-size:15.5px;color:var(--muted)">NAT $1.08 + Elastic IP $0.12 per day, plus usage</div>`
       : lv
@@ -2327,7 +2327,7 @@ section({
     { cap: "The batch path: Step Functions <code>retrain</code> runs six Fargate tasks; <code>filings</code> and <code>transactions</code> queues; writes BT4.",
       notes: ["Batch: Scheduler on Saturday, six tasks in order, SQS between the first three; kafka-to-store writes BT4."] },
     { cap: "The live path: poller with DynamoDB <code>seen</code>, SQS-triggered Lambdas, <code>live-tickers</code> → Pipe → <code>live-score</code>.",
-      notes: ["Live: a poll every minute, queues between the Lambdas, then the Pipe starts live-score; kafka-to-store writes BI4."] },
+      notes: ["Live: a poll every minute of the trading day, queues between the Lambdas, then the Pipe starts live-score; kafka-to-store writes BI4."] },
     { cap: "The Iceberg band: each path writes <strong>its own transaction table</strong>, BT4 or BI4.",
       notes: ["One feature store on S3 with Glue; the transaction tables stay separate, so live never writes training data."] },
     { cap: "Where the paths meet: prices (P), labels (RT4) and the model.",
@@ -2371,9 +2371,9 @@ section({
   map: [[0, 4], [0, 3], [0, 3], [0, 3], [0, 3], [0, 3], [0, 3], [1, 0]],
   spots: [null, {"r": [[34, 199, 527, 84], [254, 346, 212, 84]], "l": [40, 455, "Every minute · seen keys in DynamoDB"]}, {"r": [[594, 199, 807, 136], [1294, 346, 277, 84], [474, 346, 222, 84]], "l": [1180, 505, "SQS chain with DLQs"]}, {"r": [[709, 346, 552, 132]], "l": [1010, 505, "Pipe: no DLQ · failed run loses its tickers"]}, {"r": [[36, 476, 968, 218]], "l": [1010, 540, "live-score: prices → rows → scores"]}, {"r": [[404, 756, 632, 84], [1044, 559, 262, 84]], "l": [1060, 720, "Model from S3 · keys from SSM · Alpaca"]}, null, null, null],
   steps: [
-    { cap: "Poll every minute → SQS → Lambda → EventBridge Pipe → <code>live-score</code> (<strong>D8</strong>). <span class=\"tag acc\">simulated run</span>",
+    { cap: "Poll every minute, 08–16 ET → SQS → Lambda → EventBridge Pipe → <code>live-score</code> (<strong>D8</strong>). <span class=\"tag acc\">simulated run</span>",
       notes: ["Sections 5.1 and 5.2. The run plays by itself; ▶ Send a filing replays it. An animation, not a recording; earlier real runs verified the wiring."] },
-    { cap: "EventBridge Scheduler starts the poller every minute; DynamoDB <code>seen</code> skips filings already sent.",
+    { cap: "EventBridge Scheduler starts the poller every minute of the trading day; DynamoDB <code>seen</code> skips filings already sent.",
       notes: ["The poller reads the SEC feed, checks the seen keys, then writes the new keys with a 7-day TTL."] },
     { cap: "SQS chain: <code>live-filings</code> → scraper → <code>live-transactions</code> → kafka-to-store; each queue has a DLQ.",
       notes: ["The scrapers fetch from SEC EDGAR at 2 × 2.25 requests per second; partial batch failures redeliver only unfinished messages."] },

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 import xxhash
 from config import Kafka, Sqs, config
+from pydantic import BaseModel, ConfigDict, Field
 from secform4strategy_clients.edgar import EdgarClient
 from secform4strategy_clients.messaging import KafkaClient
 from secform4strategy_clients.ports import PermanentError, RetryableError
@@ -30,6 +31,14 @@ logging.basicConfig(
 logging.getLogger('httpx').setLevel(logging.WARNING)
 
 FORM_TYPE = '4'
+
+
+class PollEvent(BaseModel):
+    """The scheduler's event for one poll; the catch-up schedule sets ``num_pages`` to read further back."""
+
+    model_config = ConfigDict(strict=True, frozen=True)
+
+    num_pages: int | None = Field(None, gt=0)
 
 
 def build_messages(filings: Iterable[Filing]) -> tuple[tuple[str, dict[str, str]], ...]:

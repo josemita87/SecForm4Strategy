@@ -14,6 +14,6 @@ output "score_state_machine_arn" {
 }
 
 output "poller_schedule_name" {
-  description = "The schedule that invokes the poller every minute."
+  description = "The schedule that invokes the poller every minute of the trading day."
   value       = aws_scheduler_schedule.poll.name
 }

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
         Filing,
         FunctionMetrics,
         HistoryEvent,
+        MarketSession,
         Message,
         ModelMetadata,
         QueueDepth,
@@ -136,6 +137,14 @@ class TradingAccount(Protocol):
 
     def equity_history(self, period: str, timeframe: str) -> tuple[EquityPoint, ...]:
         """Return the equity over ``period`` at ``timeframe`` resolution, oldest first."""
+        ...
+
+
+class MarketCalendar(Protocol):
+    """The exchange's trading sessions, with holidays left out and early closes at their own time."""
+
+    def sessions(self, start: date, end: date) -> tuple[MarketSession, ...]:
+        """Return the sessions from ``start`` to ``end``, both included, oldest first, as tz-aware times."""
         ...
 
 

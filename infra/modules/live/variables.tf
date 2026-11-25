@@ -24,12 +24,21 @@ variable "functions" {
 }
 
 variable "poller" {
-  description = "The function the schedule invokes every minute."
+  description = "The function the schedules invoke."
   type        = string
 }
 
+variable "poll_schedule" {
+  description = "Scheduler cron expressions in New York time: `every` polls the feed's newest page, `catch_up` reads `catch_up_pages` pages once, before `every` starts."
+  type = object({
+    every          = string
+    catch_up       = string
+    catch_up_pages = number
+  })
+}
+
 variable "schedule_enabled" {
-  description = "Poll the filing feed every minute; off, the live path receives nothing."
+  description = "Run both poll schedules; off, the live path receives nothing."
   type        = bool
 }
 
