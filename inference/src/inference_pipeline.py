@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, NamedTuple
 
 import pandas as pd
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from secform4strategy_clients.ports import Broker, ModelStore
+    from secform4strategy_clients.records import MarketSession
     from sklearn.pipeline import Pipeline
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,26 @@ class LoadedModel(NamedTuple):
     pipeline: Pipeline
     features: tuple[str, ...]
     probability_cutoff: float
+
+
+def signal_cutoff(now: datetime, sessions: Sequence[MarketSession], max_age: timedelta) -> datetime:
+    """Return the acceptance time a row must be later than to trade at ``now``.
+
+    In a session a row may be ``max_age`` old. Outside one, and for ``max_age`` after the open, the age
+    counts from the last close, so the filings disclosed since then trade at the open even when the
+    morning queue runs late; no close among ``sessions`` counts from ``now``.
+
+    Args:
+        now: The current time, tz-aware.
+        sessions: The market sessions around ``now``.
+        max_age: The oldest a row may be when it trades.
+
+    Returns:
+        The cutoff, tz-aware.
+    """
+    if any(session.open + max_age <= now < session.close for session in sessions):
+        return now - max_age
+    return max((session.close for session in sessions if session.close <= now), default=now) - max_age
 
 
 def score(model: Pipeline, features: Sequence[str], rows: pd.DataFrame) -> pd.DataFrame:

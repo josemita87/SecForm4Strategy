@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 from config import S3Models, config
 from constants import Col, FeatureGroup
-from inference_pipeline import InferencePipeline, OrderSpec, score
+from inference_pipeline import InferencePipeline, OrderSpec, score, signal_cutoff
 from paths import SPEC_PATH
 from pyiceberg.catalog import load_catalog
 from secform4strategy_clients.broker import AlpacaClient
@@ -31,8 +31,9 @@ logging.getLogger().setLevel(logging.INFO)
 
 if not isinstance(config.model_store, S3Models):
     raise TypeError('The Lambda handler loads the model from S3: set MODEL_STORE__BACKEND=s3')
+broker = AlpacaClient(config.alpaca_api_key, config.alpaca_api_secret, config.alpaca_base_url)
 pipeline = InferencePipeline(
-    broker=AlpacaClient(config.alpaca_api_key, config.alpaca_api_secret, config.alpaca_base_url),
+    broker=broker,
     model_store=S3ModelStore(config.model_store.region, config.model_store.bucket, config.model_store.prefix),
 )
 store = IcebergFeatureStore(
@@ -45,9 +46,10 @@ store = IcebergFeatureStore(
 def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
     """Score the tickers' fresh rows, and short the likely short winners at once.
 
-    A row is fresh when its latest filing was accepted within ``MAX_SIGNAL_AGE_MINUTES``: the event
-    carries tickers, and their older rows must not trade late. Orders carry their row key as client
-    order id, so a retry never doubles one.
+    A row is fresh when its latest filing was accepted within ``MAX_SIGNAL_AGE_MINUTES`` of now, or of
+    the last close while the market is closed (Alpaca's calendar), so filings disclosed overnight trade
+    at the open. The event carries tickers, and their older rows must not trade late. Orders carry their
+    row key as client order id, so a retry never doubles one.
 
     Args:
         event: ``{"tickers": [...]}``.
@@ -59,16 +61,23 @@ def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
         of a short winner (the site's live feed reads them).
 
     Raises:
-        RetryableError: Orders failed transiently; the state machine retries, and placed orders are not repeated.
+        RetryableError: Orders or the calendar failed transiently; the state machine retries, and placed orders
+            are not repeated.
     """
     if not (tickers := list(event['tickers'])):
         logger.info('No tickers with rows to score')
         return {'tickers': tickers, 'scored': 0, 'shorts': [], 'probability_cutoff': None, 'predictions': []}
     rows = store.read(FeatureGroup.BIR4, where={Col.TICKER: tickers})
-    since = datetime.now(UTC) - timedelta(minutes=config.max_signal_age_minutes)
+    now = datetime.now(UTC)
+    # Ten days back reaches the last close across any weekend and holiday
+    since = signal_cutoff(
+        now,
+        broker.sessions(now.date() - timedelta(days=10), now.date()),
+        timedelta(minutes=config.max_signal_age_minutes),
+    )
     fresh = rows[pd.to_datetime(rows[Col.ACCEPTED_AT], utc=True) > since]
     if fresh.empty:
-        logger.info(f'No rows of {tickers} accepted since {since:%Y-%m-%d %H:%M} UTC')
+        logger.info(f'No rows of {tickers} accepted since {since:%Y-%m-%d %H:%M %Z}')
         return {'tickers': tickers, 'scored': 0, 'shorts': [], 'probability_cutoff': None, 'predictions': []}
     loaded = pipeline.load_model(config.probability_cutoff)
     predictions = score(loaded.pipeline, loaded.features, fresh)

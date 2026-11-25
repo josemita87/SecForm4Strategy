@@ -18,7 +18,7 @@ When a corporate insider sells their own company's stock, they must disclose it 
 - **No look-ahead anywhere.** Positions are valued at the last close before the acceptance day; a ticker's past-return feature averages only labels already realised at acceptance, the same rule in training and inference; the holdout and the walk-forward validation folds are split by time and purged.
 - **One row per trading opportunity.** Everything disclosed for a ticker before its next market price is one row, with the cluster of insiders who sold in the preceding 30 days, so several insiders selling together is visible to the model, and no label is counted twice.
 - **Prices that stay honest.** Returns use split- and dividend-adjusted prices; values use the price as it traded that day; an incremental refresh detects when Yahoo has re-based past prices and fetches the history again.
-- **Speed from disclosure.** The live path polls SEC every minute and trades as soon as it scores a filing. A filing reaches an Alpaca paper order within minutes of publication.
+- **Speed from disclosure.** The live path polls SEC every minute of the trading day and trades as soon as it scores a filing. A poll at 07:55 ET collects the filings disclosed overnight, so they trade at the open. A filing reaches an Alpaca paper order within minutes of publication.
 - **One feature implementation.** The live path runs the batch services as Lambda handlers on the same images, so training and live scoring compute features with the same code.
 - **About $0 per day when idle.** Both paths are serverless. One Terraform switch creates the NAT gateway and enables the schedules (about $1.20 per day plus usage) and removes them again.
 - **Clean boundaries, tested.** Each microservice owns one stage; every external system sits behind a typed port in one shared package; unit tests run on real Form 4 submissions and typed fakes, never mocks.
@@ -39,7 +39,7 @@ The system has two paths. Both share one Iceberg feature store in S3 (Glue catal
 | --- | --- | --- |
 | Work | The first full load of years of filings, then a weekly retrain on the new filings | One filing at a time, as SEC publishes it |
 | Compute | ECS tasks on Fargate ARM64, in private subnets | Lambda functions on the same images, outside the VPC |
-| Trigger | EventBridge Scheduler starts the Step Functions state machine `retrain` every Saturday at 06:00 UTC | EventBridge Scheduler polls every minute; SQS and an EventBridge Pipe start the state machine `live-score` |
+| Trigger | EventBridge Scheduler starts the Step Functions state machine `retrain` every Saturday at 06:00 UTC | EventBridge Scheduler polls every minute from 08:00 to 15:59 ET and once at 07:55 ET, on weekdays; SQS and an EventBridge Pipe start the state machine `live-score` |
 | Steps | master-index → scraper → kafka-to-store → yahoo-connect → target → training | master-index → scraper → kafka-to-store → `live-score`: yahoo-connect → target → inference |
 
 Every queue has a dead-letter queue with a CloudWatch alarm that emails through SNS. A $5 monthly budget alerts on actual and forecast cost. The details, including network, identity, messaging and cost, are in [docs/aws.md](docs/aws.md).
@@ -107,7 +107,7 @@ Services depend on the Protocols in `secform4strategy_clients.ports`, never on c
 | **prices-feature-pipeline/yahoo_connect** | Refreshes daily bars for the transactions' tickers into `P`, never mixing price bases and never storing a provisional close. |
 | **prices-feature-pipeline/target** | Collapses transactions into one row per ticker and next market print, adds insider clusters, company context and values, computes labels, and writes `RT4` / `BIR4`. |
 | **training** | Purged walk-forward grid search with a time holdout ([docs/training.md](docs/training.md)), a scikit-learn pipeline (preprocessing + gradient-boosted classifier of short winners), baselines, a short-side simulation; saves the pipeline with its metadata as a new version, and promotes it only through a gate ([docs/training.md](docs/training.md#promotion)). |
-| **inference** | Loads the saved pipeline, scores the newest `BIR4` rows and places short orders through Alpaca. On the live path it trades only rows accepted within the last 60 minutes. |
+| **inference** | Loads the saved pipeline, scores the newest `BIR4` rows and places short orders through Alpaca. On the live path it trades only rows accepted within the last 60 minutes, or since the last close while the market is closed and in the first hour of the session. |
 | **site-publisher** | Reads the runs, queues, lakehouse, model and Alpaca paper account, and writes the study website's `data/*.json`. |
 | **packages/secform4strategy-clients** | The ports, their adapters (EDGAR, SQS, Kafka, Iceberg, DynamoDB, yfinance, Alpaca, local and S3 model stores, SSM settings) and typed fakes for tests. See its [README](packages/secform4strategy-clients/README.md). |
 

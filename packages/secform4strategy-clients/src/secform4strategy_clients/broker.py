@@ -1,4 +1,6 @@
-"""Alpaca brokerage client for order placement and account reads (a ``Broker`` and ``TradingAccount`` adapter).
+"""Alpaca brokerage client for orders, account reads and the market calendar.
+
+It is a ``Broker``, ``TradingAccount`` and ``MarketCalendar`` adapter.
 
 Pure infrastructure on ``alpaca-py``: credentials are passed in by the caller;
 this module holds no configuration and no trading-strategy logic. Orders carry a client order
@@ -8,9 +10,10 @@ reads parse them into records.
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from http import HTTPStatus
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import requests
 from alpaca.common.exceptions import APIError
@@ -18,11 +21,11 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, QueryOrderStatus
 from alpaca.trading.enums import OrderType as AlpacaOrderType
 from alpaca.trading.enums import TimeInForce as AlpacaTimeInForce
-from alpaca.trading.models import Order, PortfolioHistory, Position, TradeAccount
-from alpaca.trading.requests import GetOrdersRequest, GetPortfolioHistoryRequest, OrderRequest
+from alpaca.trading.models import Calendar, Order, PortfolioHistory, Position, TradeAccount
+from alpaca.trading.requests import GetCalendarRequest, GetOrdersRequest, GetPortfolioHistoryRequest, OrderRequest
 
 from secform4strategy_clients.ports import PermanentError, RetryableError
-from secform4strategy_clients.records import BrokerAccount, BrokerOrder, BrokerPosition, EquityPoint
+from secform4strategy_clients.records import BrokerAccount, BrokerOrder, BrokerPosition, EquityPoint, MarketSession
 
 if TYPE_CHECKING:
     from pydantic import SecretStr
@@ -31,10 +34,22 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: Alpaca's calendar gives session times as naive New York wall-clock times
+EXCHANGE_TZ = ZoneInfo('America/New_York')
+
 
 def _number(value: str | float | None) -> float | None:
     """Return Alpaca's numeric string as a float, or None when absent."""
     return None if value is None else float(value)
+
+
+def _transient(error: APIError) -> bool:
+    """Return whether an Alpaca API error is worth repeating: no status, 429 or 5xx."""
+    return (
+        (status := error.status_code) is None
+        or status == HTTPStatus.TOO_MANY_REQUESTS
+        or status >= HTTPStatus.INTERNAL_SERVER_ERROR
+    )
 
 
 class AlpacaClient:
@@ -102,16 +117,12 @@ class AlpacaClient:
         except requests.RequestException as error:
             raise RetryableError(f'Order {client_order_id}: {error!r}') from error
         except APIError as error:
-            if (
-                (status := error.status_code) is None
-                or status == HTTPStatus.TOO_MANY_REQUESTS
-                or status >= HTTPStatus.INTERNAL_SERVER_ERROR
-            ):
-                raise RetryableError(f'Order {client_order_id}: HTTP {status} {error}') from error
-            if status == HTTPStatus.UNPROCESSABLE_ENTITY and 'client_order_id must be unique' in str(error):
+            if error.status_code == HTTPStatus.UNPROCESSABLE_ENTITY and 'client_order_id must be unique' in str(error):
                 logger.info(f'Order {client_order_id} was placed before')
                 return None
-            raise PermanentError(f'Order {client_order_id}: HTTP {status} {error}') from error
+            if _transient(error):
+                raise RetryableError(f'Order {client_order_id}: HTTP {error.status_code} {error}') from error
+            raise PermanentError(f'Order {client_order_id}: HTTP {error.status_code} {error}') from error
         logger.info(f'Order submitted: {order}')
         return order
 
@@ -198,4 +209,32 @@ class AlpacaClient:
             EquityPoint(datetime.fromtimestamp(stamp, UTC), float(equity))
             for stamp, equity in zip(history.timestamp, history.equity, strict=True)
             if equity is not None
+        )
+
+    def sessions(self, start: date, end: date) -> tuple[MarketSession, ...]:
+        """Return the regular sessions from ``start`` to ``end``, both included, oldest first.
+
+        Args:
+            start: The first day.
+            end: The last day.
+
+        Returns:
+            One session per trading day, its open and close in New York time.
+
+        Raises:
+            RetryableError: The connection failed, Alpaca gave no status, or it answered 429 or 5xx after its retries.
+            PermanentError: Alpaca answered any other error.
+        """
+        try:
+            days = self.api.get_calendar(GetCalendarRequest(start=start, end=end))
+        except requests.RequestException as error:
+            raise RetryableError(f'Calendar {start} to {end}: {error!r}') from error
+        except APIError as error:
+            if _transient(error):
+                raise RetryableError(f'Calendar {start} to {end}: HTTP {error.status_code} {error}') from error
+            raise PermanentError(f'Calendar {start} to {end}: HTTP {error.status_code} {error}') from error
+        return tuple(
+            MarketSession(day.open.replace(tzinfo=EXCHANGE_TZ), day.close.replace(tzinfo=EXCHANGE_TZ))
+            for day in days
+            if isinstance(day, Calendar)
         )

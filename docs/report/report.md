@@ -46,9 +46,9 @@ Insiders know more about their company than the market does. The project tests o
 
 A trader can act on a filing only after the SEC makes it public. Every transaction therefore carries `accepted_at`, the moment the SEC accepted the filing. This timestamp is the only clock for labels. The insider's own trade date, often days earlier, is a model feature and never times a label.
 
-Other traders read the same filings, so the price can move soon after publication. A system that reacts sooner can capture more of the move. It drives two cloud design choices: the live path polls the SEC every minute, and it trades as soon as it scores a filing.
+Other traders read the same filings, so the price can move soon after publication. A system that reacts sooner can capture more of the move. It drives two cloud design choices: the live path polls the SEC every minute of the trading day, and it trades as soon as it scores a filing.
 
-The timing of filings limits that edge. Of the 215,273 labelled disclosure rows in `RT4`, 32,434 (15.1%) were accepted in US market hours, Monday to Friday from 09:30 to 16:00 ET. The other 85% arrive outside market hours, and their next price print is the next open. Nobody can trade them before the open, so the race starts at the open for every trader, and a batch run before the open would reach the same entry price. The live path adds value in two ways: it makes in-session filings tradable at the same day's close, and it gives both paths one implementation. The inference service trades only rows whose latest filing is at most 60 minutes old (`MAX_SIGNAL_AGE_MINUTES`).
+The timing of filings limits that edge. Of the 215,273 labelled disclosure rows in `RT4`, 32,434 (15.1%) were accepted in US market hours, Monday to Friday from 09:30 to 16:00 ET. The other 85% arrive outside market hours, and their next price print is the next open. Nobody can trade them before the open, so the race starts at the open for every trader, and a batch run before the open would reach the same entry price. The live path adds value in two ways: it makes in-session filings tradable at the same day's close, and it gives both paths one implementation. In a session, the inference service trades only rows whose latest filing is at most 60 minutes old (`MAX_SIGNAL_AGE_MINUTES`). Outside a session, and in its first hour, the 60 minutes count back from the last close. A catch-up poll at 07:55 ET collects the filings accepted overnight, so the 85% that arrive outside market hours still get orders for the next open (Section 4.4).
 
 ### 1.3 What the system does, end to end
 
@@ -344,8 +344,8 @@ The first full load is the same state machine, started once by hand:
 
 The live path runs the batch services as Lambda functions, on the same container images, scoped to the tickers of each new filing:
 
-1. EventBridge Scheduler invokes `secform4strategy-live-master-index` every minute (`secform4strategy-live-poll`).
-2. The master-index service reads the first page of the SEC's current Form 4 feed. It sends the filings that the DynamoDB table `secform4strategy-seen` does not hold to `secform4strategy-live-filings`, then records them. Each item expires after 7 days (`SEEN_DAYS`).
+1. EventBridge Scheduler invokes `secform4strategy-live-master-index` every minute from 08:00 to 15:59 ET, Monday to Friday (`secform4strategy-live-poll`). A second schedule, `secform4strategy-live-catch-up`, invokes it at 07:55 ET with `{"num_pages": 20}`.
+2. The master-index service reads the first page of the SEC's current Form 4 feed, or 20 pages for the catch-up. It sends the filings that the DynamoDB table `secform4strategy-seen` does not hold to `secform4strategy-live-filings`, then records them. Each item expires after 7 days (`SEEN_DAYS`).
 3. The scraper Lambda parses each filing and sends its transactions to `secform4strategy-live-transactions`.
 4. The kafka-to-store service upserts the transactions into `BI4` and sends `{"tickers": [...]}` to `secform4strategy-live-tickers`.
 5. The EventBridge Pipe `secform4strategy-live-tickers` starts one run of the state machine `secform4strategy-live-score` per batch of up to 10 messages.
@@ -353,20 +353,22 @@ The live path runs the batch services as Lambda functions, on the same container
 
 | Function | Trigger | Settings |
 | --- | --- | --- |
-| master-index | Schedule, every minute | 512 MB, 60 s; `SEC_MAX_RATE=1` |
+| master-index | Schedules: every minute 08:00 to 15:59 ET, and 20 pages at 07:55 ET, on weekdays | 512 MB, 120 s; `SEC_MAX_RATE=1` |
 | scraper | `live-filings`, batches of 10 | 1024 MB, 120 s; at most 2 at a time, each at `SEC_MAX_RATE=2.25` |
 | kafka-to-store | `live-transactions`, up to 100, waiting at most 5 s | 2048 MB, 240 s; at most 2 at a time |
 | yahoo-connect | `live-score` | 2048 MB, 180 s |
 | target | `live-score` | 2048 MB, 180 s |
 | inference | `live-score` | 2048 MB, 180 s; `QTY=1`; the cutoff comes from the model metadata |
 
-The account's Lambda concurrency quota was raised from 10 to 1,000 executions on 2026-11-23; the live functions and the site publisher share it. The writers to `P` and `BIR4` (yahoo-connect and target) have a reserved concurrency of 1, so overlapping `live-score` runs wait for them.
+The account's Lambda concurrency quota was raised from 10 to 1,000 executions on 2026-11-23; the live functions and the site publisher share it. The writers to `P` and `BIR4` (yahoo-connect and target) have a reserved concurrency of 1, so overlapping `live-score` runs wait for them. A step retries `Lambda.TooManyRequestsException` up to 64 times, with waits that add up to about 30 minutes on average.
 
 **Same images, two runtimes.** Each function runs `<service directory>/.venv/bin/python -m awslambdaric`. `awslambdaric` is the Lambda runtime interface client: it receives events from the Lambda service and calls the handler. Each handler sits beside the service's `main.py` and calls the same functions as the batch loop. Training and live scoring therefore share one feature implementation, so the features cannot drift apart between them. The functions set `HOME=/tmp`, because the image's file system is read-only.
 
 **Partial batch failures.** The SQS triggers report partial batch failures. A handler returns the messages it did not finish in `batchItemFailures`, and SQS delivers only those again after the visibility timeout.
 
-**Retries and idempotent orders.** Each `live-score` step is retried twice on `States.TaskFailed`, after 5 and 10 seconds. The inference service raises `RetryableError` when an order is left unplaced, so the step runs again. Each order carries the row key as `client_order_id`, so Alpaca rejects a duplicate. The inference service loads the latest model at each invocation, so a new weekly model takes effect at once. It trades only fresh rows: rows whose latest filing was accepted within `MAX_SIGNAL_AGE_MINUTES` (default 60).
+**Retries and idempotent orders.** Each `live-score` step is retried twice on `States.TaskFailed`, after 5 and 10 seconds. The inference service raises `RetryableError` when an order is left unplaced, so the step runs again. Each order carries the row key as `client_order_id`, so Alpaca rejects a duplicate. The inference service loads the latest model at each invocation, so a new weekly model takes effect at once. It trades only fresh rows. In a session, a row is fresh when its latest filing was accepted within `MAX_SIGNAL_AGE_MINUTES` (default 60). Outside a session, and in its first 60 minutes, the 60 minutes count back from the last close, which Alpaca's market calendar gives with holidays and early closes. Filings accepted overnight therefore stay fresh until an hour after the open.
+
+**Scheduled polls.** The poller runs only on weekdays around market hours. Most Form 4s arrive after the close: about 470 to 560 from 16:00 to 22:00 ET, a few from 06:00 to 09:00 ET, and none from 22:00 to 06:00 ET. The catch-up poll at 07:55 ET reads 20 feed pages of 100 entries. The feed lists each filing once per filer, so 20 pages hold about 1,000 filings. The catch-up normally ends before the first minute poll at 08:00; if they overlap, the downstream upserts and client order ids absorb a filing sent twice. Alpaca queues the resulting market orders for the open.
 
 **Cold starts.** The images are about 1 GB. A first cold start exceeds Lambda's 10-second initialization limit, so Lambda runs the initialization again inside the invocation, which then succeeds. Measured cold invocations were 10 seconds for scraper, 45 seconds for kafka-to-store and 39 seconds for yahoo-connect. Warm invocations take a few seconds. A filing that arrives after a quiet period therefore reaches inference about 1 to 2 minutes after the poll. Provisioned concurrency would keep one instance warm for about $10 per month per function. The project accepts the cold start instead.
 
