@@ -247,4 +247,6 @@ Development conventions (tests, fakes, comments, Docker builds) are in [docs/dev
 
 ## License
 
-Released under the MIT License.
+The code is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may read, run and change it for any noncommercial purpose, for example personal study, research, teaching or evaluation. Schools, public research bodies and charities may also use it.
+
+Commercial use needs a separate license from the author. Commercial use includes selling the code or a product built on it, using it to trade for profit, and running it as a paid or competing service. To ask for a commercial license, contact [@josemita87](https://github.com/josemita87) on GitHub.
