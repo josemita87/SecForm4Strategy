@@ -3,7 +3,7 @@ name = "site-publisher"
 version = "0.1.0"
 description = "Publishes the demo site's JSON: live-score runs, stack health, the Alpaca paper portfolio, the model report and recent insider sales."
 authors = [{ name = "Josep Cubedo Macian", email = "136491450+josemita87@users.noreply.github.com" }]
-license = "MIT"
+license = "PolyForm-Noncommercial-1.0.0"
 requires-python = ">=3.14,<3.15"
 dependencies = [
     # Every adapter the publisher reads or writes comes from the shared clients package.
