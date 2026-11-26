@@ -19,7 +19,7 @@ variable "queue_arns" {
 }
 
 variable "task_access" {
-  description = "Per service: queues it sends to and receives from, and its capabilities (lakehouse-read, lakehouse-write, models-read, models-write, seen-keys, read-secrets, read-alpaca-keys)."
+  description = "Per service: queues it sends to and receives from, and its capabilities (lakehouse-read, lakehouse-write, predictions-write, models-read, models-write, seen-keys, read-secrets, read-alpaca-keys)."
   type = map(object({
     sends        = optional(list(string), [])
     receives     = optional(list(string), [])

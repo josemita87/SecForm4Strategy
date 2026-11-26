@@ -66,6 +66,11 @@ locals {
       { actions = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], resources = ["${local.bucket_arn}/warehouse/*"] },
       { actions = ["s3:ListBucket"], resources = [local.bucket_arn] },
     ]
+    # With lakehouse-read: the predictions tables only, which the first write creates
+    predictions-write = [
+      { actions = ["glue:CreateTable", "glue:UpdateTable"], resources = concat(slice(local.glue_arns, 0, 2), ["arn:aws:glue:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.glue_database}/predictions_*"]) },
+      { actions = ["s3:PutObject", "s3:DeleteObject"], resources = ["${local.bucket_arn}/warehouse/predictions_*"] },
+    ]
     models-read = [
       { actions = ["s3:GetObject"], resources = ["${local.bucket_arn}/models/*"] },
       { actions = ["s3:ListBucket"], resources = [local.bucket_arn] },

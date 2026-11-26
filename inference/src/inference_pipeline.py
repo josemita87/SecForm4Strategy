@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import pandas as pd
 import sklearn
-from constants import Col
+from constants import Col, OrderOutcome
+from secform4strategy_clients.model_store import version_of
 from secform4strategy_clients.ports import OrderType, PermanentError, RetryableError, Side, TimeInForce
 
 if TYPE_CHECKING:
@@ -31,11 +32,12 @@ class OrderSpec:
 
 
 class LoadedModel(NamedTuple):
-    """The trained pipeline, the feature order its input arrays follow, and the probability cutoff it shorts at."""
+    """The trained pipeline, its input feature order, the probability cutoff it shorts at, and its version."""
 
     pipeline: Pipeline
     features: tuple[str, ...]
     probability_cutoff: float
+    version: str
 
 
 def signal_cutoff(now: datetime, sessions: Sequence[MarketSession], max_age: timedelta) -> datetime:
@@ -99,13 +101,13 @@ class InferencePipeline:
         self.model_store = model_store
 
     def load_model(self, cutoff_override: float | None = None) -> LoadedModel:
-        """Load the trained pipeline, its feature order, and the probability cutoff to short at.
+        """Load the trained pipeline, its feature order, the probability cutoff to short at, and its version.
 
         Args:
             cutoff_override: A cutoff that replaces the one saved with the model.
 
         Returns:
-            The pipeline, its ordered feature names and the cutoff.
+            The pipeline, its ordered feature names, the cutoff and the model version.
 
         Raises:
             RuntimeError: If the model was saved with a different scikit-learn version, or without a probability
@@ -125,9 +127,9 @@ class InferencePipeline:
             f'Loaded model trained at {metadata.trained_at} (git {metadata.git_sha}); '
             f'shorting at probability {cutoff:.2f} ({"override" if cutoff_override is not None else "model"})'
         )
-        return LoadedModel(model, metadata.features, cutoff)
+        return LoadedModel(model, metadata.features, cutoff, version_of(metadata))
 
-    def execute_trades(self, predictions_df: pd.DataFrame, cutoff: float, order: OrderSpec) -> list[str]:
+    def execute_trades(self, predictions_df: pd.DataFrame, cutoff: float, order: OrderSpec) -> dict[str, OrderOutcome]:
         """Place a short order for every row whose probability is at least ``cutoff``, once per row key.
 
         Each order's client order id is its row's key, so a rerun skips orders already placed.
@@ -139,17 +141,23 @@ class InferencePipeline:
             order: How each order is placed.
 
         Returns:
-            Keys of the orders that failed transiently and are left for a rerun.
+            Each shorted row key's outcome; ``failed`` ones are left for a rerun.
         """
-        retry_later = []
-        for key, ticker in predictions_df.loc[
-            predictions_df[Col.PROBABILITY] >= cutoff, [Col.KEY, Col.TICKER]
-        ].itertuples(index=False):
-            try:
-                self.broker.place_order(ticker, order.qty, order.side, order.order_type, order.time_in_force, key)
-            except PermanentError as error:
-                logger.error(f'Order {key} dropped: {error}')
-            except RetryableError as error:
-                logger.error(f'Order {key} left for a rerun: {error}')
-                retry_later.append(key)
-        return retry_later
+        return {
+            key: self._place(ticker, key, order)
+            for key, ticker in predictions_df.loc[
+                predictions_df[Col.PROBABILITY] >= cutoff, [Col.KEY, Col.TICKER]
+            ].itertuples(index=False)
+        }
+
+    def _place(self, ticker: str, key: str, order: OrderSpec) -> OrderOutcome:
+        """Place one short under its row key and return what happened."""
+        try:
+            placed = self.broker.place_order(ticker, order.qty, order.side, order.order_type, order.time_in_force, key)
+        except PermanentError as error:
+            logger.error(f'Order {key} dropped: {error}')
+            return OrderOutcome.REJECTED
+        except RetryableError as error:
+            logger.error(f'Order {key} left for a rerun: {error}')
+            return OrderOutcome.FAILED
+        return OrderOutcome.PLACED_BEFORE if placed is None else OrderOutcome.SUBMITTED

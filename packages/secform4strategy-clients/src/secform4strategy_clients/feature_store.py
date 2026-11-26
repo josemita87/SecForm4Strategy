@@ -16,6 +16,7 @@ import pyarrow as pa
 from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
 from pyiceberg.expressions import AlwaysTrue, And, EqualTo, GreaterThanOrEqual, In
 from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.table import TableProperties
 
 from secform4strategy_clients.ports import RetryableError, is_many
 from secform4strategy_clients.retry import with_backoff
@@ -36,6 +37,10 @@ class IcebergFeatureStore:
     feature-group version. Pushes upsert by ``primary_key``, replacing whole rows;
     within one push the last row per key wins. Keys are one column: pyiceberg 0.12's upsert
     crashes the process on a composite key, so a composite identity is joined into one string.
+    A push that loses a commit race reloads the table and upserts again. Tables this store creates
+    turn off pyiceberg's own commit retry, which re-appends the rows without matching them against
+    the rival's commit and so can duplicate a key; tables created before keep that retry until
+    their ``commit.retry.num-retries`` property is set to 0.
 
     Attributes:
         catalog: The Iceberg catalog holding the tables.
@@ -156,7 +161,9 @@ class IcebergFeatureStore:
         try:
             table = self.catalog.load_table(identifier)
         except NoSuchTableError:
-            table = self.catalog.create_table(identifier, schema=incoming.schema)
+            table = self.catalog.create_table(
+                identifier, schema=incoming.schema, properties={TableProperties.COMMIT_NUM_RETRIES: '0'}
+            )
 
         target = schema_to_pyarrow(table.schema())
         if unknown := sorted(set(incoming.column_names) - set(target.names)):

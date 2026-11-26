@@ -182,6 +182,66 @@ The SQS triggers report partial batch failures. A handler returns the messages i
 
 Each `live-score` step is retried twice on `States.TaskFailed`, after 5 and 10 seconds. The inference service raises `RetryableError` when an order is left unplaced, so the step runs again. Each order carries the row key as `client_order_id`, so Alpaca rejects a duplicate. The inference service loads the latest model at each invocation, so a new weekly model takes effect immediately. It trades only fresh rows. In a session, a row is fresh when its latest filing was accepted within `MAX_SIGNAL_AGE_MINUTES` (default 60). Outside a session, and in its first 60 minutes, the 60 minutes count back from the last close, so every filing accepted since the close stays fresh until an hour after the open, even when the morning queue runs late. The inference service reads the sessions from Alpaca's market calendar, which includes holidays and early closes. The event carries tickers, so this rule keeps a ticker's older rows from trading late, for example after a retrain. In the session an order fills at once; outside it, Alpaca queues it for the open.
 
+#### Predictions
+
+After the orders, the inference service upserts one record per scored row into the Iceberg table `predictions_v1` (feature group `predictions`). The batch inference task writes the same records with `source = 'batch'` when it reads the feature store. The table has one key column, `key`, with the value `<source>|<model version>|<row key>`, for example `live|20261122T224917Z|TGT@2026-11-23T14:30Z`. A retry and a later run that scores the same row with the same model therefore replace the record. A new model adds a record beside the old one.
+
+| Column | Value |
+| --- | --- |
+| `row_key` | The `BIR4` row key, `<ticker>@<next print>` |
+| `ticker`, `accepted_at` | From the `BIR4` row |
+| `probability`, `probability_cutoff`, `shorted` | The probability of a short winner, the cutoff, and whether the probability reached it |
+| `model_version` | The model folder in `models/`, which is the training time |
+| `source` | `live` or `batch` |
+| `scored_at` | When the run started scoring; the feature group's event time |
+| `run_id` | The Lambda request id; null for a batch run |
+| `client_order_id` | The row key when the row was shorted, else null |
+| `order_outcome` | `submitted`, `placed_before`, `rejected` (Alpaca refused the order for good), `failed` (left for a retry), or null when the row was not shorted |
+
+The Alpaca order id is not stored. The client order id is unique in the account, and the Alpaca order list carries it, so readers join on it.
+
+The write runs after the orders, also when some orders are left for a retry. If the write fails, the step fails and Step Functions retries it. The retry places no order twice, because Alpaca rejects a repeated client order id, and it overwrites the records.
+
+Several `live-score` runs can write the table at once, because the inference Lambda has no reserved concurrency. A reserved concurrency of 1 would make each run wait for the previous run's orders, and that delay is on the trading path. Instead, the writes rely on Iceberg's optimistic concurrency: the commit that loses a race fails, and `IcebergFeatureStore.push` reloads the table and upserts again, up to 4 times. Tables the store creates set `commit.retry.num-retries` to 0. pyiceberg's own commit retry appends the rows again without matching them against the rival commit, so two runs that upsert the same key would store it twice. The tables created before this setting (`p_v1`, `bt4_v1`, `bi4_v1`, `rt4_v1`, `bir4_v1`) still use pyiceberg's retry.
+
+The table is not partitioned. It grows by a few rows per run, so day partitions would hold only tiny files. Each upsert adds a snapshot and small files, so the table needs the same compaction and snapshot expiry as the other tables.
+
+#### Measuring live performance
+
+`make live-performance` prints how the live path performs on the paper account. It only reads. It runs `inference/src/measure.py` with the `secform4` profile and reads four sources:
+
+- the `live` records of `predictions_v1`, one per row key (the latest `scored_at` wins),
+- the latest 500 orders and the open positions of the Alpaca paper account,
+- the `RT4` label (`pct_change`) of each predicted row,
+- the `label_return` saved with each model that scored a row.
+
+The report shows:
+
+| Line | Content |
+| --- | --- |
+| Live predictions | Rows scored, and rows at or above the probability cutoff |
+| Paper shorts | Sell orders whose client order id is a predicted row key, how many filled, and the other sell orders in the account |
+| P&L | `(fill price - current price) * qty` per filled short with an open position, and the total, in USD; one line per short |
+| Labelled rows | Predicted rows with an `RT4` label |
+| Hit rate | The share of labelled rows at or above the cutoff whose `pct_change` is below the model's `label_return` |
+| Base rate | The same share over every labelled row |
+| Calibration | Per tenth of probability: labelled rows, mean probability, and share of short winners |
+
+The P&L marks each short at the current price, because the live path never closes a position. The label is the return from the row's next print to the first close at least 30 days after that day. `RT4` gets the label only when a retrain runs after that close. A hit rate therefore needs at least 30 days of live signals and a retrain after them. Until then the report prints `n/a`.
+
+The same records are in Athena (workgroup `secform4strategy`, database `secform4strategy`). This query returns each live row once, with its label:
+
+```sql
+SELECT p.row_key, p.ticker, p.probability, p.shorted, p.order_outcome, r.pct_change
+FROM (
+  SELECT *, row_number() OVER (PARTITION BY row_key ORDER BY scored_at DESC) AS n
+  FROM predictions_v1 WHERE source = 'live'
+) p
+LEFT JOIN rt4_v1 r ON r.key = p.row_key
+WHERE p.n = 1
+ORDER BY p.scored_at DESC;
+```
+
 yahoo-connect and target have a reserved concurrency of 1, so a `live-score` step that calls one while another run uses it fails with `Lambda.TooManyRequestsException`. The step retries it up to 64 times, with waits from 5 seconds growing to at most 60 seconds, each drawn at random below that bound. The 64 waits add up to about 30 minutes on average, and to at most about 60 minutes, before the step fails. After the catch-up, the runs for the night's filings queue this way before the open.
 
 The live Lambdas read their secrets from SSM themselves, because Lambda cannot put SSM parameters into environment variables. `SSM_PARAMETERS` names the parameters, for example `{"sec_user_agent": "/secform4strategy/sec-user-agent"}`, and `SsmSettings` reads them at cold start. The values never enter the Terraform state.
@@ -259,7 +319,7 @@ In ECS, the execution role reads the secrets from SSM and injects them as enviro
 | yahoo-connect | | | `lakehouse-write` |
 | target | | | `lakehouse-write` |
 | training | | | `lakehouse-read`, `models-write` |
-| inference | | | `lakehouse-read`, `models-read` |
+| inference | | | `lakehouse-read`, `predictions-write`, `models-read` |
 
 | Lambda function | Sends to | Receives from | Capabilities |
 | --- | --- | --- | --- |
@@ -268,7 +328,7 @@ In ECS, the execution role reads the secrets from SSM and injects them as enviro
 | kafka-to-store | `live-tickers` | `live-transactions` | `lakehouse-write` |
 | yahoo-connect | | | `lakehouse-write` |
 | target | | | `lakehouse-write` |
-| inference | | | `lakehouse-read`, `models-read`, `read-alpaca-keys` |
+| inference | | | `lakehouse-read`, `predictions-write`, `models-read`, `read-alpaca-keys` |
 | site-publisher | | | `lakehouse-read`, `models-read`, `read-alpaca-keys` |
 
 The `site` module adds the inline policy `site` to the site-publisher role, as [site.md](site.md#publisher) describes.
@@ -285,6 +345,8 @@ Each entry grants these actions:
 | `lakehouse-write` | The `lakehouse-read` Glue actions, plus `glue:CreateTable`, `glue:UpdateTable` | The Glue catalog, the database and its tables |
 | | `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` | `warehouse/*` |
 | | `s3:ListBucket` | The data bucket |
+| `predictions-write` | `glue:CreateTable`, `glue:UpdateTable` | The Glue catalog, the database and the tables `predictions_*` |
+| | `s3:PutObject`, `s3:DeleteObject` | `warehouse/predictions_*` |
 | `models-read` | `s3:GetObject` | `models/*` |
 | | `s3:ListBucket` | The data bucket |
 | `models-write` | `s3:PutObject` | `models/*` |

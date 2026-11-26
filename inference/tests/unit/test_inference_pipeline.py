@@ -1,11 +1,14 @@
 """Inference scores rows with gaps as training does, shorts those at the cutoff, and refuses a model without one.
 
+Each short's outcome is kept: submitted, placed before, rejected for good, or failed and left for a rerun.
+
 A row stays fresh from the last close to the next open, so filings disclosed overnight trade at the open.
 
 Under test:
     inference/src/inference_pipeline.py
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -15,8 +18,10 @@ import numpy as np
 import pandas as pd
 import pytest
 import sklearn
+from constants import OrderOutcome
 from inference_pipeline import InferencePipeline, OrderSpec, score, signal_cutoff
 from secform4strategy_clients.fakes.models import FakeModelStore
+from secform4strategy_clients.ports import PermanentError, RetryableError
 from secform4strategy_clients.records import MarketSession, ModelMetadata, Scores
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import HistGradientBoostingClassifier
@@ -71,9 +76,11 @@ ORDER = OrderSpec(qty=1.0, side='sell', order_type='market', time_in_force='gtc'
 
 @dataclass
 class RecordingBroker:
-    """A broker that records each order's symbol and client order id."""
+    """A broker that records each order's symbol and client order id, failing or deduplicating by client order id."""
 
     placed: list[tuple[str, str]] = field(default_factory=list)
+    errors: Mapping[str, Exception] = field(default_factory=dict)
+    placed_before: frozenset[str] = frozenset()
 
     def place_order(
         self,
@@ -84,17 +91,21 @@ class RecordingBroker:
         time_in_force: TimeInForce,
         client_order_id: str,
     ) -> object | None:
-        """Record the order and return it."""
+        """Record the order and return it; None for an id placed before, and the id's error if it has one."""
+        if error := self.errors.get(client_order_id):
+            raise error
         self.placed.append((symbol, client_order_id))
-        return client_order_id
+        return None if client_order_id in self.placed_before else client_order_id
 
 
 _conforms: Broker = RecordingBroker()
 
 
-def pipeline(metadata: ModelMetadata) -> tuple[InferencePipeline, RecordingBroker]:
+def pipeline(
+    metadata: ModelMetadata, broker: RecordingBroker | None = None
+) -> tuple[InferencePipeline, RecordingBroker]:
     """An inference pipeline over a store whose promoted model has ``metadata``, and its broker."""
-    store, broker = FakeModelStore(), RecordingBroker()
+    store, broker = FakeModelStore(), broker or RecordingBroker()
     store.promote(store.save(MODEL, metadata))
     return InferencePipeline(broker, store), broker
 
@@ -104,6 +115,9 @@ class TestLoadModel:
 
     def test_the_metadata_cutoff_is_used(self) -> None:
         assert pipeline(METADATA)[0].load_model().probability_cutoff == 0.5
+
+    def test_the_version_is_the_training_time(self) -> None:
+        assert pipeline(METADATA)[0].load_model().version == '20261122T210000Z'
 
     def test_an_override_replaces_it(self) -> None:
         assert pipeline(METADATA)[0].load_model(0.7).probability_cutoff == 0.7
@@ -145,18 +159,31 @@ class TestScore:
 
 
 class TestTrades:
-    """Rows at or above the cutoff are shorted under their key."""
+    """Rows at or above the cutoff are shorted under their key, and each short's outcome is returned."""
 
     def test_rows_at_or_above_the_cutoff_are_shorted(self) -> None:
         inference, broker = pipeline(METADATA)
         loaded = inference.load_model()
-        assert inference.execute_trades(score(loaded.pipeline, loaded.features, ROWS), 0.5, ORDER) == []
+        assert inference.execute_trades(score(loaded.pipeline, loaded.features, ROWS), 0.5, ORDER) == {
+            'k2': OrderOutcome.SUBMITTED
+        }
         assert broker.placed == [('BBB', 'k2')]
 
     def test_a_cutoff_above_every_probability_shorts_nothing(self) -> None:
         inference, broker = pipeline(METADATA)
-        inference.execute_trades(score(MODEL, FEATURES, ROWS), 0.999, ORDER)
+        assert inference.execute_trades(score(MODEL, FEATURES, ROWS), 0.999, ORDER) == {}
         assert broker.placed == []
+
+    def test_each_outcome_is_kept(self) -> None:
+        broker = RecordingBroker(
+            errors={'k1': PermanentError('not shortable'), 'k2': RetryableError('503')}, placed_before=frozenset({'k3'})
+        )
+        inference, _ = pipeline(METADATA, broker)
+        assert inference.execute_trades(score(MODEL, FEATURES, ROWS), 0.0, ORDER) == {
+            'k1': OrderOutcome.REJECTED,
+            'k2': OrderOutcome.FAILED,
+            'k3': OrderOutcome.PLACED_BEFORE,
+        }
 
 
 NEW_YORK = ZoneInfo('America/New_York')
