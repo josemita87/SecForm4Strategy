@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 import pyarrow as pa
-from pyiceberg.exceptions import CommitFailedException, NoSuchTableError
+from pyiceberg.exceptions import CommitFailedException, NoSuchTableError, ValidationException
 from pyiceberg.expressions import AlwaysTrue, And, EqualTo, GreaterThanOrEqual, In
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.table import TableProperties
@@ -23,6 +23,8 @@ from secform4strategy_clients.retry import with_backoff
 
 if TYPE_CHECKING:
     from pyiceberg.catalog import Catalog
+    from pyiceberg.expressions import BooleanExpression
+    from pyiceberg.table import Table
 
     from secform4strategy_clients.feature_groups import FeatureGroupSpec
     from secform4strategy_clients.ports import Filters
@@ -37,10 +39,9 @@ class IcebergFeatureStore:
     feature-group version. Pushes upsert by ``primary_key``, replacing whole rows;
     within one push the last row per key wins. Keys are one column: pyiceberg 0.12's upsert
     crashes the process on a composite key, so a composite identity is joined into one string.
-    A push that loses a commit race reloads the table and upserts again. Tables this store creates
-    turn off pyiceberg's own commit retry, which re-appends the rows without matching them against
-    the rival's commit and so can duplicate a key; tables created before keep that retry until
-    their ``commit.retry.num-retries`` property is set to 0.
+    A push that loses a commit race reloads the table and upserts again. Before its first write to a
+    table, the store sets the spec's ``properties`` and turns off pyiceberg's own commit retry, which
+    re-appends the rows without matching them against the rival's commit and so can duplicate a key.
 
     Attributes:
         catalog: The Iceberg catalog holding the tables.
@@ -79,13 +80,9 @@ class IcebergFeatureStore:
         Returns:
             The (optionally filtered) rows; a missing table raises ``NoSuchTableError``.
         """
-        conditions = [
-            In(col, list(value)) if is_many(value) else EqualTo(col, value) for col, value in (where or {}).items()
-        ]
-        row_filter = functools.reduce(And, conditions) if conditions else AlwaysTrue()
         data: pd.DataFrame = (
             self.catalog.load_table(self._identifier(reference))
-            .scan(row_filter=row_filter, selected_fields=('*',) if columns is None else tuple(columns))
+            .scan(row_filter=_row_filter(where or {}), selected_fields=('*',) if columns is None else tuple(columns))
             .to_pandas()
         )
         return data
@@ -126,28 +123,69 @@ class IcebergFeatureStore:
         if data.empty:
             return None
         keys = list(self._specs[reference].primary_key)
-        incoming = pa.Table.from_pandas(data.drop_duplicates(subset=keys, keep='last'), preserve_index=False)
-        # Iceberg has no dictionary type and stores timestamps in microseconds
-        incoming = incoming.cast(
-            pa.schema(
-                pa.field(
-                    field.name,
-                    field.type.value_type
-                    if pa.types.is_dictionary(field.type)
-                    else pa.timestamp('us', field.type.tz)
-                    if pa.types.is_timestamp(field.type)
-                    else field.type,
-                )
-                for field in incoming.schema
-            )
-        )
-        return with_backoff(lambda: self._upsert_once(self._identifier(reference), incoming, keys))
+        incoming = _to_iceberg_types(data.drop_duplicates(subset=keys, keep='last'))
+        return with_backoff(lambda: self._upsert_once(reference, incoming, keys))
 
-    def _upsert_once(self, identifier: str, incoming: pa.Table, keys: list[str]) -> object:
+    def replace(self, reference: str, data: pd.DataFrame, where: Filters) -> None:
+        """Delete the rows ``where`` selects and append ``data`` in their place, in one commit; skips empties.
+
+        Iceberg prunes the data files by ``where`` (column statistics), so the delete rewrites only the
+        files holding selected rows. Each ``In`` filter must stay at most 200 values: pyiceberg stops
+        pruning above that and the delete reads every file.
+
+        Args:
+            reference: A key into the catalog given at construction.
+            data: The rows that replace the selected ones.
+            where: Column -> value equality filters selecting the rows to replace; an iterable matches any item.
+        """
+        if data.empty:
+            return
+        incoming = _to_iceberg_types(data.drop_duplicates(subset=list(self._specs[reference].primary_key), keep='last'))
+        with_backoff(lambda: self._replace_once(reference, incoming, _row_filter(where)))
+
+    def _writable(self, reference: str, schema: pa.Schema) -> Table:
+        """Load the table at its latest snapshot, or create it with ``schema``, with its properties set.
+
+        Args:
+            reference: A key into the catalog given at construction.
+            schema: The schema a new table gets.
+
+        Returns:
+            The table, its commit retry off and the spec's ``properties`` set (one commit the first time).
+        """
+        identifier = self._identifier(reference)
+        properties = {TableProperties.COMMIT_NUM_RETRIES: '0'} | self._specs[reference].properties
+        try:
+            table = self.catalog.load_table(identifier)
+        except NoSuchTableError:
+            return self.catalog.create_table(identifier, schema=schema, properties=properties)
+        if missing := {key: value for key, value in properties.items() if table.properties.get(key) != value}:
+            with table.transaction() as transaction:
+                transaction.set_properties(missing)
+        return table
+
+    def _replace_once(self, reference: str, incoming: pa.Table, row_filter: BooleanExpression) -> None:
+        """Load the table at its latest snapshot and replace the rows ``row_filter`` selects once.
+
+        Args:
+            reference: A key into the catalog given at construction.
+            incoming: The rows, deduplicated by key, with Iceberg's column types.
+            row_filter: The rows to delete.
+
+        Raises:
+            RetryableError: Another writer committed first, or changed the selected rows; the next attempt reloads.
+        """
+        try:
+            table = self._writable(reference, incoming.schema)
+            table.overwrite(_aligned(incoming, table, self._identifier(reference)), overwrite_filter=row_filter)
+        except (CommitFailedException, ValidationException) as error:
+            raise RetryableError(f'Replace in {self._identifier(reference)}: {error}') from error
+
+    def _upsert_once(self, reference: str, incoming: pa.Table, keys: list[str]) -> object:
         """Load (or create) the table at its latest snapshot and upsert into it once.
 
         Args:
-            identifier: The table's ``<namespace>.<name>_v<version>``.
+            reference: A key into the catalog given at construction.
             incoming: The rows, deduplicated by key, with Iceberg's column types.
             keys: The primary-key columns.
 
@@ -155,23 +193,62 @@ class IcebergFeatureStore:
             The upsert result (rows inserted / updated).
 
         Raises:
-            ValueError: If ``incoming`` has columns the table does not (bump the feature-group version).
-            RetryableError: Another writer committed first; the next attempt reloads the table.
+            RetryableError: Another writer committed first, or rewrote the files the upsert replaces (compaction);
+                the next attempt reloads the table.
         """
         try:
-            table = self.catalog.load_table(identifier)
-        except NoSuchTableError:
-            table = self.catalog.create_table(
-                identifier, schema=incoming.schema, properties={TableProperties.COMMIT_NUM_RETRIES: '0'}
-            )
+            table = self._writable(reference, incoming.schema)
+            return table.upsert(_aligned(incoming, table, self._identifier(reference)), join_cols=keys)
+        except (CommitFailedException, ValidationException) as error:
+            raise RetryableError(f'Upsert into {self._identifier(reference)}: {error}') from error
 
-        target = schema_to_pyarrow(table.schema())
-        if unknown := sorted(set(incoming.column_names) - set(target.names)):
-            raise ValueError(f'{identifier} has no columns {unknown}; bump the feature-group version for a new schema')
-        for field in target:
-            if field.name not in incoming.column_names:
-                incoming = incoming.append_column(field.name, pa.nulls(len(incoming), field.type))
-        try:
-            return table.upsert(incoming.select(target.names).cast(target), join_cols=keys)
-        except CommitFailedException as error:
-            raise RetryableError(f'Upsert into {identifier}: {error}') from error
+
+def _row_filter(where: Filters) -> BooleanExpression:
+    """Return the Iceberg expression of column -> value equality filters; an iterable value matches any item."""
+    conditions = [In(col, list(value)) if is_many(value) else EqualTo(col, value) for col, value in where.items()]
+    return functools.reduce(And, conditions) if conditions else AlwaysTrue()
+
+
+def _to_iceberg_types(data: pd.DataFrame) -> pa.Table:
+    """Return the rows as Arrow with Iceberg's types: no dictionaries, timestamps in microseconds."""
+    incoming = pa.Table.from_pandas(data, preserve_index=False)
+    return incoming.cast(
+        pa.schema(
+            pa.field(
+                field.name,
+                field.type.value_type
+                if pa.types.is_dictionary(field.type)
+                else pa.timestamp('us', field.type.tz)
+                if pa.types.is_timestamp(field.type)
+                else field.type,
+            )
+            for field in incoming.schema
+        )
+    )
+
+
+def _aligned(incoming: pa.Table, table: Table, identifier: str) -> pa.Table:
+    """Return ``incoming`` in the table's column order and types, absent columns as nulls.
+
+    Args:
+        incoming: The rows, with Iceberg's column types.
+        table: The table the rows go into.
+        identifier: The table's identifier, for the error message.
+
+    Returns:
+        The rows, cast to the table's Arrow schema.
+
+    Raises:
+        ValueError: If ``incoming`` has columns the table does not (bump the feature-group version).
+    """
+    target = schema_to_pyarrow(table.schema())
+    if unknown := sorted(set(incoming.column_names) - set(target.names)):
+        raise ValueError(f'{identifier} has no columns {unknown}; bump the feature-group version for a new schema')
+    return pa.table(
+        {
+            field.name: incoming[field.name]
+            if field.name in incoming.column_names
+            else pa.nulls(len(incoming), field.type)
+            for field in target
+        }
+    ).cast(target)

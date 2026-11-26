@@ -12,7 +12,7 @@ variable "functions" {
     memory      = optional(number, 1024)
     timeout     = optional(number, 120)
     environment = optional(map(string), {})
-    # 1 makes the function a single writer: overlapping live-score runs queue for it instead of writing the same table at once
+    # Caps concurrent runs; 1 makes the function a single writer, so overlapping live-score runs queue for it
     reserved_concurrency = optional(number)
     trigger = optional(object({
       queue_arn       = string
@@ -43,7 +43,7 @@ variable "schedule_enabled" {
 }
 
 variable "score_steps" {
-  description = "Functions the live-score state machine runs in order, each passing {\"tickers\": [...]} to the next."
+  description = "Functions the live-score state machine runs in order, each passing its output, which holds \"tickers\", to the next."
   type        = list(string)
 }
 

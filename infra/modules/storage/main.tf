@@ -115,3 +115,147 @@ resource "aws_budgets_budget" "monthly" {
     }
   }
 }
+
+# Iceberg maintenance (docs/aws.md#iceberg-maintenance): Athena VACUUM on a schedule, Glue compaction
+data "aws_region" "current" {}
+
+locals {
+  region_account = "${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}"
+  glue_arns = [
+    for resource in ["catalog", "database/${aws_glue_catalog_database.lakehouse.name}", "table/${aws_glue_catalog_database.lakehouse.name}/*"] :
+    "arn:aws:glue:${local.region_account}:${resource}"
+  ]
+}
+
+data "aws_iam_policy_document" "scheduler_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["scheduler.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
+# Athena runs each VACUUM with this role's permissions: the table metadata, the warehouse files and the query results
+resource "aws_iam_role" "vacuum" {
+  name               = "${var.name}-vacuum"
+  assume_role_policy = data.aws_iam_policy_document.scheduler_assume.json
+}
+
+data "aws_iam_policy_document" "vacuum" {
+  statement {
+    actions   = ["athena:StartQueryExecution", "athena:GetQueryExecution"]
+    resources = [aws_athena_workgroup.lakehouse.arn]
+  }
+  statement {
+    actions   = ["glue:GetDatabase", "glue:GetTable", "glue:UpdateTable"]
+    resources = local.glue_arns
+  }
+  statement {
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    resources = ["${aws_s3_bucket.data.arn}/warehouse/*", "${aws_s3_bucket.data.arn}/athena-results/*"]
+  }
+  statement {
+    actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
+    resources = [aws_s3_bucket.data.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "vacuum" {
+  name   = "vacuum"
+  role   = aws_iam_role.vacuum.id
+  policy = data.aws_iam_policy_document.vacuum.json
+}
+
+# 03:00 New York time is outside the live polls; a missing table only fails its own query
+resource "aws_scheduler_schedule" "vacuum" {
+  for_each                     = var.vacuumed_tables
+  name                         = "${var.name}-vacuum-${replace(each.value, "_", "-")}"
+  schedule_expression          = "cron(0 3 * * ? *)"
+  schedule_expression_timezone = "America/New_York"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = "arn:aws:scheduler:::aws-sdk:athena:startQueryExecution"
+    role_arn = aws_iam_role.vacuum.arn
+    input = jsonencode({
+      QueryString           = "VACUUM ${each.value}"
+      QueryExecutionContext = { Database = aws_glue_catalog_database.lakehouse.name }
+      WorkGroup             = aws_athena_workgroup.lakehouse.name
+    })
+
+    # The next night's VACUUM covers a failed one
+    retry_policy {
+      maximum_retry_attempts = 0
+    }
+  }
+}
+
+data "aws_iam_policy_document" "glue_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["glue.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "compaction" {
+  name               = "${var.name}-compaction"
+  assume_role_policy = data.aws_iam_policy_document.glue_assume.json
+}
+
+data "aws_iam_policy_document" "compaction" {
+  statement {
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    resources = ["${aws_s3_bucket.data.arn}/warehouse/*"]
+  }
+  statement {
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.data.arn]
+  }
+  statement {
+    actions   = ["glue:GetTable", "glue:UpdateTable"]
+    resources = local.glue_arns
+  }
+  statement {
+    actions   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["arn:aws:logs:${local.region_account}:log-group:/aws-glue/iceberg-compaction/logs:*"]
+  }
+}
+
+resource "aws_iam_role_policy" "compaction" {
+  name   = "compaction"
+  role   = aws_iam_role.compaction.id
+  policy = data.aws_iam_policy_document.compaction.json
+}
+
+# Glue compacts a table once it holds 500 files under 75% of write.target-file-size-bytes; each run bills its DPUs
+resource "aws_glue_catalog_table_optimizer" "compaction" {
+  for_each      = var.compacted_tables
+  catalog_id    = data.aws_caller_identity.current.account_id
+  database_name = aws_glue_catalog_database.lakehouse.name
+  table_name    = each.value
+  type          = "compaction"
+  configuration {
+    enabled  = true
+    role_arn = aws_iam_role.compaction.arn
+    compaction_configuration {
+      iceberg_configuration {
+        strategy        = "binpack"
+        min_input_files = 500
+      }
+    }
+  }
+  depends_on = [aws_iam_role_policy.compaction]
+}

@@ -28,6 +28,9 @@ module "storage" {
   name               = "secform4strategy"
   monthly_budget_usd = var.monthly_budget_usd
   alert_email        = var.alert_email
+  vacuumed_tables    = ["bi4_v1", "bir4_v1", "bt4_v1", "p_v1", "rt4_v1", "predictions_v1"]
+  # A compacted table must exist at apply; p_v1 joins once its target file size is set (docs/aws.md#iceberg-maintenance)
+  compacted_tables = ["bi4_v1", "bir4_v1"]
   services = [
     "master-index", "scraper", "kafka-to-store",
     "yahoo-connect", "target", "training", "inference", "site-publisher"
@@ -78,7 +81,7 @@ module "iam" {
     master-index   = { sends = ["live-filings"], capabilities = ["seen-keys", "read-secrets"] }
     scraper        = { receives = ["live-filings"], sends = ["live-transactions"], capabilities = ["read-secrets"] }
     kafka-to-store = { receives = ["live-transactions"], sends = ["live-tickers"], capabilities = ["lakehouse-write"] }
-    yahoo-connect  = { capabilities = ["lakehouse-write"] }
+    yahoo-connect  = {}
     target         = { capabilities = ["lakehouse-write"] }
     inference      = { capabilities = ["lakehouse-read", "predictions-write", "models-read", "read-alpaca-keys"] }
     site-publisher = { capabilities = ["lakehouse-read", "models-read", "read-alpaca-keys"] }
@@ -255,15 +258,15 @@ module "live" {
       # One Iceberg commit per batch: wait up to 5 s to gather a filing burst
       trigger = { queue_arn = module.queues.queues["live-transactions"].arn, batch_size = 100, batching_window = 5, max_concurrency = 2 }
     }
+    # Fetches and stores nothing: 1 GB holds pandas and yfinance, and 120 s is about 10x a 10-ticker fetch
     yahoo-connect = {
-      role_arn    = module.iam.lambda_role_arns["yahoo-connect"]
-      directory   = "/repo/prices-feature-pipeline/yahoo_connect"
-      handler     = "src.handler.handle"
-      memory      = 2048
-      timeout     = 180
-      environment = merge(local.lakehouse, local.inference_run, { BUFFER_SIZE = "50" })
-      # One writer to P at a time (D25): overlapping runs with the same ticker would upsert duplicate rows
-      reserved_concurrency = 1
+      role_arn  = module.iam.lambda_role_arns["yahoo-connect"]
+      directory = "/repo/prices-feature-pipeline/yahoo_connect"
+      handler   = "src.handler.handle"
+      memory    = 1024
+      timeout   = 120
+      # At most 3 sequential Yahoo downloads at once during a filing burst; further runs wait for a free slot
+      reserved_concurrency = 3
     }
     target = {
       role_arn    = module.iam.lambda_role_arns.target

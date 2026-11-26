@@ -63,7 +63,7 @@ Seven services do the work. Each service is a separate Python 3.14 program with 
 | 1 | master-index | Lists Form 4 filings from EDGAR and sends one message per filing. |
 | 2 | scraper | Downloads each filing, parses its Form 4 XML and sends one message per transaction. |
 | 3 | kafka-to-store | Validates the transactions and upserts them into the feature-store table `BT4` (training) or `BI4` (inference). |
-| 4 | yahoo-connect | Downloads daily prices from Yahoo Finance for every ticker in the transactions and upserts them into `P`. |
+| 4 | yahoo-connect | Downloads daily prices from Yahoo Finance for every ticker in the transactions and upserts them into `P`. On the live path, it returns the tickers' recent closes to target and writes nothing. |
 | 5 | target | Joins transactions with prices into one row per trading opportunity, adds features and, for training, the label. It writes `RT4` (labelled) or `BIR4` (to score). |
 | 6 | training | Fits a scikit-learn model on `RT4`, compares it with baselines, saves it with its metadata as a new version, and promotes it only through a gate. |
 | 7 | inference | Loads the model, scores `BIR4` rows and places a short order for each row whose probability of a short winner is at least the model's cutoff. |
@@ -103,12 +103,14 @@ The transaction key is a hash of the accession number, the table and the transac
 
 ### 2.3 Prices
 
-The yahoo-connect service keeps the table `P` (one row per ticker and day) current for every ticker in the transactions. It stores two price bases:
+The batch yahoo-connect task keeps the table `P` (one row per ticker and day) current for every ticker in the transactions. It is the only writer of `P`, and it runs in the weekly `retrain` run while the batch path is switched on. The target task reads `P` right after it, in the same run. `P` stores two price bases:
 
 - `open` and `close` are adjusted for later splits and dividends. Returns between any two days are therefore comparable.
 - `close_as_traded` is the close in that day's shares, with later splits undone. All USD values use it, because a Form 4 counts shares as of the trade.
 
-Each refresh starts 30 stored days back for each ticker (`REBASE_LOOKBACK_DAYS`). If the adjustment factors of those days changed, Yahoo has re-based the history after a split or dividend, and yahoo-connect downloads the ticker's history again from `PRICE_HISTORY_YEARS` (15) years back. A ticker with no stored bars starts there too. The yahoo-connect service never stores a bar before its close has printed.
+Each refresh starts 30 stored days back for each ticker (`REBASE_LOOKBACK_DAYS`). If the adjustment factors of those days changed, Yahoo has re-based the history after a split or dividend. yahoo-connect then downloads the ticker's history again, from its first stored day or from `PRICE_HISTORY_YEARS` (15) years back if that is earlier. It replaces all the ticker's stored rows in one Iceberg commit, so `P` never holds two bases of one ticker. A ticker with no stored bars starts 15 years back. The yahoo-connect service never stores a bar before its close has printed, and never stores a bar without a close.
+
+Only training needs one basis per ticker, because only the label uses the adjusted `close`. Live rows need only `close_as_traded` on the last trading day before the filing, and the live path gets it from Yahoo Finance at scoring time (Section 4.4).
 
 The target service also joins static company data from files in its image: monthly market-cap snapshots (`mcaps.parquet`, 1992 to 2024-08) and company data by issuer CIK (`companies.json`: ticker, SIC code, SIC group, exchange).
 
@@ -120,7 +122,7 @@ A feature group is one table in the feature store. The feature store is a set of
 | --- | --- | --- | --- | --- | --- |
 | `BT4` | Transaction (training) | Hash of accession, table, position | The parsed transaction with `accepted_at` | kafka-to-store | yahoo-connect, target |
 | `BI4` | Transaction (inference) | The same | The same | kafka-to-store | yahoo-connect, target |
-| `P` | Ticker and day | `<ticker>@<date>` | Adjusted `open`/`close`, `close_as_traded`, `split`, `dividend` | yahoo-connect | target |
+| `P` | Ticker and day | `<ticker>@<date>` | Adjusted `open`/`close`, `close_as_traded`, `split`, `dividend` | yahoo-connect (batch) | target (batch) |
 | `RT4` | Ticker and next market print | `<ticker>@<next print>` | Features, label `pct_change`, `label_known_at` | target | training, target |
 | `BIR4` | Ticker and next market print | `<ticker>@<next print>` | The same features, no label | target | inference |
 
@@ -289,6 +291,15 @@ The bucket blocks all public access and encrypts objects with SSE-S3. Incomplete
 
 `S3ModelStore` saves each model in a folder named after its training time. Saving does not change `latest.json`. Promoting a version writes `latest.json`, which names that folder. A load reads `latest.json` first, so it never pairs a new model with old metadata. Earlier models stay in the bucket.
 
+**Iceberg maintenance.** Every commit adds a snapshot, a manifest and at least one data file; after 6 days `P` had 949 snapshots, 752 manifests and 772 data files, half of them about 3 KB. Two mechanisms maintain the tables:
+
+- An EventBridge Scheduler schedule per table runs Athena `VACUUM` at 03:00 New York time every day. It expires snapshots older than 5 days and deletes the files that only they used, and orphan files older than 5 days. It costs under $0.01 per month.
+- The Glue table optimizer `compaction` rewrites small files of `BI4` and `BIR4` once a table holds 500 of them. It costs an estimated $0.30 to $0.90 per month at $0.44 per DPU-hour. `P` joins once its target file size is 16 MiB: at the 512 MB default, compaction would make `P` one file, and each price reload would rewrite all of it.
+
+**Price reloads.** The batch yahoo-connect task replaces a re-based ticker's stored rows in one commit: a delete filtered on the ticker, then an append. The delete rewrites only the data files that hold the ticker: about 50 of the 772 files (4.5 MB) for one ticker, and about 184 files (139 MB) for 50 random tickers, the worst case of one batch. An upsert filters on the ticker's 3,770 keys instead. Above 200 values pyiceberg stops pruning files by statistics, so the upsert read all of `P` and took more than 170 seconds in a 2 GB Lambda. On a local copy of `P`, the replace takes 2.1 seconds and the upsert 15.3 seconds.
+
+No code reads an older snapshot. When a maintenance commit races a service commit, one of them fails, and the service reloads the table and repeats its write. The Glue optimizers `retention` and `orphan_file_deletion` would cost $0.80 to $2.30 per month for the work `VACUUM` does ([aws.md](../aws.md#iceberg-maintenance)).
+
 Each service has an ECR repository `secform4strategy/<service>`. Tags are immutable, ECR scans each image on push, and each repository keeps its 5 newest images.
 
 ### 4.3 Batch path
@@ -349,18 +360,20 @@ The live path runs the batch services as Lambda functions, on the same container
 3. The scraper Lambda parses each filing and sends its transactions to `secform4strategy-live-transactions`.
 4. The kafka-to-store service upserts the transactions into `BI4` and sends `{"tickers": [...]}` to `secform4strategy-live-tickers`.
 5. The EventBridge Pipe `secform4strategy-live-tickers` starts one run of the state machine `secform4strategy-live-score` per batch of up to 10 messages.
-6. `live-score` runs three Lambdas in order: yahoo-connect refreshes the prices, target builds the `BIR4` rows, and inference scores them and places Alpaca paper orders.
+6. `live-score` runs three Lambdas in order, each passing its output to the next. yahoo-connect downloads the last 10 calendar days of daily bars of each ticker and returns the tickers with one `close_as_traded` per final bar. It reads and writes no table. target validates that input, builds the `BIR4` rows with those closes, and returns the tickers. inference scores the rows and places Alpaca paper orders.
 
 | Function | Trigger | Settings |
 | --- | --- | --- |
 | master-index | Schedules: every minute 08:00 to 15:59 ET, and 20 pages at 07:55 ET, on weekdays | 512 MB, 120 s; `SEC_MAX_RATE=1` |
 | scraper | `live-filings`, batches of 10 | 1024 MB, 120 s; at most 2 at a time, each at `SEC_MAX_RATE=2.25` |
 | kafka-to-store | `live-transactions`, up to 100, waiting at most 5 s | 2048 MB, 240 s; at most 2 at a time |
-| yahoo-connect | `live-score` | 2048 MB, 180 s |
-| target | `live-score` | 2048 MB, 180 s |
+| yahoo-connect | `live-score` | 1024 MB, 120 s; at most 3 at a time |
+| target | `live-score` | 2048 MB, 180 s; at most 1 at a time |
 | inference | `live-score` | 2048 MB, 180 s; `QTY=1`; the cutoff comes from the model metadata |
 
-The account's Lambda concurrency quota was raised from 10 to 1,000 executions on 2026-11-23; the live functions and the site publisher share it. The writers to `P` and `BIR4` (yahoo-connect and target) have a reserved concurrency of 1, so overlapping `live-score` runs wait for them. A step retries `Lambda.TooManyRequestsException` up to 64 times, with waits that add up to about 30 minutes on average.
+The account's Lambda concurrency quota was raised from 10 to 1,000 executions on 2026-11-23; the live functions and the site publisher share it. target, the writer of `BIR4`, has a reserved concurrency of 1, so overlapping `live-score` runs wait for it. yahoo-connect has a reserved concurrency of 3, so a burst of filings sends at most 3 runs' downloads to Yahoo Finance at once. A step retries `Lambda.TooManyRequestsException` up to 64 times, with waits that add up to about 30 minutes on average.
+
+**Rows the live closes value.** target pushes only the rows accepted after the first day of the closes it received. An older row of the same ticker keeps the values an earlier run stored. A ticker that Yahoo Finance returns no bars for gets rows without USD values.
 
 **Same images, two runtimes.** Each function runs `<service directory>/.venv/bin/python -m awslambdaric`. `awslambdaric` is the Lambda runtime interface client: it receives events from the Lambda service and calls the handler. Each handler sits beside the service's `main.py` and calls the same functions as the batch loop. Training and live scoring therefore share one feature implementation, so the features cannot drift apart between them. The functions set `HOME=/tmp`, because the image's file system is read-only.
 
@@ -492,6 +505,8 @@ A pull request cannot change any resource. Only a job in the GitHub environment 
 | Batch path switched on (`switched_on = true`) | About $1.20 per day, plus usage | The NAT gateway (about $1.08 per day) and its Elastic IP (about $0.12 per day). Usage: Fargate, NAT data processing and Athena scans. |
 
 The batch tasks run on Fargate Spot first, which AWS prices at up to 70% below On-Demand (Section 4.3).
+
+The Iceberg maintenance runs in every state, for about $0.30 to $1.30 per month (Section 4.2).
 
 `infra/envs/demo/switch.auto.tfvars` holds the switches:
 
@@ -847,7 +862,7 @@ More kafka-to-store tasks would not help either. Two writers to one Iceberg tabl
 3. **Incremental steps make a failed run recoverable.** Upserts by deterministic key let the remaining steps run afterwards, with no work repeated and no duplicate rows.
 4. **Measure before scaling.** The batch times showed that kafka-to-store was CPU-bound at 0.5 vCPU and that the upsert, not SQS, took most of the time. They showed that one full core helps, while more tasks, more cores and bigger batches do not, and that the next step is profiling, not more guesses. The cluster now has Container Insights, so CloudWatch shows each task's CPU and memory use.
 
-Section 10.2 lists the follow-ups, among them an append-then-deduplicate write for full loads and Iceberg maintenance.
+Section 10.2 lists the follow-ups, among them an append-then-deduplicate write for full loads.
 
 ---
 
@@ -857,6 +872,7 @@ Section 10.2 lists the follow-ups, among them an append-then-deduplicate write f
 | --- | --- | --- |
 | Live path on Lambda; batch path on ECS Fargate | One compute service for both | Lambda stops a run after 15 minutes, and a full load takes hours. A filing needs a reaction within minutes, and Lambda starts per event and bills per invocation. |
 | Live Lambdas as handlers of the batch services, on the same images | A separate scorer that computes the features again | One feature implementation for training and scoring leaves no skew between them. |
+| Live yahoo-connect returns recent closes to target; only the weekly batch task writes `P` | Refresh `P` on every live run | Live rows need only the last as-traded close, which a split does not change. Without live writes, `P` needs no single live writer and no re-base handling between batch runs, and a live fetch takes seconds. |
 | Iceberg tables on S3 with the Glue catalog | A relational database (RDS) or a hosted feature store | Iceberg costs only storage while idle, supports upserts by key, and Athena queries it with SQL. A database bills every hour it runs. |
 | Step Functions for orchestration | Apache Airflow on MWAA | Step Functions bills per state transition and costs nothing idle. MWAA runs an environment around the clock, far above a $10 budget. Step Functions also gives retries and waits without a scheduler server. |
 | scikit-learn model in S3, scored in a Lambda or a task | SageMaker endpoint | The model is a small pipeline. An endpoint bills every hour it is up. |
@@ -893,6 +909,7 @@ Section 10.2 lists the follow-ups, among them an append-then-deduplicate write f
 - **A small effective sample.** 314 holdout shorts is about 1.2 per trading day. Rows within 30 days produce overlapping positions, so the 314 trades are not independent bets.
 - **One holdout year.** The 5-year holdout starts on 2025-10-24. Another period can give a different result.
 - **Live cluster features from `BI4` only.** The target service builds live rows from `BI4`, which has a shorter history than `BT4`, so the cluster features of live rows can differ from those of training rows. The code is the same, but the data differ: a known skew. The fix is to read `BT4` plus `BI4`.
+- **Live closes from Yahoo Finance at scoring time.** If Yahoo Finance returns no bars for a ticker, its live rows have no USD values and `price_to_close`. `P` refreshed from the batch run would hold older bars for it.
 - **Labels on adjusted prices.** The guards catch returns above +300% and non-positive prices only. A smaller error from a bad split adjustment stays in the data.
 - **Data gaps.**
   - Market-cap snapshots end in 2024-08.
@@ -910,7 +927,7 @@ The next research steps:
 | Follow-up | Benefit |
 | --- | --- |
 | Append-then-deduplicate write for full loads | kafka-to-store appends each batch without matching keys against the whole `BT4` table, and one pass removes duplicate keys at the end. A full load then no longer slows as the table grows. |
-| Iceberg maintenance: expire snapshots, compact data files | Every commit adds a snapshot and small files. Athena `OPTIMIZE` and `VACUUM` stay under the 1 GiB scan limit, because the largest table, `P`, holds about 650 MB including old snapshots. |
+| Compact `P` | After one batch run has written `P` (the store then sets its 16 MiB target file size), add it to `compacted_tables` and apply. Until then each weekly refresh adds up to two commits per batch of 50 tickers, each with small files, and scans of `P` slow down. |
 | Clear the scraper's exit flag when redelivery succeeds | A finished scraper step no longer reports failure, so `retrain` does not rerun it through the Spot retries and the On-Demand fallback. |
 | Catch failed `live-score` runs | The Pipe starts `live-score` with `invocation_type = "FIRE_AND_FORGET"`, so it deletes the `live-tickers` messages once the run starts. A run that fails after its retries loses its tickers, and the failed-run alarm reports it. A replay has little value: a late trade is worth nothing, and the 60-minute stale check would skip it. A `Catch` in `live-score` that sends the tickers to a queue would keep them for inspection; a Pipe DLQ catches only runs that fail to start. `REQUEST_RESPONSE` does not work with Standard workflows. |
 | Keep `PermanentError` messages | A `PermanentError` message is logged and acknowledged, so it never reaches a DLQ. |

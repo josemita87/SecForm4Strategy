@@ -130,8 +130,9 @@ resource "aws_iam_role" "lambda" {
   assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
 }
 
+# IAM rejects a policy without statements, so a Lambda without queues or capabilities gets none
 resource "aws_iam_role_policy" "lambda" {
-  for_each = var.lambda_access
+  for_each = { for key, value in var.lambda_access : key => value if length(concat(value.sends, value.receives, value.capabilities)) > 0 }
   name     = "access"
   role     = aws_iam_role.lambda[each.key].id
   policy   = data.aws_iam_policy_document.access["live-${each.key}"].json

@@ -5,59 +5,23 @@ import time
 from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
 from pyiceberg.catalog import load_catalog
-from pyiceberg.exceptions import NoSuchTableError
 from secform4strategy_clients.feature_groups import load_feature_group_catalog
 from secform4strategy_clients.feature_store import IcebergFeatureStore
 from secform4strategy_clients.market_data import MarketDataClient
-from tqdm import tqdm
 
-from src import prices
 from src.config import config
 from src.constants import Col, FeatureGroup
 from src.paths import SPEC_PATH
+from src.prices import refresh_prices
 
 if TYPE_CHECKING:
-    from secform4strategy_clients.ports import FeatureStore, MarketData
+    from secform4strategy_clients.ports import FeatureStore
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
 )
-
-
-def refresh_prices(
-    store: FeatureStore, market: MarketData, tickers: list[str], buffer_size: int, history_years: int
-) -> None:
-    """Fetch the tickers' bars after their last stored day and upsert them into the prices group.
-
-    Args:
-        store: The feature store holding the prices group.
-        market: Where the bars come from.
-        tickers: The tickers to price.
-        buffer_size: Tickers fetched per batch.
-        history_years: Years of bars a ticker without stored prices fetches.
-    """
-    try:
-        stored = store.read(
-            FeatureGroup.PRICES,
-            where={Col.TICKER: tickers},
-            columns=(Col.TICKER, Col.DATE, Col.CLOSE, Col.CLOSE_AS_TRADED),
-        )
-    except NoSuchTableError:
-        # The first run creates the price table, so every ticker fetches from the history start
-        stored = pd.DataFrame({Col.TICKER: [], Col.DATE: pd.to_datetime([]), Col.CLOSE: [], Col.CLOSE_AS_TRADED: []})
-
-    batches = prices.new_prices(
-        market, tickers, prices.resume_points(stored), buffer_size, prices.history_start(history_years)
-    )
-    for batch in tqdm(batches, total=-(-len(tickers) // buffer_size), desc='Pricing tickers', unit='batch'):
-        # One key column: pyiceberg's upsert crashes on composite keys
-        store.push(
-            FeatureGroup.PRICES,
-            batch.assign(**{Col.KEY: batch[Col.TICKER].astype(str) + '@' + batch[Col.DATE].dt.strftime('%Y-%m-%d')}),
-        )
 
 
 if __name__ == '__main__':

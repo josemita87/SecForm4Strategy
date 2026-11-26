@@ -1,9 +1,9 @@
 """Lambda entry point for the live path: builds the BIR4 rows of the tickers a new filing names.
 
-The live-score state machine invokes it with ``{"tickers": [...]}``, after their prices are
-refreshed. The image is the same as the batch task's; Lambda runs ``python -m awslambdaric
-src.handler.handle`` from the service directory. The feature store and the reference data are
-loaded once per execution environment, at import, and reused.
+The live-score state machine invokes it with yahoo-connect's output: the tickers and their recent
+final closes (``LiveScoreEvent``), so it reads no prices from the prices group. The image is the same
+as the batch task's; Lambda runs ``python -m awslambdaric src.handler.handle`` from the service directory.
+The feature store and the reference data are loaded once per execution environment, at import, and reused.
 """
 
 import logging
@@ -15,7 +15,8 @@ from secform4strategy_clients.feature_groups import load_feature_group_catalog
 from secform4strategy_clients.feature_store import IcebergFeatureStore
 
 from src.config import config
-from src.constants import Col, ReferenceData
+from src.constants import TRANSACTION_COLUMNS, Col, FeatureGroup, LiveScoreEvent, ReferenceData
+from src.helpers import daily_closes
 from src.main import publish_inference_rows
 from src.paths import SPEC_PATH
 
@@ -35,16 +36,23 @@ window = pd.Timedelta(days=config.cluster_window_days)
 
 
 def handle(event: Mapping[str, Any], _context: object) -> dict[str, list[str]]:
-    """Build and upsert the BIR4 rows of the event's tickers, exactly as the batch inference run does.
+    """Build and upsert the BIR4 rows of the event's tickers, valued at the event's closes.
+
+    A malformed event raises pydantic's ``ValidationError`` before any read, which fails the invocation.
 
     Args:
-        event: ``{"tickers": [...]}``.
+        event: ``{"tickers": [...], "prices": [{"ticker", "date", "close_as_traded"}, ...]}`` (``LiveScoreEvent``).
         _context: The Lambda context, unused; Lambda passes it to every handler.
 
     Returns:
         The tickers that got rows, for the next step; none when no transaction of the tickers passes the filter.
     """
-    where = {config.filter_key: config.acquired_disposed, Col.TICKER: list(event['tickers'])}
+    live = LiveScoreEvent.model_validate(event)
+    transactions = store.read(
+        FeatureGroup.BI4,
+        where={config.filter_key: config.acquired_disposed, Col.TICKER: list(live.tickers)},
+        columns=TRANSACTION_COLUMNS,
+    )
     # An empty frame may lack the ticker column, so it is checked before the column is read
-    rows = publish_inference_rows(store, where, reference, window)
+    rows = publish_inference_rows(store, transactions, daily_closes(live.prices), reference, window)
     return {'tickers': [] if rows.empty else sorted(rows[Col.TICKER].unique())}

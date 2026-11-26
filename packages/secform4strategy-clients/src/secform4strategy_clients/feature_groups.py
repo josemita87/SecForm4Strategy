@@ -14,6 +14,8 @@ class FeatureGroupEntry(BaseModel):
     name: str | None = None
     primary_key: tuple[str, ...]
     event_time: str
+    # Iceberg table properties the writing store sets, e.g. write.target-file-size-bytes
+    properties: dict[str, str] = {}
 
 
 class FeatureGroupSpec(FeatureGroupEntry):

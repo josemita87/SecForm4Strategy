@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pandas as pd
+import pyarrow as pa
 import pytest
 from pyiceberg.catalog.sql import SqlCatalog
 from secform4strategy_clients.feature_groups import FeatureGroupSpec
@@ -113,3 +114,54 @@ class TestPushConflict:
         catalog.rival = lambda: store.push('sales', sales('same').assign(value=2.0))
         store.push('sales', sales('same').assign(value=3.0))
         assert store.read('sales', where={'key': 'same'})['value'].tolist() == [3.0]
+
+
+class TestReplace:
+    """A replace swaps the selected rows for new ones in one commit and leaves the other rows alone."""
+
+    ROWS = pd.DataFrame(
+        {
+            'key': ['a@1', 'a@2', 'b@1'],
+            'ticker': ['a', 'a', 'b'],
+            'value': [1.0, 2.0, 3.0],
+            'accepted_at': pd.to_datetime(['2026-11-19', '2026-11-20', '2026-11-19'], utc=True),
+        }
+    )
+
+    def test_the_selected_rows_are_replaced_and_the_rest_kept(self, store: IcebergFeatureStore) -> None:
+        store.push('sales', self.ROWS)
+        versions = len(store.catalog.load_table('features.sales_v1').metadata.metadata_log)
+        store.replace('sales', self.ROWS.iloc[[0]].assign(value=9.0), where={'ticker': ['a']})
+        rows = store.read('sales', columns=('key', 'value')).sort_values('key')
+        assert rows.to_dict('list') == {'key': ['a@1', 'b@1'], 'value': [9.0, 3.0]}
+        # One commit: the table gained exactly one metadata version
+        assert len(store.catalog.load_table('features.sales_v1').metadata.metadata_log) == versions + 1
+
+    def test_empty_rows_delete_nothing(self, store: IcebergFeatureStore) -> None:
+        store.push('sales', self.ROWS)
+        store.replace('sales', self.ROWS.iloc[:0], where={'ticker': 'a'})
+        assert len(store.read('sales')) == len(self.ROWS)
+
+
+#: What a first write leaves on the table: the commit retry off and the spec's file size
+WANTED = {'commit.retry.num-retries': '0', 'write.target-file-size-bytes': '16777216'}
+
+
+class TestTableProperties:
+    """The first write sets the commit retry off and the spec's properties, on new and existing tables."""
+
+    def test_a_new_table_gets_them(self, tmp_path: Path) -> None:
+        catalog = RacingCatalog('test', uri=f'sqlite:///{tmp_path}/catalog.db', warehouse=tmp_path.as_uri())
+        spec = SPEC.model_copy(update={'properties': {'write.target-file-size-bytes': '16777216'}})
+        IcebergFeatureStore(catalog, 'features', {'sales': spec}).push('sales', sales('a'))
+        assert catalog.load_table('features.sales_v1').properties.items() >= WANTED.items()
+
+    def test_an_existing_table_gets_them_on_its_next_push(self, tmp_path: Path) -> None:
+        catalog = RacingCatalog('test', uri=f'sqlite:///{tmp_path}/catalog.db', warehouse=tmp_path.as_uri())
+        catalog.create_namespace('features')
+        catalog.create_table('features.sales_v1', schema=pa.Table.from_pandas(sales('a')).schema)
+        spec = SPEC.model_copy(update={'properties': {'write.target-file-size-bytes': '16777216'}})
+        IcebergFeatureStore(catalog, 'features', {'sales': spec}).push('sales', sales('a', 'b'))
+        table = catalog.load_table('features.sales_v1')
+        assert table.properties.items() >= WANTED.items()
+        assert sorted(table.scan().to_pandas()['key']) == ['a', 'b']

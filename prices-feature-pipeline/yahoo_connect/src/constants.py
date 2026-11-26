@@ -34,3 +34,5 @@ MARKET_TZ = 'America/New_York'
 MARKET_CLOSE = pd.Timedelta(hours=16)
 #: Stored days fetched again per ticker; their adjustment factors reveal splits and dividends applied since.
 REBASE_LOOKBACK_DAYS = 30
+#: Calendar days the live path fetches; any weekend and holiday still leaves a final close before today.
+LIVE_LOOKBACK_DAYS = 10

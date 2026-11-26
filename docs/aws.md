@@ -12,7 +12,7 @@ Terraform state is in the bucket `secform4strategy-tfstate-<account>`, which `in
 
 | Module | Resources |
 | --- | --- |
-| `storage` | Data bucket `secform4strategy-data-<account>`, Glue database `secform4strategy`, Athena workgroup `secform4strategy`, one ECR repository per service, the monthly budget |
+| `storage` | Data bucket `secform4strategy-data-<account>`, Glue database `secform4strategy`, Athena workgroup `secform4strategy`, one ECR repository per service, the monthly budget, and the Iceberg maintenance: nightly `VACUUM` schedules and Glue compaction ([Iceberg maintenance](#iceberg-maintenance)) |
 | `network` | VPC, two public and two private subnets, internet gateway, S3 gateway endpoint, security group `secform4strategy-tasks`, and the NAT gateway while the batch path is switched on |
 | `queues` | Five SQS queues, each with a dead-letter queue and a CloudWatch alarm, and the SNS topic `secform4strategy-queue-alerts` |
 | `iam` | The ECS execution role, one task role per service, and one Lambda role per Lambda function |
@@ -75,7 +75,7 @@ One Step Functions state machine, `retrain`, runs six ECS tasks in order:
 1. The master-index service publishes filings to `secform4strategy-filings`.
 2. The scraper reads them and publishes transactions to `secform4strategy-transactions`.
 3. The kafka-to-store service reads the transactions and upserts them into `BT4`.
-4. The yahoo-connect service refreshes the prices of the tickers in the tables.
+4. The yahoo-connect service refreshes the prices of the tickers in the tables. It is the only writer of `P` ([Prices](#prices)).
 5. The target service builds the labelled rows.
 6. The training service saves a new model to `models/` in S3, and promotes it if it passes the gate.
 
@@ -157,7 +157,10 @@ The live path runs the batch services as Lambda functions, on the same images, s
 3. The scraper Lambda parses each filing and sends its transactions to `secform4strategy-live-transactions`.
 4. The kafka-to-store service upserts the transactions into `BI4` and sends `{"tickers": [...]}` to `secform4strategy-live-tickers`.
 5. The EventBridge Pipe `secform4strategy-live-tickers` starts one run of the state machine `secform4strategy-live-score` per batch of up to 10 messages.
-6. `live-score` runs three Lambdas in order, each passing `{"tickers": [...]}` to the next: yahoo-connect refreshes the prices, target builds the `BIR4` rows, and inference scores them and places Alpaca paper orders.
+6. `live-score` runs three Lambdas in order. Each step passes its output, unchanged, as the input of the next:
+   1. yahoo-connect downloads the last 10 calendar days of daily bars of each ticker from Yahoo Finance. It returns `{"tickers": [...], "prices": [{"ticker", "date", "close_as_traded"}, ...]}`, one price per final bar. It reads and writes no table.
+   2. target validates that input, builds the `BIR4` rows of the tickers with those prices, and returns `{"tickers": [...]}`.
+   3. inference scores the rows and places Alpaca paper orders.
 
 A second schedule, `secform4strategy-live-catch-up`, invokes master-index at 07:55 ET, Monday to Friday, with `{"num_pages": 20}`. That poll reads 20 feed pages of 100 entries. The feed lists each filing once per filer, so 20 pages hold about 1,000 filings. Most Form 4s that arrive after the 15:59 poll are accepted from 16:00 to 22:00 ET, and some from 06:00 to 09:00 ET. The catch-up sends the new ones before the open, so inference places their orders for the open. It normally ends before the 08:00 poll starts. If the two overlap, a filing can be sent twice, and the downstream upserts and client order ids absorb the repeat. The `poll_schedule` variable of the `live` module holds both cron expressions, in `America/New_York` time, and the page count.
 
@@ -172,8 +175,8 @@ The account's Lambda concurrency quota was raised from 10 to 1,000 executions on
 | master-index | Schedules: every minute 08:00 to 15:59 ET, and 20 pages at 07:55 ET, on weekdays | 512 MB, 120 s; `SEC_MAX_RATE=1`; `SEEN_DAYS=7` |
 | scraper | `live-filings`, batches of 10 | 1024 MB, 120 s; at most 2 at a time, each at `SEC_MAX_RATE=2.25` with `FETCH_WORKERS=4` |
 | kafka-to-store | `live-transactions`, batches of up to 100, waiting at most 5 s | 2048 MB, 240 s; at most 2 at a time |
-| yahoo-connect | `live-score` | 2048 MB, 180 s |
-| target | `live-score` | 2048 MB, 180 s |
+| yahoo-connect | `live-score` | 1024 MB, 120 s; at most 3 at a time; no environment variables and no AWS permissions besides logs |
+| target | `live-score` | 2048 MB, 180 s; at most 1 at a time |
 | inference | `live-score` | 2048 MB, 180 s; `QTY=1`; shorts each row whose probability of a short winner is at least the model's `probability_cutoff` |
 
 Each function runs `<service directory>/.venv/bin/python -m awslambdaric` with the handler `handler.handle`, or `src.handler.handle` for yahoo-connect and target. `awslambdaric` is the Lambda runtime interface client: it receives events from the Lambda service and calls the handler. Each handler sits beside the service's `main.py` and calls the same functions as the batch loop. The functions run outside the VPC, with `HOME=/tmp`, because the image's file system is read-only. Each function writes its logs to `/aws/lambda/secform4strategy-live-<service>`, kept 14 days.
@@ -202,7 +205,7 @@ The Alpaca order id is not stored. The client order id is unique in the account,
 
 The write runs after the orders, also when some orders are left for a retry. If the write fails, the step fails and Step Functions retries it. The retry places no order twice, because Alpaca rejects a repeated client order id, and it overwrites the records.
 
-Several `live-score` runs can write the table at once, because the inference Lambda has no reserved concurrency. A reserved concurrency of 1 would make each run wait for the previous run's orders, and that delay is on the trading path. Instead, the writes rely on Iceberg's optimistic concurrency: the commit that loses a race fails, and `IcebergFeatureStore.push` reloads the table and upserts again, up to 4 times. Tables the store creates set `commit.retry.num-retries` to 0. pyiceberg's own commit retry appends the rows again without matching them against the rival commit, so two runs that upsert the same key would store it twice. The tables created before this setting (`p_v1`, `bt4_v1`, `bi4_v1`, `rt4_v1`, `bir4_v1`) still use pyiceberg's retry.
+Several `live-score` runs can write the table at once, because the inference Lambda has no reserved concurrency. A reserved concurrency of 1 would make each run wait for the previous run's orders, and that delay is on the trading path. Instead, the writes rely on Iceberg's optimistic concurrency: the commit that loses a race fails, and `IcebergFeatureStore.push` reloads the table and upserts again, up to 4 times. The store sets `commit.retry.num-retries` to 0 on every table before its first write, including tables created earlier. pyiceberg's own commit retry appends the rows again without matching them against the rival commit, so two runs that upsert the same key would store it twice.
 
 The table is not partitioned. It grows by a few rows per run, so day partitions would hold only tiny files. Each upsert adds a snapshot and small files, so the table needs the same compaction and snapshot expiry as the other tables.
 
@@ -242,7 +245,7 @@ WHERE p.n = 1
 ORDER BY p.scored_at DESC;
 ```
 
-yahoo-connect and target have a reserved concurrency of 1, so a `live-score` step that calls one while another run uses it fails with `Lambda.TooManyRequestsException`. The step retries it up to 64 times, with waits from 5 seconds growing to at most 60 seconds, each drawn at random below that bound. The 64 waits add up to about 30 minutes on average, and to at most about 60 minutes, before the step fails. After the catch-up, the runs for the night's filings queue this way before the open.
+target has a reserved concurrency of 1, because it is the single writer of `BIR4` (D25). yahoo-connect has a reserved concurrency of 3, so at most 3 runs download from Yahoo Finance at once, each one ticker after another. A `live-score` step that calls a function at its limit fails with `Lambda.TooManyRequestsException`. The step retries it up to 64 times, with waits from 5 seconds growing to at most 60 seconds, each drawn at random below that bound. The 64 waits add up to about 30 minutes on average, and to at most about 60 minutes, before the step fails. After the catch-up, the runs for the night's filings queue this way before the open.
 
 The live Lambdas read their secrets from SSM themselves, because Lambda cannot put SSM parameters into environment variables. `SSM_PARAMETERS` names the parameters, for example `{"sec_user_agent": "/secform4strategy/sec-user-agent"}`, and `SsmSettings` reads them at cold start. The values never enter the Terraform state.
 
@@ -257,6 +260,23 @@ The first invocation of a function after about 5 to 15 minutes without one is a 
 | yahoo-connect | 39 seconds |
 
 Warm invocations take a few seconds. A filing that arrives after a quiet period therefore reaches inference about 1 to 2 minutes after the poll. Provisioned concurrency keeps an instance warm, at about $10 per month per function. It is off: the cold start is an accepted cost trade-off. Smaller images would shorten it.
+
+### Prices
+
+The batch yahoo-connect task is the only writer of the prices table `P`. It runs in the `retrain` state machine, so it refreshes `P` once a week while `switched_on` and `weekly_retrain_enabled` are `true`. The target task reads `P` right after it, in the same run. No live function and no other service reads or writes `P`.
+
+The live path needs only the last as-traded close of each ticker before the filing. The adjusted `close`, which a split or dividend changes, is used only by the training labels. A ticker's adjusted prices therefore must be on one basis only when the target task reads them for training.
+
+For each ticker, the task downloads the bars from 30 stored trading days back to today, and upserts the final ones. A split or dividend changes every earlier adjusted price of a ticker. The task detects one in two ways: a corporate action after the last stored day, or a changed ratio of adjusted to as-traded close on a stored day it downloaded again. It then downloads the ticker's history again, from its first stored day or from 15 years back if that is earlier. `IcebergFeatureStore.replace` deletes the ticker's rows in `P` and appends the new ones, in one Iceberg commit. A ticker whose reload returns no bars keeps its stored rows. A bar without a close is never stored, and a stored bar without a close makes the next refresh reload the ticker.
+
+The delete rewrites only the data files whose statistics include a reloaded ticker. Measured on `P` on 2026-11-26:
+
+| Replace | Data files rewritten | Size |
+| --- | --- | --- |
+| One ticker | About 50 of 772 | 4.5 MB |
+| 50 random tickers, one batch of `BUFFER_SIZE=50` (worst case) | About 184 of 772 | 139 MB |
+
+On a local copy of `P`, the replace of one ticker took 2.1 seconds. An upsert of the same history took 15.3 seconds there, and more than 170 seconds in a 2 GB Lambda. The upsert filters on the ticker's 3,770 keys, and above 200 values pyiceberg stops pruning files by statistics and reads all of `P`.
 
 ## Network
 
@@ -309,7 +329,7 @@ In ECS, the execution role reads the secrets from SSM and injects them as enviro
 
 ### Access per service
 
-`task_access` and `lambda_access` in `infra/envs/demo/main.tf` list, per service, the queues it sends to and receives from, and its capabilities. The `iam` module turns each entry into one inline policy `access` on the role.
+`task_access` and `lambda_access` in `infra/envs/demo/main.tf` list, per service, the queues it sends to and receives from, and its capabilities. The `iam` module turns each entry into one inline policy `access` on the role. An entry without queues and capabilities gets no inline policy, because IAM rejects a policy without statements: the live yahoo-connect role can only write its logs.
 
 | ECS task | Sends to | Receives from | Capabilities |
 | --- | --- | --- | --- |
@@ -326,7 +346,7 @@ In ECS, the execution role reads the secrets from SSM and injects them as enviro
 | master-index | `live-filings` | | `seen-keys`, `read-secrets` |
 | scraper | `live-transactions` | `live-filings` | `read-secrets` |
 | kafka-to-store | `live-tickers` | `live-transactions` | `lakehouse-write` |
-| yahoo-connect | | | `lakehouse-write` |
+| yahoo-connect | | | |
 | target | | | `lakehouse-write` |
 | inference | | | `lakehouse-read`, `predictions-write`, `models-read`, `read-alpaca-keys` |
 | site-publisher | | | `lakehouse-read`, `models-read`, `read-alpaca-keys` |
@@ -366,6 +386,13 @@ The `live` and `retrain` modules create their own roles for the services that st
 | `secform4strategy-live-score` | Step Functions | `lambda:InvokeFunction` on yahoo-connect, target and inference |
 | `secform4strategy-live-tickers-pipe` | EventBridge Pipes | Receive and delete on `live-tickers`; `states:StartExecution` on `live-score` |
 | `secform4strategy-site-scheduler` | EventBridge Scheduler | `lambda:InvokeFunction` on the site publisher |
+
+The `storage` module creates the roles of the [Iceberg maintenance](#iceberg-maintenance):
+
+| Role | Trusts | Permissions |
+| --- | --- | --- |
+| `secform4strategy-vacuum` | EventBridge Scheduler | `athena:StartQueryExecution` on the workgroup; Glue reads and `glue:UpdateTable` on the database; read, write and delete on `warehouse/*` and `athena-results/*` |
+| `secform4strategy-compaction` | AWS Glue | Glue `GetTable` and `UpdateTable` on the database; read, write and delete on `warehouse/*`; logs in `/aws-glue/iceberg-compaction/logs` |
 
 ### Credentials in containers
 
@@ -446,6 +473,65 @@ The plan role can read every resource and the state, and can write only the lock
 
 Only a job that runs in the GitHub environment `aws` can assume `secform4strategy-github-apply`. The environment admits only master and requires a reviewer's approval, so GitHub holds every apply job until a reviewer approves it.
 
+## Iceberg maintenance
+
+Every Iceberg commit adds a snapshot, a manifest and at least one data file. The live path commits to `BI4` and `BIR4` several hundred times on a busy day. Until 2026-11-26 it also committed to `P`. On that day, after 6 days of live commits, `P` had:
+
+| Measure | Value |
+| --- | --- |
+| Snapshots | 949 |
+| Manifests in the current snapshot | 752 |
+| Data files in the current snapshot | 772, half of them about 3 KB; 361 MB, 24.5 million rows |
+| Objects under `warehouse/p_v1/` | 997 data objects (646 MB) and 2,747 metadata objects (266 MB) |
+| Current metadata file | 623 KB |
+
+`P` has no partitions and no sort order. pyiceberg reads all manifests to plan a scan, which took about 10 seconds from outside AWS.
+
+Two mechanisms maintain the tables:
+
+| Mechanism | Tables | What it does |
+| --- | --- | --- |
+| Athena `VACUUM`, started by the EventBridge Scheduler schedule `secform4strategy-vacuum-<table>` at 03:00 New York time every day | `vacuumed_tables`: every table, `predictions_v1` included | Expires snapshots older than 5 days, keeping at least 1. Deletes the data and metadata files that only expired snapshots used. Keeps the 100 newest metadata files. Deletes orphan files older than 5 days: files under the table location that no snapshot uses, for example from a failed commit. |
+| Glue table optimizer `compaction`, strategy `binpack` | `compacted_tables`: `bi4_v1`, `bir4_v1` | Starts when a table holds 500 files smaller than 75% of its `write.target-file-size-bytes`. Rewrites them into files of about that size. |
+
+Each schedule calls the Athena API `StartQueryExecution` directly, with no Lambda function, in the workgroup `secform4strategy`. The role `secform4strategy-vacuum` gives the query its Glue and S3 permissions. A failed `VACUUM`, for example on a table that does not exist yet, fails only that query, and the next night runs it again. The schedules and the compaction run whatever the switches are. No code reads an older snapshot, so expiry removes nothing the services use. The `VACUUM` settings are the Athena defaults; the table properties `vacuum_max_snapshot_age_seconds`, `vacuum_min_snapshots_to_keep` and `vacuum_max_metadata_files_to_keep` change them.
+
+Glue compaction runs as the role `secform4strategy-compaction`. `CreateTableOptimizer` fails for a table that does not exist, so a table joins `compacted_tables` only after its first push has created it.
+
+### Compaction of `P`
+
+`P` is not in `compacted_tables` yet. Compaction aims for the table's `write.target-file-size-bytes`. At the default 512 MB it would rewrite `P` into one file of about 360 MB, and the replace of a rebased ticker would then rewrite that whole file.
+
+`IcebergFeatureStore` sets the table properties itself, before its first write to a table: `commit.retry.num-retries = 0` on every table, and the spec's `properties`. The `p` entry of `prices-feature-pipeline/yahoo_connect/src/spec.yaml` sets `write.target-file-size-bytes` to 16 MiB (16777216). No manual step is needed.
+
+To compact `P`:
+
+1. Let one batch yahoo-connect run write `P`, so the 16 MiB property is set.
+2. Add `"p_v1"` to `compacted_tables` in `infra/envs/demo/main.tf`.
+3. Run `terraform apply`.
+
+### Commits that race
+
+A maintenance commit and a service commit can race. An Iceberg commit is atomic, so the commit that loses changes nothing. `IcebergFeatureStore` turns a lost commit (`CommitFailedException`) and a failed concurrency check (`ValidationException`) into `RetryableError`. `with_backoff` then reloads the table and repeats the whole upsert or replace, at most 4 times. After that, the `live-score` step retry or the SQS redelivery runs it again. `commit.retry.num-retries = 0` turns off pyiceberg's own commit retry. That retry appends the rows of an upsert again without matching their keys, so two racing upserts of one new key would store it twice. Glue compaction fails its commit when a service has rewritten a file that the compaction also rewrote, and tries again later. Glue suspends the optimizer after 4 failed runs in a row.
+
+### Maintenance cost
+
+| Item | Price | Runs per month | Estimate per month |
+| --- | --- | --- | --- |
+| `VACUUM` | $5 per TB scanned, at least 10 MB per query | 6 tables × 30 nights = 180 | Under $0.01, plus S3 list and get requests of a few cents at most |
+| Glue compaction | $0.44 per DPU-hour, billed per second, at least 1 minute per run | About 10 per table: 20 now, 30 with `P` | $0.30 to $0.90 now, $0.45 to $1.30 with `P` |
+| First compaction of `P` | | Once | About $0.07 |
+
+AWS does not publish how many DPUs an optimizer run uses. The estimate assumes 2 DPUs, as in the AWS pricing example, and 1 to 3 minutes per run, which gives $0.015 to $0.044 per run. `ListTableOptimizerRuns` reports the real DPU-hours of each run.
+
+Other options cost more or do less:
+
+| Option | Why not |
+| --- | --- |
+| Glue optimizers `retention` and `orphan_file_deletion` | Each run bills at least 1 minute of its DPUs: about $0.80 to $2.30 per month with weekly runs on 6 tables, and 7 times that with daily runs. `VACUUM` does the same work for under $0.01. |
+| Athena `OPTIMIZE` for compaction | About $0.002 per run of `P`, but Athena accepts no table property for the file size it writes. `P` would become a few large files, and each replace would rewrite most of the table. |
+| A pyiceberg maintenance job | pyiceberg 0.12 expires snapshots only in the metadata: it deletes no files. It has no compaction and no orphan file removal. |
+
 ## Cost
 
 | State | Cost | What is billed |
@@ -453,6 +539,8 @@ Only a job that runs in the GitHub environment `aws` can assume `secform4strateg
 | Dormant (all switches off) | About $0 per day | S3 storage and ECR storage. The VPC, subnets, internet gateway, S3 gateway endpoint, security group, IAM, Glue database, idle SQS queues, idle Lambda functions, the DynamoDB table on demand and the state machines cost nothing. |
 | Live only (`live_enabled = true`, `switched_on = false`) | Cents to a few dollars per month | No NAT gateway and no Elastic IP. Lambda invocations, Step Functions transitions, SQS and DynamoDB requests, and the site publisher. |
 | Batch path switched on (`switched_on = true`) | About $1.20 per day, plus usage | The NAT gateway (about $1.08 per day) and its Elastic IP (about $0.12 per day). Usage: Fargate, NAT data processing, Athena scans. |
+
+The [Iceberg maintenance](#maintenance-cost) adds about $0.30 to $1.30 per month in every state.
 
 The site adds the publisher's Lambda cost while its schedule runs (`switched_on` or `live_enabled`), about $0.86 per month for each second a publish takes ([site.md](site.md#cost)).
 

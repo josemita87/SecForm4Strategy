@@ -1,11 +1,12 @@
 """Frame preparation shared by the target steps: bars, as-of keys, market clock, acceptance days, next prints."""
 
 import calendar
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
 
-from src.constants import MARKET_CLOSE, MARKET_OPEN, MARKET_TZ, Col
+from src.constants import MARKET_CLOSE, MARKET_OPEN, MARKET_TZ, Col, DailyClose
 
 
 def normalize_prices(prices: pd.DataFrame) -> pd.DataFrame:
@@ -17,6 +18,11 @@ def normalize_prices(prices: pd.DataFrame) -> pd.DataFrame:
     prices = prices.assign(**columns).sort_values(Col.DATE)
     assert prices[Col.DATE].notna().all(), 'Price dates contain NaT'
     return prices
+
+
+def daily_closes(closes: Sequence[DailyClose]) -> pd.DataFrame:
+    """Return the live event's closes as daily bars prepared by ``normalize_prices``, like bars read from P."""
+    return normalize_prices(pd.DataFrame(closes, columns=DailyClose._fields))
 
 
 def as_of_keys(transactions: pd.DataFrame) -> pd.DataFrame:
