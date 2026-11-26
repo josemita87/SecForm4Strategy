@@ -49,7 +49,8 @@ class Config(SsmSettings):
     qty: float = Field(gt=0)
     side: Side = 'sell'
     order_type: OrderType = 'market'
-    time_in_force: TimeInForce = 'gtc'
+    # Alpaca takes only day orders for hard-to-borrow shorts; one sent outside a session queues for the next open
+    time_in_force: TimeInForce = 'day'
     # Shorts rows whose probability of a short winner reaches this; the model metadata's cutoff when unset
     probability_cutoff: float | None = Field(None, gt=0, lt=1)
     # Live path: rows whose latest filing was accepted longer ago are not traded
