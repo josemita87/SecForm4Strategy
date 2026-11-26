@@ -23,3 +23,15 @@ variable "alert_email" {
   description = "Recipient of the budget alerts. "
   type        = string
 }
+
+variable "vacuumed_tables" {
+  description = "Iceberg tables of the Glue database that Athena VACUUMs every night: snapshot expiry and orphan file removal."
+  type        = set(string)
+  default     = []
+}
+
+variable "compacted_tables" {
+  description = "Iceberg tables that Glue compacts; each must exist at apply. p_v1 also needs its 16 MiB write.target-file-size-bytes first (docs/aws.md#iceberg-maintenance)."
+  type        = set(string)
+  default     = []
+}

@@ -1655,7 +1655,7 @@ const FAQ = [
   ["What does it cost?", "Live path alone: cents to a few dollars a month. Batch switched on: about $1.20 a day for the NAT, plus Fargate Spot (up to 70% cheaper). November, with the full backfill: $8.52 of the $10 budget."],
   ["Why is the NAT switchable?", "It bills about $1.08 per day with no traffic. Always on, it would cost about $32 per month, over three times the budget. Only the batch path needs it; the live Lambdas run outside the VPC."],
   ["Why no API for the website?", "A publisher Lambda writes static JSON. CloudFront reads the private S3 bucket through OAC; a CloudFront Function checks Basic auth against a hash in a KeyValueStore."],
-  ["What about the Lambda concurrency limit?", "The quota was raised from 10 to 1,000 on 23 November. The live writers to P and BIR4 run one at a time (reserved concurrency 1), so overlapping runs queue instead of writing the same table at once."],
+  ["What about the Lambda concurrency limit?", "The quota was raised from 10 to 1,000 on 23 November. The live writer to BIR4 runs one at a time (reserved concurrency 1), so overlapping runs queue instead of writing the table at once. Only the weekly batch run writes P."],
   ["Why one IAM role per service?", "A compromised service can do only its own job. Among task and Lambda roles, only inference and the site publisher read the Alpaca keys; training cannot place orders. On ECS the shared execution role injects secrets per task definition."],
 ];
 const S_QA = ({

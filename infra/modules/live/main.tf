@@ -158,7 +158,7 @@ locals {
         }
         Output = "{% $states.result.Payload %}"
         # Lambda's transient errors, and handlers raising RetryableError (e.g. orders left unplaced)
-        # A single-writer step is throttled while another run uses it: wait for it, about 30 minutes on average and at most about 60
+        # A step at its concurrency cap is throttled while other runs use it: wait for it, about 30 minutes on average and at most about 60
         Retry = [
           { ErrorEquals = ["Lambda.TooManyRequestsException"], IntervalSeconds = 5, MaxAttempts = 64, BackoffRate = 1.5, MaxDelaySeconds = 60, JitterStrategy = "FULL" },
           { ErrorEquals = ["States.TaskFailed"], IntervalSeconds = 5, MaxAttempts = 2, BackoffRate = 2 },

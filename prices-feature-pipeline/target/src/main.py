@@ -2,7 +2,6 @@
 
 import logging
 import time
-from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -400,30 +399,33 @@ def disclosure_rows(
 
 
 def publish_inference_rows(
-    store: FeatureStore, where: Mapping[str, object], reference: ReferenceData, window: pd.Timedelta
+    store: FeatureStore,
+    transactions: pd.DataFrame,
+    prices: pd.DataFrame,
+    reference: ReferenceData,
+    window: pd.Timedelta,
 ) -> pd.DataFrame:
-    """Build the BIR4 rows of the BI4 transactions ``where`` selects, upsert them, and return them.
+    """Build the BIR4 rows of BI4 ``transactions``, upsert the ones ``prices`` can value, and return those.
 
-    BIR4 has no realized return yet; its average covers the RT4 labels known at each row's acceptance.
+    A row accepted on or before its ticker's first day in ``prices``, or of a ticker ``prices`` lacks, has
+    no close to value it, so it is left as stored: the live path sends only the last days' closes. BIR4
+    has no realized return yet; its average covers the RT4 labels known at each row's acceptance.
 
     Args:
         store: The feature store.
-        where: The BI4 filter, e.g. one direction and, on the live path, the new filing's tickers.
+        transactions: The BI4 transactions, as stored: one direction and, on the live path, the new filing's tickers.
+        prices: Their tickers' daily bars prepared by ``normalize_prices``, with ``close_as_traded``.
         reference: Static company data.
         window: How far back the cluster features count insiders and filings.
 
     Returns:
         The rows upserted into BIR4.
     """
-    transactions = store.read(FeatureGroup.BI4, where=where, columns=TRANSACTION_COLUMNS)
     tickers = transactions[Col.TICKER].unique()
-    # Without prices no feature can be computed, so a failed read fails the run
-    daily = disclosure_rows(
-        transactions,
-        normalize_prices(store.read(FeatureGroup.PRICES, where={Col.TICKER: tickers}, columns=PRICE_COLUMNS)),
-        reference,
-        window,
-    )
+    rows = disclosure_rows(transactions, prices, reference, window)
+    # A ticker without closes maps to NaT, which no comparison passes, so its rows stay as stored
+    first_close = rows[Col.TICKER].astype(str).map(prices.groupby(prices[Col.TICKER].astype(str))[Col.DATE].min())
+    daily: pd.DataFrame = rows.loc[acceptance_day(rows[Col.ACCEPTED_AT]) > first_close]
     bir4 = daily.assign(
         **{
             Col.AVG_TARGET_EXPANDING: known_label_mean(
@@ -448,13 +450,12 @@ if __name__ == '__main__':
     )
     reference = ReferenceData.load(config.market_caps_path, config.companies_path)
     window = pd.Timedelta(days=config.cluster_window_days)
+    source = FeatureGroup.BT4 if config.system_training else FeatureGroup.BI4
+    transactions = store.read(source, where={config.filter_key: config.acquired_disposed}, columns=TRANSACTION_COLUMNS)
+    logger.info(f'{len(tickers := transactions[Col.TICKER].unique())} tickers in {source.value.upper()}')
+    # Without prices no feature or target can be computed, so a failed read fails the run
+    P = normalize_prices(store.read(FeatureGroup.PRICES, where={Col.TICKER: tickers}, columns=PRICE_COLUMNS))
     if config.system_training:
-        transactions = store.read(
-            FeatureGroup.BT4, where={config.filter_key: config.acquired_disposed}, columns=TRANSACTION_COLUMNS
-        )
-        logger.info(f'{len(tickers := transactions[Col.TICKER].unique())} tickers in BT4')
-        # Without prices no feature or target can be computed, so a failed read fails the run
-        P = normalize_prices(store.read(FeatureGroup.PRICES, where={Col.TICKER: tickers}, columns=PRICE_COLUMNS))
         daily = disclosure_rows(transactions, P, reference, window)
         # Every labelled row is kept, its average missing until a label of its ticker is known
         RT4 = compute_target(daily, P, config.delta_period, config.max_label_return).dropna(
@@ -463,4 +464,4 @@ if __name__ == '__main__':
         store.push(FeatureGroup.RT4, RT4.assign(**{Col.AVG_TARGET_EXPANDING: known_label_mean(RT4, RT4)}))
         logger.info(f'Pushed {len(RT4)} labelled rows of {len(daily)} disclosure rows to RT4')
     else:
-        publish_inference_rows(store, {config.filter_key: config.acquired_disposed}, reference, window)
+        publish_inference_rows(store, transactions, P, reference, window)

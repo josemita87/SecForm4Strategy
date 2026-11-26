@@ -1,11 +1,14 @@
-"""Domain constants and reference-data types for the target microservice."""
+"""Domain constants, reference-data types and the live event for the target microservice."""
 
 import json
 from dataclasses import dataclass
+from datetime import date
 from enum import Enum, StrEnum
 from pathlib import Path
+from typing import NamedTuple
 
 import pandas as pd
+from pydantic import BaseModel, ConfigDict
 
 
 class FeatureGroup(str, Enum):
@@ -168,3 +171,20 @@ TRANSACTION_COLUMNS = (
 PRICE_COLUMNS = (Col.TICKER, Col.DATE, Col.OPEN, Col.CLOSE, Col.CLOSE_AS_TRADED)
 #: Label columns the expanding mean of known labels uses
 LABEL_COLUMNS = (Col.TICKER, Col.ACCEPTED_AT, Col.LABEL_KNOWN_AT, Col.PCT_CHANGE, Col.AVG_TARGET_EXPANDING)
+
+
+class DailyClose(NamedTuple):
+    """One ticker's final as-traded close of one day, as live yahoo-connect sends it."""
+
+    ticker: str
+    date: date
+    close_as_traded: float
+
+
+class LiveScoreEvent(BaseModel):
+    """The live-score input from yahoo-connect: the tickers of new filings and their recent final closes."""
+
+    model_config = ConfigDict(frozen=True)
+
+    tickers: tuple[str, ...]
+    prices: tuple[DailyClose, ...]

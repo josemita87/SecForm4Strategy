@@ -70,6 +70,10 @@ class FeatureStore(Protocol):
         """Upsert ``data`` into the referenced table."""
         ...
 
+    def replace(self, reference: str, data: pd.DataFrame, where: Filters) -> None:
+        """Delete the rows ``where`` selects and append ``data`` in their place, in one commit."""
+        ...
+
 
 class ModelFiles(Protocol):
     """The model store's pointer and metadata, read without the model itself."""
