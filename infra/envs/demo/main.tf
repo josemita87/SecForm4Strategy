@@ -72,7 +72,7 @@ module "iam" {
     yahoo-connect  = { capabilities = ["lakehouse-write"] }
     target         = { capabilities = ["lakehouse-write"] }
     training       = { capabilities = ["lakehouse-read", "models-read", "models-write"] }
-    inference      = { capabilities = ["lakehouse-read", "models-read"] }
+    inference      = { capabilities = ["lakehouse-read", "predictions-write", "models-read"] }
   }
   lambda_access = {
     master-index   = { sends = ["live-filings"], capabilities = ["seen-keys", "read-secrets"] }
@@ -80,7 +80,7 @@ module "iam" {
     kafka-to-store = { receives = ["live-transactions"], sends = ["live-tickers"], capabilities = ["lakehouse-write"] }
     yahoo-connect  = { capabilities = ["lakehouse-write"] }
     target         = { capabilities = ["lakehouse-write"] }
-    inference      = { capabilities = ["lakehouse-read", "models-read", "read-alpaca-keys"] }
+    inference      = { capabilities = ["lakehouse-read", "predictions-write", "models-read", "read-alpaca-keys"] }
     site-publisher = { capabilities = ["lakehouse-read", "models-read", "read-alpaca-keys"] }
   }
 }

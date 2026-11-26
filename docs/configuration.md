@@ -36,6 +36,7 @@ Current formats:
 - **BT4/BI4** (one row per transaction): the scraper's record, including `accession` and `position` (the transaction's place in its filing's table), `accepted_at` as a UTC timestamp, and share and holding counts as `float64`.
 - **P** (one row per ticker and day, key `<ticker>@<date>`): split- and dividend-adjusted `open`/`close` for returns, `close_as_traded` (the close in that day's shares, undoing later splits) for valuation, and the day's `split` and `dividend`.
 - **RT4/BIR4** (one row per ticker and next market print, key `<ticker>@<next print>`): every filing disclosed before that tradable price, valued at the as-traded close of the last trading day before the acceptance day, with `reported_price`, the mean price reported on its stock transactions (missing if none), `price_to_close`, USD values of the traded shares, the positions left and `total_held` (traded plus untraded accounts), the cluster features below, and for RT4 the label and `label_known_at`. A row's `avg_target_expanding` averages its ticker's labels already known at its acceptance; RT4 keeps every labelled row, the average missing until a label is known.
+- **predictions** (one row per scored row, model version and source, key `<source>|<model version>|<row key>`): the inference service's probability, cutoff, order outcome and run id ([aws.md](aws.md#predictions)). Tables the feature store creates turn off pyiceberg's own commit retry (`commit.retry.num-retries = 0`), and the store's retry upserts again on a lost race.
 
 | Service | Groups | Role |
 | --- | --- | --- |
@@ -43,7 +44,7 @@ Current formats:
 | yahoo_connect | `bt4`, `bi4`, `p` | reads tickers, writes prices |
 | target | `p`, `bt4`, `bi4`, `rt4`, `bir4` | joins transactions with prices, writes labelled `rt4` and scored-input `bir4` |
 | training | `rt4` | reads the labelled transactions |
-| inference | `bir4` | reads the transactions to score |
+| inference | `bir4`, `rt4`, `predictions` | reads the rows to score, writes `predictions`; the live-performance report reads `rt4` labels |
 | site-publisher | `rt4`, `bt4`, `bi4` | reads the labelled transactions for `model.json`, and the recent sales for `explore.json` |
 
 ## Other `spec.yaml` sections

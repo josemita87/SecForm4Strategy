@@ -3,18 +3,19 @@
 The live-score state machine invokes it with ``{"tickers": [...]}``, after target has built their
 BIR4 rows. The image is the same as the batch task's; Lambda runs ``python -m awslambdaric
 handler.handle`` from ``src/``. The model is loaded on every invocation, so a weekly retrain
-takes effect at once.
+takes effect at once. Every scored row is upserted into the ``predictions`` feature group after the orders.
 """
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 import pandas as pd
 from config import S3Models, config
-from constants import Col, FeatureGroup
+from constants import Col, FeatureGroup, OrderOutcome, Source
 from inference_pipeline import InferencePipeline, OrderSpec, score, signal_cutoff
 from paths import SPEC_PATH
+from predictions import ScoringRun, prediction_records, write_predictions
 from pyiceberg.catalog import load_catalog
 from secform4strategy_clients.broker import AlpacaClient
 from secform4strategy_clients.feature_groups import load_feature_group_catalog
@@ -43,17 +44,24 @@ store = IcebergFeatureStore(
 )
 
 
-def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
+class LambdaContext(Protocol):
+    """The slice of the Lambda context the handler reads."""
+
+    aws_request_id: str
+
+
+def handle(event: Mapping[str, Any], context: LambdaContext) -> dict[str, object]:
     """Score the tickers' fresh rows, and short the likely short winners at once.
 
     A row is fresh when its latest filing was accepted within ``MAX_SIGNAL_AGE_MINUTES`` of now, or of
     the last close while the market is closed (Alpaca's calendar), so filings disclosed overnight trade
     at the open. The event carries tickers, and their older rows must not trade late. Orders carry their
-    row key as client order id, so a retry never doubles one.
+    row key as client order id, so a retry never doubles one. The predictions are upserted after the orders,
+    also when some orders are left for a retry, so the retry replaces their records.
 
     Args:
         event: ``{"tickers": [...]}``.
-        _context: The Lambda context, unused; Lambda passes it to every handler.
+        context: The Lambda context; its request id is the run id of the predictions.
 
     Returns:
         The tickers, how many rows were scored, the keys of the rows at or above the probability cutoff, the
@@ -61,8 +69,8 @@ def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
         of a short winner (the site's live feed reads them).
 
     Raises:
-        RetryableError: Orders or the calendar failed transiently; the state machine retries, and placed orders
-            are not repeated.
+        RetryableError: Orders, the calendar or the predictions write failed transiently; the state machine
+            retries, and placed orders are not repeated.
     """
     if not (tickers := list(event['tickers'])):
         logger.info('No tickers with rows to score')
@@ -83,11 +91,15 @@ def handle(event: Mapping[str, Any], _context: object) -> dict[str, object]:
     predictions = score(loaded.pipeline, loaded.features, fresh)
     shorts = predictions.loc[predictions[Col.PROBABILITY] >= loaded.probability_cutoff, Col.KEY].tolist()
     logger.info(f'{len(predictions)} of {len(fresh)} rows scored for {tickers}; shorting {shorts}')
-    if retry_later := pipeline.execute_trades(
+    outcomes = pipeline.execute_trades(
         predictions,
         loaded.probability_cutoff,
         OrderSpec(config.qty, config.side, config.order_type, config.time_in_force),
-    ):
+    )
+    write_predictions(
+        store, prediction_records(predictions, loaded, outcomes, ScoringRun(Source.LIVE, now, context.aws_request_id))
+    )
+    if retry_later := [key for key, outcome in outcomes.items() if outcome == OrderOutcome.FAILED]:
         raise RetryableError(f'Orders left for a retry: {retry_later}')
     scored = predictions[[Col.KEY, Col.TICKER, Col.ACCEPTED_AT, Col.PROBABILITY]].assign(
         **{Col.ACCEPTED_AT: pd.to_datetime(predictions[Col.ACCEPTED_AT], utc=True).dt.strftime('%Y-%m-%dT%H:%M:%SZ')}

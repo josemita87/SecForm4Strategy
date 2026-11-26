@@ -2,14 +2,16 @@
 
 import logging
 import sys
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from typing import TYPE_CHECKING
 
 import pandas as pd
 from config import LocalModels, S3Models, config
-from constants import FeatureGroup
+from constants import FeatureGroup, OrderOutcome, Source
 from inference_pipeline import InferencePipeline, OrderSpec, score
 from paths import SPEC_PATH
+from predictions import ScoringRun, prediction_records, write_predictions
 from pyiceberg.catalog import load_catalog
 from secform4strategy_clients.broker import AlpacaClient
 from secform4strategy_clients.feature_groups import load_feature_group_catalog
@@ -44,21 +46,30 @@ if __name__ == '__main__':
     )
     loaded = pipeline.load_model(config.probability_cutoff)
 
-    # The CSV source stands in for the feature store when it is disabled
-    rows = (
+    # The CSV source stands in for the feature store when it is disabled; predictions are then not recorded
+    store = (
         IcebergFeatureStore(
             load_catalog('default'),
             config.feature_store_namespace,
             load_feature_group_catalog(SPEC_PATH, config.feature_group_version),
-        ).read(FeatureGroup.BIR4)
+        )
         if config.use_feature_store
-        else pd.read_csv(config.csv_path)
+        else None
     )
-    predictions = score(loaded.pipeline, loaded.features, rows)
-    # A non-zero exit has the scheduler rerun inference; client order ids keep placed orders from repeating
-    if retry_later := pipeline.execute_trades(
+    predictions = score(
+        loaded.pipeline,
+        loaded.features,
+        pd.read_csv(config.csv_path) if store is None else store.read(FeatureGroup.BIR4),
+    )
+    outcomes = pipeline.execute_trades(
         predictions,
         loaded.probability_cutoff,
         OrderSpec(config.qty, config.side, config.order_type, config.time_in_force),
-    ):
+    )
+    if store is not None:
+        write_predictions(
+            store, prediction_records(predictions, loaded, outcomes, ScoringRun(Source.BATCH, datetime.now(UTC), None))
+        )
+    # A non-zero exit has the scheduler rerun inference; client order ids keep placed orders from repeating
+    if retry_later := [key for key, outcome in outcomes.items() if outcome == OrderOutcome.FAILED]:
         sys.exit(f'Orders left for a rerun: {retry_later}')

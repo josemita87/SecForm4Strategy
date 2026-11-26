@@ -368,6 +368,8 @@ The account's Lambda concurrency quota was raised from 10 to 1,000 executions on
 
 **Retries and idempotent orders.** Each `live-score` step is retried twice on `States.TaskFailed`, after 5 and 10 seconds. The inference service raises `RetryableError` when an order is left unplaced, so the step runs again. Each order carries the row key as `client_order_id`, so Alpaca rejects a duplicate. The inference service loads the latest model at each invocation, so a new weekly model takes effect at once. It trades only fresh rows. In a session, a row is fresh when its latest filing was accepted within `MAX_SIGNAL_AGE_MINUTES` (default 60). Outside a session, and in its first 60 minutes, the 60 minutes count back from the last close, which Alpaca's market calendar gives with holidays and early closes. Filings accepted overnight therefore stay fresh until an hour after the open.
 
+**Predictions table.** After the orders, inference upserts one record per scored row into the Iceberg table `predictions_v1`: the row key, the probability and cutoff, whether the row was shorted, the model version, the Lambda request id, and the order outcome. The key is `<source>|<model version>|<row key>`, so a retry replaces its records and a new model adds its own. Before this table, predictions were kept only in the Step Functions history (90 days) and in the site's `live.json` (latest 50 runs). Concurrent runs write the table with Iceberg's optimistic concurrency: a commit that loses a race reloads the table and upserts again. [aws.md](../aws.md#predictions) gives the schema.
+
 **Scheduled polls.** The poller runs only on weekdays around market hours. Most Form 4s arrive after the close: about 470 to 560 from 16:00 to 22:00 ET, a few from 06:00 to 09:00 ET, and none from 22:00 to 06:00 ET. The catch-up poll at 07:55 ET reads 20 feed pages of 100 entries. The feed lists each filing once per filer, so 20 pages hold about 1,000 filings. The catch-up normally ends before the first minute poll at 08:00; if they overlap, the downstream upserts and client order ids absorb a filing sent twice. Alpaca queues the resulting market orders for the open.
 
 **Cold starts.** The images are about 1 GB. A first cold start exceeds Lambda's 10-second initialization limit, so Lambda runs the initialization again inside the invocation, which then succeeds. Measured cold invocations were 10 seconds for scraper, 45 seconds for kafka-to-store and 39 seconds for yahoo-connect. Warm invocations take a few seconds. A filing that arrives after a quiet period therefore reaches inference about 1 to 2 minutes after the poll. Provisioned concurrency would keep one instance warm for about $10 per month per function. The project accepts the cold start instead.
@@ -525,6 +527,7 @@ The budget `secform4strategy-monthly` is $10 per month. It emails `alert_email` 
   - the `ERROR` log lines of the last hour;
   - the `live-score` outcomes of the last 24 hours;
   - the current model folder.
+- **`make live-performance`.** One read-only command compares the live predictions with the Alpaca paper account and the `RT4` labels. It prints the signals, the shorts placed and filled, the P&L per short marked at the current price, the hit rate against the label, and the calibration per tenth of probability ([aws.md](../aws.md#measuring-live-performance)).
 - **Logs.** Every service logs one line per batch, for example `10 of 10 filings -> 23 transactions` (scraper). Log groups keep 14 days.
 
 ---
@@ -777,6 +780,8 @@ The regressor never beat a constant zero prediction on MAE. Single outlier label
 ### 7.6 Live path verification
 
 The live path ran end to end on real filings. In earlier runs, filings for AMZN, TGT, DGICA and IMTX went from the SEC feed through the poller, scraper and kafka-to-store to the `live-score` state machine, and inference scored them. AWS records seven successful `live-score` runs. These runs verified the wiring before the classifier was promoted; no live result for the classifier is claimed. Alpaca paper orders were placed and then cancelled, to verify three things: the broker wiring, the `client_order_id` idempotency and the IAM path to the Alpaca keys. The measured cold starts in Section 4.4 come from these runs.
+
+Live performance on the paper money can now be measured with `make live-performance`. On 2026-11-26 the paper account held 2 orders, both cancelled, and the `predictions` table did not exist yet, so no live result is reported. A hit rate needs labels, which arrive at least 30 days after each signal.
 
 On the batch path, no `retrain` run has finished all six steps on AWS in one state-machine run. The 1-year runs were stopped by hand. The 5-year backfill (`backfill-5y`) scraped every filing, then ended `FAILED`. Its remaining steps ran on 2026-11-22, so every batch step has run on five years of data (Section 8). The target and training services then ran again with the label guards, and the classifier `20261122T224917Z` is the promoted model.
 

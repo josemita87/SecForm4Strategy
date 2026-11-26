@@ -5,3 +5,11 @@ feature_groups:
   bir4:
     primary_key: [key]
     event_time: accepted_at
+  # Read by the live-performance report for the realized labels
+  rt4:
+    primary_key: [key]
+    event_time: accepted_at
+  # One row per scored BIR4 row, model version and source (docs/aws.md#predictions)
+  predictions:
+    primary_key: [key]  # <source>|<model version>|<row key>
+    event_time: scored_at

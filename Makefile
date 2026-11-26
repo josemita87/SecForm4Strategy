@@ -1,6 +1,6 @@
 .PHONY: lint format type-check security security-scan docstrings validate-config test-unit test-unit-fast quality quality-static \
 	start-redpanda stop-redpanda inference-sec inference-prices inference-model training-sec training-prices \
-	training-model lakehouse-summary switch-on switch-off status
+	training-model lakehouse-summary switch-on switch-off status live-performance
 
 CLIENTS_SRC := packages/secform4strategy-clients/src
 # Services importing flat from src/ (`from config import config`)
@@ -97,6 +97,17 @@ lakehouse-summary:
 # One screen of the AWS stack: switches, runs, queues with rates and ETAs, tasks, errors, model (docs/aws.md)
 status:
 	@AWS_PROFILE=$${AWS_PROFILE:-secform4} uv run --quiet scripts/aws_status.py
+
+# Live predictions against the paper account and the RT4 labels; read-only (docs/aws.md#measuring-live-performance)
+DATA_BUCKET := secform4strategy-data-100118195151
+ALPACA_PARAMETERS := {"alpaca_api_key": "/secform4strategy/alpaca-api-key", "alpaca_api_secret": "/secform4strategy/alpaca-api-secret"}
+live-performance:
+	@cd inference && AWS_PROFILE=$${AWS_PROFILE:-secform4} AWS_DEFAULT_REGION=us-east-1 \
+		PYICEBERG_CATALOG__DEFAULT__TYPE=glue PYICEBERG_CATALOG__DEFAULT__GLUE__REGION=us-east-1 \
+		PYICEBERG_CATALOG__DEFAULT__S3__REGION=us-east-1 FEATURE_GROUP_VERSION=1 \
+		MODEL_STORE__BACKEND=s3 MODEL_STORE__REGION=us-east-1 MODEL_STORE__BUCKET=$(DATA_BUCKET) \
+		ALPACA_BASE_URL=https://paper-api.alpaca.markets QTY=1 SSM_PARAMETERS='$(ALPACA_PARAMETERS)' \
+		uv run --quiet python src/measure.py
 
 
 # The AWS stack's on/off switch: commits the switch file and pushes master; CI applies it once you approve (docs/aws.md)
