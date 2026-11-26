@@ -31,7 +31,7 @@ variable "vacuumed_tables" {
 }
 
 variable "compacted_tables" {
-  description = "Iceberg tables that Glue compacts; each must exist at apply. p_v1 also needs its 16 MiB write.target-file-size-bytes first (docs/aws.md#iceberg-maintenance)."
+  description = "Iceberg tables that Glue compacts; each must exist at apply. p_v1 needs its 16 MiB write.target-file-size-bytes first, which the store sets at its first write (docs/aws.md#iceberg-maintenance)."
   type        = set(string)
   default     = []
 }

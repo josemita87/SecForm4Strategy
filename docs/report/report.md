@@ -927,7 +927,7 @@ The next research steps:
 | Follow-up | Benefit |
 | --- | --- |
 | Append-then-deduplicate write for full loads | kafka-to-store appends each batch without matching keys against the whole `BT4` table, and one pass removes duplicate keys at the end. A full load then no longer slows as the table grows. |
-| Compact `P` | Run `scripts/iceberg_table_properties.py --apply` to set its target file size, then add it to `compacted_tables` and apply. Until then each weekly refresh adds up to two commits per batch of 50 tickers, each with small files, and scans of `P` slow down. |
+| Compact `P` | After one batch run has written `P` (the store then sets its 16 MiB target file size), add it to `compacted_tables` and apply. Until then each weekly refresh adds up to two commits per batch of 50 tickers, each with small files, and scans of `P` slow down. |
 | Clear the scraper's exit flag when redelivery succeeds | A finished scraper step no longer reports failure, so `retrain` does not rerun it through the Spot retries and the On-Demand fallback. |
 | Catch failed `live-score` runs | The Pipe starts `live-score` with `invocation_type = "FIRE_AND_FORGET"`, so it deletes the `live-tickers` messages once the run starts. A run that fails after its retries loses its tickers, and the failed-run alarm reports it. A replay has little value: a late trade is worth nothing, and the 60-minute stale check would skip it. A `Catch` in `live-score` that sends the tickers to a queue would keep them for inspection; a Pipe DLQ catches only runs that fail to start. `REQUEST_RESPONSE` does not work with Standard workflows. |
 | Keep `PermanentError` messages | A `PermanentError` message is logged and acknowledged, so it never reaches a DLQ. |

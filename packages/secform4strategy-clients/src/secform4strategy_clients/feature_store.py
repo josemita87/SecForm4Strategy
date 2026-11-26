@@ -39,10 +39,9 @@ class IcebergFeatureStore:
     feature-group version. Pushes upsert by ``primary_key``, replacing whole rows;
     within one push the last row per key wins. Keys are one column: pyiceberg 0.12's upsert
     crashes the process on a composite key, so a composite identity is joined into one string.
-    A push that loses a commit race reloads the table and upserts again. Tables this store creates
-    turn off pyiceberg's own commit retry, which re-appends the rows without matching them against
-    the rival's commit and so can duplicate a key; tables created before keep that retry until
-    their ``commit.retry.num-retries`` property is set to 0.
+    A push that loses a commit race reloads the table and upserts again. Before its first write to a
+    table, the store sets the spec's ``properties`` and turns off pyiceberg's own commit retry, which
+    re-appends the rows without matching them against the rival's commit and so can duplicate a key.
 
     Attributes:
         catalog: The Iceberg catalog holding the tables.
@@ -125,7 +124,7 @@ class IcebergFeatureStore:
             return None
         keys = list(self._specs[reference].primary_key)
         incoming = _to_iceberg_types(data.drop_duplicates(subset=keys, keep='last'))
-        return with_backoff(lambda: self._upsert_once(self._identifier(reference), incoming, keys))
+        return with_backoff(lambda: self._upsert_once(reference, incoming, keys))
 
     def replace(self, reference: str, data: pd.DataFrame, where: Filters) -> None:
         """Delete the rows ``where`` selects and append ``data`` in their place, in one commit; skips empties.
@@ -135,37 +134,58 @@ class IcebergFeatureStore:
         pruning above that and the delete reads every file.
 
         Args:
-            reference: A key into the catalog given at construction; the table must exist.
+            reference: A key into the catalog given at construction.
             data: The rows that replace the selected ones.
             where: Column -> value equality filters selecting the rows to replace; an iterable matches any item.
         """
         if data.empty:
             return
         incoming = _to_iceberg_types(data.drop_duplicates(subset=list(self._specs[reference].primary_key), keep='last'))
-        with_backoff(lambda: self._replace_once(self._identifier(reference), incoming, _row_filter(where)))
+        with_backoff(lambda: self._replace_once(reference, incoming, _row_filter(where)))
 
-    def _replace_once(self, identifier: str, incoming: pa.Table, row_filter: BooleanExpression) -> None:
+    def _writable(self, reference: str, schema: pa.Schema) -> Table:
+        """Load the table at its latest snapshot, or create it with ``schema``, with its properties set.
+
+        Args:
+            reference: A key into the catalog given at construction.
+            schema: The schema a new table gets.
+
+        Returns:
+            The table, its commit retry off and the spec's ``properties`` set (one commit the first time).
+        """
+        identifier = self._identifier(reference)
+        properties = {TableProperties.COMMIT_NUM_RETRIES: '0'} | self._specs[reference].properties
+        try:
+            table = self.catalog.load_table(identifier)
+        except NoSuchTableError:
+            return self.catalog.create_table(identifier, schema=schema, properties=properties)
+        if missing := {key: value for key, value in properties.items() if table.properties.get(key) != value}:
+            with table.transaction() as transaction:
+                transaction.set_properties(missing)
+        return table
+
+    def _replace_once(self, reference: str, incoming: pa.Table, row_filter: BooleanExpression) -> None:
         """Load the table at its latest snapshot and replace the rows ``row_filter`` selects once.
 
         Args:
-            identifier: The table's ``<namespace>.<name>_v<version>``.
+            reference: A key into the catalog given at construction.
             incoming: The rows, deduplicated by key, with Iceberg's column types.
             row_filter: The rows to delete.
 
         Raises:
             RetryableError: Another writer committed first, or changed the selected rows; the next attempt reloads.
         """
-        table = self.catalog.load_table(identifier)
         try:
-            table.overwrite(_aligned(incoming, table, identifier), overwrite_filter=row_filter)
+            table = self._writable(reference, incoming.schema)
+            table.overwrite(_aligned(incoming, table, self._identifier(reference)), overwrite_filter=row_filter)
         except (CommitFailedException, ValidationException) as error:
-            raise RetryableError(f'Replace in {identifier}: {error}') from error
+            raise RetryableError(f'Replace in {self._identifier(reference)}: {error}') from error
 
-    def _upsert_once(self, identifier: str, incoming: pa.Table, keys: list[str]) -> object:
+    def _upsert_once(self, reference: str, incoming: pa.Table, keys: list[str]) -> object:
         """Load (or create) the table at its latest snapshot and upsert into it once.
 
         Args:
-            identifier: The table's ``<namespace>.<name>_v<version>``.
+            reference: A key into the catalog given at construction.
             incoming: The rows, deduplicated by key, with Iceberg's column types.
             keys: The primary-key columns.
 
@@ -177,16 +197,10 @@ class IcebergFeatureStore:
                 the next attempt reloads the table.
         """
         try:
-            table = self.catalog.load_table(identifier)
-        except NoSuchTableError:
-            table = self.catalog.create_table(
-                identifier, schema=incoming.schema, properties={TableProperties.COMMIT_NUM_RETRIES: '0'}
-            )
-
-        try:
-            return table.upsert(_aligned(incoming, table, identifier), join_cols=keys)
+            table = self._writable(reference, incoming.schema)
+            return table.upsert(_aligned(incoming, table, self._identifier(reference)), join_cols=keys)
         except (CommitFailedException, ValidationException) as error:
-            raise RetryableError(f'Upsert into {identifier}: {error}') from error
+            raise RetryableError(f'Upsert into {self._identifier(reference)}: {error}') from error
 
 
 def _row_filter(where: Filters) -> BooleanExpression:

@@ -205,7 +205,7 @@ The Alpaca order id is not stored. The client order id is unique in the account,
 
 The write runs after the orders, also when some orders are left for a retry. If the write fails, the step fails and Step Functions retries it. The retry places no order twice, because Alpaca rejects a repeated client order id, and it overwrites the records.
 
-Several `live-score` runs can write the table at once, because the inference Lambda has no reserved concurrency. A reserved concurrency of 1 would make each run wait for the previous run's orders, and that delay is on the trading path. Instead, the writes rely on Iceberg's optimistic concurrency: the commit that loses a race fails, and `IcebergFeatureStore.push` reloads the table and upserts again, up to 4 times. Tables the store creates set `commit.retry.num-retries` to 0. pyiceberg's own commit retry appends the rows again without matching them against the rival commit, so two runs that upsert the same key would store it twice. The tables created before this setting (`p_v1`, `bt4_v1`, `bi4_v1`, `rt4_v1`, `bir4_v1`) still use pyiceberg's retry.
+Several `live-score` runs can write the table at once, because the inference Lambda has no reserved concurrency. A reserved concurrency of 1 would make each run wait for the previous run's orders, and that delay is on the trading path. Instead, the writes rely on Iceberg's optimistic concurrency: the commit that loses a race fails, and `IcebergFeatureStore.push` reloads the table and upserts again, up to 4 times. The store sets `commit.retry.num-retries` to 0 on every table before its first write, including tables created earlier. pyiceberg's own commit retry appends the rows again without matching them against the rival commit, so two runs that upsert the same key would store it twice.
 
 The table is not partitioned. It grows by a few rows per run, so day partitions would hold only tiny files. Each upsert adds a snapshot and small files, so the table needs the same compaction and snapshot expiry as the other tables.
 
@@ -500,14 +500,15 @@ Glue compaction runs as the role `secform4strategy-compaction`. `CreateTableOpti
 
 ### Compaction of `P`
 
-`P` is not in `compacted_tables` yet. Its `write.target-file-size-bytes` is the default 512 MB, so compaction would rewrite `P` into one file of about 360 MB. The replace of a rebased ticker would then read and rewrite that whole file, more than the 2 GB of the yahoo-connect task can hold.
+`P` is not in `compacted_tables` yet. Compaction aims for the table's `write.target-file-size-bytes`. At the default 512 MB it would rewrite `P` into one file of about 360 MB, and the replace of a rebased ticker would then rewrite that whole file.
 
-Set the table properties before the `terraform apply` that adds `P` to compaction. Only `P` needs the 16 MiB file size; the other tables are small.
+`IcebergFeatureStore` sets the table properties itself, before its first write to a table: `commit.retry.num-retries = 0` on every table, and the spec's `properties`. The `p` entry of `prices-feature-pipeline/yahoo_connect/src/spec.yaml` sets `write.target-file-size-bytes` to 16 MiB (16777216). No manual step is needed.
 
-1. Run `AWS_PROFILE=secform4 uv run scripts/iceberg_table_properties.py`. It prints the properties it would set.
-2. Run the same command with `--apply`. It sets `write.target-file-size-bytes` to 16 MiB on `P`, and `commit.retry.num-retries` to `0` on every existing table.
-3. Add `"p_v1"` to `compacted_tables` in `infra/envs/demo/main.tf`.
-4. Run `terraform apply`.
+To compact `P`:
+
+1. Let one batch yahoo-connect run write `P`, so the 16 MiB property is set.
+2. Add `"p_v1"` to `compacted_tables` in `infra/envs/demo/main.tf`.
+3. Run `terraform apply`.
 
 ### Commits that race
 

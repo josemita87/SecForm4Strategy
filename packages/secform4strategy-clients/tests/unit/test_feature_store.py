@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pandas as pd
+import pyarrow as pa
 import pytest
 from pyiceberg.catalog.sql import SqlCatalog
 from secform4strategy_clients.feature_groups import FeatureGroupSpec
@@ -140,3 +141,27 @@ class TestReplace:
         store.push('sales', self.ROWS)
         store.replace('sales', self.ROWS.iloc[:0], where={'ticker': 'a'})
         assert len(store.read('sales')) == len(self.ROWS)
+
+
+#: What a first write leaves on the table: the commit retry off and the spec's file size
+WANTED = {'commit.retry.num-retries': '0', 'write.target-file-size-bytes': '16777216'}
+
+
+class TestTableProperties:
+    """The first write sets the commit retry off and the spec's properties, on new and existing tables."""
+
+    def test_a_new_table_gets_them(self, tmp_path: Path) -> None:
+        catalog = RacingCatalog('test', uri=f'sqlite:///{tmp_path}/catalog.db', warehouse=tmp_path.as_uri())
+        spec = SPEC.model_copy(update={'properties': {'write.target-file-size-bytes': '16777216'}})
+        IcebergFeatureStore(catalog, 'features', {'sales': spec}).push('sales', sales('a'))
+        assert catalog.load_table('features.sales_v1').properties.items() >= WANTED.items()
+
+    def test_an_existing_table_gets_them_on_its_next_push(self, tmp_path: Path) -> None:
+        catalog = RacingCatalog('test', uri=f'sqlite:///{tmp_path}/catalog.db', warehouse=tmp_path.as_uri())
+        catalog.create_namespace('features')
+        catalog.create_table('features.sales_v1', schema=pa.Table.from_pandas(sales('a')).schema)
+        spec = SPEC.model_copy(update={'properties': {'write.target-file-size-bytes': '16777216'}})
+        IcebergFeatureStore(catalog, 'features', {'sales': spec}).push('sales', sales('a', 'b'))
+        table = catalog.load_table('features.sales_v1')
+        assert table.properties.items() >= WANTED.items()
+        assert sorted(table.scan().to_pandas()['key']) == ['a', 'b']

@@ -5,6 +5,8 @@ feature_groups:
   p:
     primary_key: [key]  # <ticker>@<date>
     event_time: date
+    # 16 MiB files: a ticker replace or a compaction rewrites a few files, not the whole table
+    properties: {write.target-file-size-bytes: '16777216'}
   bt4:
     primary_key: [key]
     event_time: accepted_at
