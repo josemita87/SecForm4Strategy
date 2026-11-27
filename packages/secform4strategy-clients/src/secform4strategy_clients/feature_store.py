@@ -158,7 +158,8 @@ class IcebergFeatureStore:
         try:
             table = self.catalog.load_table(identifier)
         except NoSuchTableError:
-            return self.catalog.create_table(identifier, schema=schema, properties=properties)
+            # A rival that creates the table first wins; this writer loads it instead of failing
+            return self.catalog.create_table_if_not_exists(identifier, schema=schema, properties=properties)
         if missing := {key: value for key, value in properties.items() if table.properties.get(key) != value}:
             with table.transaction() as transaction:
                 transaction.set_properties(missing)
