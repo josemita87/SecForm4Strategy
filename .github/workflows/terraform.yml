@@ -1,13 +1,14 @@
 name: terraform
 
-# Plans pull requests; on master, plans the merged commit and applies exactly that plan after approval (docs/aws.md).
-# Run it by hand on master to deploy images pushed since the last apply.
+# Plans pull requests; on master, plans after images finish and applies exactly that plan after approval (docs/aws.md).
 on:
   pull_request:
     paths: [infra/envs/**, infra/modules/**, site/**, .github/workflows/terraform.yml]
-  push:
+  # images runs after every successful quality run on a master push, so the plan sees the images just pushed
+  workflow_run:
+    workflows: [images]
+    types: [completed]
     branches: [master]
-    paths: [infra/envs/**, infra/modules/**, site/**, .github/workflows/terraform.yml]
   workflow_dispatch:
 
 permissions:
@@ -33,7 +34,9 @@ defaults:
 jobs:
   plan:
     # Pull requests from forks get no secrets and no OIDC token, so only same-repo branches are planned
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     outputs:
       changes: ${{ steps.plan.outputs.changes }}
@@ -51,6 +54,10 @@ jobs:
           terraform_wrapper: false
 
       - run: terraform init
+
+      - run: terraform -chdir=../.. fmt -check -recursive
+
+      - run: terraform validate -no-color
 
       # Exit code 2 means the plan has changes; 1 is an error
       - id: plan

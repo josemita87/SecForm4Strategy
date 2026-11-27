@@ -294,7 +294,7 @@ On a local copy of `P`, the replace of one ticker took 2.1 seconds. An upsert of
 | Security group `secform4strategy-tasks` | No inbound rules; all outbound traffic allowed |
 | NAT gateway and Elastic IP | In `secform4strategy-public-0`, only while `switched_on = true` |
 
-The subnets take the first two availability zones that AWS reports as available, which in this account are `use1-az1` and `use1-az2`. Fargate ARM64 is not available in `use1-az3`, and nothing in the module excludes that zone.
+The subnets take the first two availability zones that AWS reports as available, which in this account are `use1-az1` and `use1-az2`. Fargate ARM64 is not available in `use1-az3`, so the module excludes that zone (`exclude_zone_ids`).
 
 ### Why the project has a VPC
 
@@ -444,7 +444,7 @@ Four workflows run in `.github/workflows/`:
 | --- | --- | --- |
 | `quality.yml` | Pull requests and pushes to master | The quality gate: quality-static and type-check |
 | `images.yml` | A successful `quality` run on a push to master | Builds a `linux/arm64` image for each service whose code changed, tags it with that code's last commit, and pushes it to ECR |
-| `terraform.yml` | Pull requests and pushes to master that change `infra/` or `site/`, or a manual run | `terraform plan` on pull requests; on master, a plan of the merged commit, then an apply of exactly that plan after approval |
+| `terraform.yml` | Pull requests that change `infra/` or `site/`; on master, each completed `images` run; or a manual run | `terraform fmt -check`, `terraform validate` and `terraform plan`; on master, an apply of exactly that plan after approval |
 
 `infra/scripts/push-images.sh` builds and pushes the same tags from a developer machine; Docker must be running and the service folders must have no uncommitted changes. CI then skips those images, because the tags already exist.
 
@@ -453,7 +453,7 @@ A merge to master therefore runs `quality`, then `images`, and a `terraform` run
 1. `plan` runs `terraform plan -out=tfplan` on the merged commit with the read-only plan role. The plan appears on the run's summary page. The saved plan holds sensitive values in plain text, and the artifacts of a public repository can be downloaded by any signed-in GitHub user, so the job encrypts it (AES-256 with PBKDF2, key in the repository secret `TFPLAN_KEY`) and keeps the encrypted artifact for one day. The apply job decrypts it with the same secret.
 2. `apply` waits for approval in the environment `aws`, then runs `terraform apply tfplan`. It applies exactly the plan the reviewer read. If the state changed after the plan, Terraform refuses the saved plan and the run fails; run the workflow again for a fresh plan. A plan without changes skips `apply`.
 
-Master runs queue one after another, so each plan is made after the previous apply. Terraform reads the newest image of each repository when it plans, so a run that plans before `images` finishes keeps the previous images; run the workflow by hand after `images` to deploy them.
+Master runs queue one after another, so each plan is made after the previous apply. Terraform reads the newest image of each repository when it plans. On master the workflow starts only when `images` has finished successfully, so each plan deploys the images that run just pushed.
 
 Each workflow pins its actions to a full commit SHA, with the release tag in a comment.
 

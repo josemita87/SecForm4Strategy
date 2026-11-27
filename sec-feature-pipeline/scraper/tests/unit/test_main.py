@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
-from main import read_filing, scrape
+from main import read_filing, scrape, still_left
 from secform4strategy_clients.fakes.filings import FakeFilings
 from secform4strategy_clients.fakes.messaging import FakeMessageQueue
 from secform4strategy_clients.ports import RetryableError
@@ -128,3 +128,18 @@ class TestScrape:
         )
         assert filings.finished == ['second', 'first']
         assert done == [first, second]
+
+
+class TestStillLeft:
+    """Unfinished filings are tracked until a redelivery finishes them."""
+
+    def test_unfinished_filings_are_left(self) -> None:
+        batch = [message('a'), message('b'), message('c')]
+        assert still_left(set(), batch, batch[:1]) == {'b', 'c'}
+
+    def test_a_redelivery_that_finishes_them_clears_them(self) -> None:
+        batch = [message('b'), message('c')]
+        assert still_left({'b', 'c'}, batch, batch) == set()
+
+    def test_others_stay_left_until_finished(self) -> None:
+        assert still_left({'b', 'c'}, [message('b')], [message('b')]) == {'c'}
