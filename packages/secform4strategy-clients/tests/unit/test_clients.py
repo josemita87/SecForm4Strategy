@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 from pydantic import SecretStr
-from secform4strategy_clients.ports import PermanentError, RetryableError
+from secform4strategy_clients.ports import PermanentError, RetryableError, UntradableError
 from secform4strategy_clients.records import BrokerAccount, BrokerOrder, BrokerPosition, EquityPoint, MarketSession
 
 
@@ -221,6 +221,15 @@ def test_alpaca_error_without_status_is_retryable(monkeypatch):
     client, _ = _alpaca(monkeypatch, [_FakeAPIError(None, 'no response')])
     with pytest.raises(RetryableError):
         client.place_order('AAPL', 1, 'sell', 'market', 'gtc', 'k')
+
+
+@pytest.mark.parametrize(
+    'message', ['asset \\"RGC\\" is not tradable', 'asset RGC is not shortable', 'asset RGC cannot be sold short']
+)
+def test_alpaca_raises_untradable_for_a_symbol_it_does_not_trade(monkeypatch: pytest.MonkeyPatch, message: str) -> None:
+    client, _ = _alpaca(monkeypatch, [_FakeAPIError(422, f'{{"message": "{message}"}}')])
+    with pytest.raises(UntradableError, match='422'):
+        client.place_order('RGC', 1, 'sell', 'market', 'day', 'k')
 
 
 def test_alpaca_other_client_id_rejection_is_permanent(monkeypatch):

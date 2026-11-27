@@ -46,6 +46,8 @@ class OrderOutcome(StrEnum):
 
     SUBMITTED = 'submitted'
     PLACED_BEFORE = 'placed_before'
+    #: The broker does not trade or short the symbol
+    UNTRADABLE = 'untradable'
     REJECTED = 'rejected'
     #: Failed transiently and left for a rerun
     FAILED = 'failed'

@@ -47,6 +47,10 @@ class PermanentError(Exception):
     """The operation fails however often it is repeated."""
 
 
+class UntradableError(PermanentError):
+    """The broker does not trade, or does not short, the symbol."""
+
+
 def is_many(value: object) -> TypeGuard[Iterable[object]]:
     """Return whether a filter value means "any of" (a non-string iterable) rather than equality.
 

@@ -25,7 +25,7 @@ from alpaca.trading.enums import TimeInForce as AlpacaTimeInForce
 from alpaca.trading.models import Calendar, Order, PortfolioHistory, Position, TradeAccount
 from alpaca.trading.requests import GetCalendarRequest, GetOrdersRequest, GetPortfolioHistoryRequest, OrderRequest
 
-from secform4strategy_clients.ports import PermanentError, RetryableError
+from secform4strategy_clients.ports import PermanentError, RetryableError, UntradableError
 from secform4strategy_clients.records import BrokerAccount, BrokerOrder, BrokerPosition, EquityPoint, MarketSession
 
 if TYPE_CHECKING:
@@ -110,7 +110,8 @@ class AlpacaClient:
 
         Raises:
             RetryableError: The connection failed, Alpaca gave no status, or it answered 429 or 5xx after its retries.
-            PermanentError: Alpaca rejected the order, e.g. an unknown or unshortable symbol.
+            UntradableError: Alpaca does not trade or short the symbol.
+            PermanentError: Alpaca rejected the order for another reason, e.g. an unknown symbol.
         """
         try:
             order: object = self.api.submit_order(
@@ -131,6 +132,10 @@ class AlpacaClient:
                 return None
             if _transient(error):
                 raise RetryableError(f'Order {client_order_id}: HTTP {error.status_code} {error}') from error
+            if error.status_code == HTTPStatus.UNPROCESSABLE_ENTITY and any(
+                reason in str(error) for reason in ('not tradable', 'not shortable', 'cannot be sold short')
+            ):
+                raise UntradableError(f'Order {client_order_id}: HTTP {error.status_code} {error}') from error
             raise PermanentError(f'Order {client_order_id}: HTTP {error.status_code} {error}') from error
         logger.info(f'Order submitted: {order}')
         return order
