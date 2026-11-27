@@ -10,7 +10,7 @@ Under test:
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pyarrow as pa
@@ -20,6 +20,7 @@ from secform4strategy_clients.feature_groups import FeatureGroupSpec
 from secform4strategy_clients.feature_store import IcebergFeatureStore
 
 if TYPE_CHECKING:
+    from pyiceberg.schema import Schema
     from pyiceberg.table import Table
 
 SINCE = datetime(2026, 11, 20, tzinfo=UTC)
@@ -165,3 +166,29 @@ class TestTableProperties:
         table = catalog.load_table('features.sales_v1')
         assert table.properties.items() >= WANTED.items()
         assert sorted(table.scan().to_pandas()['key']) == ['a', 'b']
+
+
+class CreatingRivalCatalog(SqlCatalog):
+    """A SQLite catalog where a rival writer creates the table right before the next create, once."""
+
+    rival: Callable[[], object] | None = None
+
+    def create_table(
+        self, identifier: str | tuple[str, ...], schema: Schema | pa.Schema, *args: Any, **kwargs: Any
+    ) -> Table:
+        """Let the rival create the table first, then create it too."""
+        if (rival := self.rival) is not None:
+            self.rival = None
+            rival()
+        return super().create_table(identifier, schema, *args, **kwargs)
+
+
+class TestTableCreationRace:
+    """A writer that loses the race to create a table uses the table its rival created."""
+
+    def test_both_writers_rows_are_kept(self, tmp_path: Path) -> None:
+        catalog = CreatingRivalCatalog('test', uri=f'sqlite:///{tmp_path}/catalog.db', warehouse=tmp_path.as_uri())
+        store = IcebergFeatureStore(catalog, 'features', {'sales': SPEC})
+        catalog.rival = lambda: store.push('sales', sales('rival'))
+        store.push('sales', sales('mine'))
+        assert sorted(store.read('sales')['key']) == ['mine', 'rival']
