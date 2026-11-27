@@ -237,7 +237,7 @@ Each identity gets only the permissions its job requires.
 
 No secret is in the Terraform state, the Git repository, the container images or the files the browser receives.
 
-The Terraform plan role `secform4strategy-github-plan` has `ReadOnlyAccess`, and pull request branches can assume it. Its inline policy `deny-site-keys` denies `cloudfront-keyvaluestore:GetKey` and `cloudfront-keyvaluestore:ListKeys`, so a pull request cannot read the password hash.
+The Terraform plan role `secform4strategy-github-plan` has `ReadOnlyAccess`, and pull request branches can assume it. Its inline policy `deny-secrets` denies `cloudfront-keyvaluestore:GetKey` and `cloudfront-keyvaluestore:ListKeys`, so a pull request cannot read the password hash. The same policy denies reads of the SSM secrets, so a pull request cannot read the Alpaca keys ([aws.md](aws.md#oidc-trust)).
 
 ### 5. No public API
 

@@ -81,19 +81,40 @@ resource "aws_iam_role_policy" "plan" {
   policy = data.aws_iam_policy_document.state_lock.json
 }
 
-# PR branches can assume the plan role, and the key-value store holds the site password hash
-data "aws_iam_policy_document" "deny_site_keys" {
+# PR branches can assume the plan role: it reads neither the site password hash nor the SSM secrets (docs/aws.md#oidc-trust)
+data "aws_iam_policy_document" "deny_secrets" {
   statement {
     effect    = "Deny"
     actions   = ["cloudfront-keyvaluestore:GetKey", "cloudfront-keyvaluestore:ListKeys"]
     resources = ["*"]
   }
+  statement {
+    effect    = "Deny"
+    actions   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParameterHistory"]
+    resources = ["arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.name}/*"]
+  }
+  # Access to a path covers every parameter below it, so a recursive read of / would reach the secrets
+  statement {
+    effect    = "Deny"
+    actions   = ["ssm:GetParametersByPath"]
+    resources = ["*"]
+  }
+  statement {
+    effect    = "Deny"
+    actions   = ["kms:Decrypt"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["ssm.${data.aws_region.current.region}.amazonaws.com"]
+    }
+  }
 }
 
-resource "aws_iam_role_policy" "plan_deny_site_keys" {
-  name   = "deny-site-keys"
+resource "aws_iam_role_policy" "plan_deny_secrets" {
+  name   = "deny-secrets"
   role   = aws_iam_role.github["plan"].id
-  policy = data.aws_iam_policy_document.deny_site_keys.json
+  policy = data.aws_iam_policy_document.deny_secrets.json
 }
 
 resource "aws_iam_role_policy_attachment" "apply" {

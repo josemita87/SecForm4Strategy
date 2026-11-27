@@ -12,3 +12,9 @@ packages/**/build/
 .git/
 .gitignore
 **/.DS_Store
+
+# Secrets: containers receive configuration as environment variables, never as files
+**/.env
+**/.credentials.env
+**/*.pem
+**/*.key

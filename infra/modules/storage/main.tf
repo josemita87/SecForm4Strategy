@@ -23,6 +23,37 @@ resource "aws_s3_bucket_public_access_block" "data" {
   restrict_public_buckets = true
 }
 
+data "aws_iam_policy_document" "data_bucket" {
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.data.arn, "${aws_s3_bucket.data.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "data" {
+  bucket     = aws_s3_bucket.data.id
+  policy     = data.aws_iam_policy_document.data_bucket.json
+  depends_on = [aws_s3_bucket_public_access_block.data]
+}
+
+resource "aws_s3_bucket_versioning" "data" {
+  bucket = aws_s3_bucket.data.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 resource "aws_s3_bucket_lifecycle_configuration" "data" {
   bucket = aws_s3_bucket.data.id
   rule {
@@ -33,6 +64,14 @@ resource "aws_s3_bucket_lifecycle_configuration" "data" {
       days_after_initiation = 1
     }
   }
+  # Versions that VACUUM, compaction or an overwrite replaced stay restorable for 7 days
+  rule {
+    id     = "expire-noncurrent-versions"
+    status = "Enabled"
+    filter {}
+    noncurrent_version_expiration { noncurrent_days = 7 }
+    expiration { expired_object_delete_marker = true }
+  }
   rule {
     id     = "expire-athena-results"
     status = "Enabled"
@@ -41,6 +80,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "data" {
     }
     expiration { days = 7 }
   }
+  depends_on = [aws_s3_bucket_versioning.data]
 }
 
 resource "aws_glue_catalog_database" "lakehouse" {
