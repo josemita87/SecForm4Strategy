@@ -3,6 +3,7 @@
 import logging
 import sys
 import time
+from collections.abc import Sequence
 from concurrent.futures import Executor, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -112,7 +113,7 @@ def scrape(
     return done, len(txs)
 
 
-def still_left(left: set[str], messages: list[Message], done: list[Message]) -> set[str]:
+def still_left(left: set[str], messages: Sequence[Message], done: Sequence[Message]) -> set[str]:
     """Return the accessions still unfinished after one receive, so a redelivery that finishes one clears it.
 
     Args:
