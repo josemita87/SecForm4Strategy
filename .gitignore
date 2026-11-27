@@ -63,8 +63,8 @@ docs/presentation/
 # Site data the publisher writes; previews use site/fixtures
 site/data/
 
-# Built from docs/report/*.md by build_pdf.sh; submitted as files, not tracked
-docs/report/*.pdf
-# The course submission stays local, out of the public repository
-docs/report/submission.md
-docs/report/submission.css
+# The project report, the course submission and their build stay local, out of the public repository
+docs/report/
+
+# Training writes its holdout simulation plot here at each run
+training/src/plots/
