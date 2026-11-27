@@ -21,7 +21,7 @@ import sklearn
 from constants import OrderOutcome
 from inference_pipeline import InferencePipeline, OrderSpec, score, signal_cutoff
 from secform4strategy_clients.fakes.models import FakeModelStore
-from secform4strategy_clients.ports import PermanentError, RetryableError
+from secform4strategy_clients.ports import PermanentError, RetryableError, UntradableError
 from secform4strategy_clients.records import MarketSession, ModelMetadata, Scores
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import HistGradientBoostingClassifier
@@ -184,6 +184,11 @@ class TestTrades:
             'k2': OrderOutcome.FAILED,
             'k3': OrderOutcome.PLACED_BEFORE,
         }
+
+    def test_a_symbol_the_broker_does_not_trade_is_untradable(self) -> None:
+        broker = RecordingBroker(errors={'k1': UntradableError('asset is not tradable')})
+        inference, _ = pipeline(METADATA, broker)
+        assert inference.execute_trades(score(MODEL, FEATURES, ROWS), 0.0, ORDER)['k1'] == OrderOutcome.UNTRADABLE
 
 
 NEW_YORK = ZoneInfo('America/New_York')

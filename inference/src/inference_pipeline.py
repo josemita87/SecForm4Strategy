@@ -9,7 +9,7 @@ import pandas as pd
 import sklearn
 from constants import Col, OrderOutcome
 from secform4strategy_clients.model_store import version_of
-from secform4strategy_clients.ports import OrderType, PermanentError, RetryableError, Side, TimeInForce
+from secform4strategy_clients.ports import OrderType, PermanentError, RetryableError, Side, TimeInForce, UntradableError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -154,6 +154,9 @@ class InferencePipeline:
         """Place one short under its row key and return what happened."""
         try:
             placed = self.broker.place_order(ticker, order.qty, order.side, order.order_type, order.time_in_force, key)
+        except UntradableError as error:
+            logger.warning(f'Order {key} dropped, the broker does not trade the symbol: {error}')
+            return OrderOutcome.UNTRADABLE
         except PermanentError as error:
             logger.error(f'Order {key} dropped: {error}')
             return OrderOutcome.REJECTED

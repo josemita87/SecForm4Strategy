@@ -201,7 +201,7 @@ After the orders, the inference service upserts one record per scored row into t
 | `scored_at` | When the run started scoring; the feature group's event time |
 | `run_id` | The Lambda request id; null for a batch run |
 | `client_order_id` | The row key when the row was shorted, else null |
-| `order_outcome` | `submitted`, `placed_before`, `rejected` (Alpaca refused the order for good), `failed` (left for a retry), or null when the row was not shorted |
+| `order_outcome` | `submitted`, `placed_before`, `untradable` (Alpaca does not trade or short the symbol), `rejected` (Alpaca refused the order for good for another reason), `failed` (left for a retry), or null when the row was not shorted |
 
 The Alpaca order id is not stored. The client order id is unique in the account, and the Alpaca order list carries it, so readers join on it.
 
