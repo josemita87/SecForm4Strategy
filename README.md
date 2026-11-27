@@ -4,7 +4,7 @@
 
 Corporate insiders must report their trades to the SEC on a Form 4. SecForm4Strategy reads each filing as EDGAR publishes it and joins it to the stock's prices after the filing became public. A gradient-boosted classifier then estimates the chance that the stock falls by more than 5% over the next 30 days, and the system shorts the names that score highest.
 
-> **Status: portfolio and research project.** Trading is paper only, and nothing here is investment advice. Terraform defines the whole AWS stack in `us-east-1`. The same services also run locally on Docker Compose. A password-protected demo website is available on request.
+> **Status: research project.** Trading is paper only, and nothing here is investment advice. Terraform defines the whole AWS stack in `us-east-1`. The same services also run locally on Docker Compose. A password-protected demo website is available on request.
 
 ![AWS architecture](docs/diagrams/aws-architecture.drawio.svg)
 
@@ -17,7 +17,7 @@ Corporate insiders must report their trades to the SEC on a Form 4. SecForm4Stra
 - **Keyless, approval-gated CI/CD.** GitHub Actions authenticates to AWS with OIDC. A reviewer approves the exact saved Terraform plan before it is applied. Trivy scans the dependencies, the Terraform and every image.
 - **A leak-free ML pipeline.** Every row is timed by the moment SEC accepted the filing. Validation uses purged walk-forward folds and a time holdout. Holdout average precision is 0.418 against a 0.338 base rate.
 
-## Skills demonstrated
+## Tech stack
 
 | Area | Technologies | Where they are used |
 | --- | --- | --- |
