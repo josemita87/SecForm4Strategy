@@ -13,6 +13,7 @@ import logging
 from datetime import UTC, date, datetime
 from http import HTTPStatus
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import requests
@@ -37,6 +38,9 @@ logger = logging.getLogger(__name__)
 #: Alpaca's calendar gives session times as naive New York wall-clock times
 EXCHANGE_TZ = ZoneInfo('America/New_York')
 
+#: The only trading host the client accepts, so no configuration can reach a live account
+PAPER_HOST = 'paper-api.alpaca.markets'
+
 
 def _number(value: str | float | None) -> float | None:
     """Return Alpaca's numeric string as a float, or None when absent."""
@@ -57,7 +61,7 @@ class AlpacaClient:
 
     Attributes:
         api: The authenticated Alpaca trading client.
-        paper: Whether the account is a paper-trading account.
+        paper: Whether the account is a paper-trading account; always True.
     """
 
     def __init__(self, api_key: SecretStr, api_secret: SecretStr, base_url: str) -> None:
@@ -66,13 +70,18 @@ class AlpacaClient:
         Args:
             api_key: Alpaca API key.
             api_secret: Alpaca API secret.
-            base_url: Alpaca trading base URL; a paper URL selects the paper account.
+            base_url: Alpaca trading base URL; its host must be the paper host.
+
+        Raises:
+            ValueError: If ``base_url`` is not on the paper host.
         """
-        self.paper = 'paper' in base_url
+        if urlsplit(base_url).hostname != PAPER_HOST:
+            raise ValueError(f'Alpaca base URL {base_url} is not on {PAPER_HOST}; only paper trading is allowed')
+        self.paper = True
         self.api = TradingClient(
             api_key.get_secret_value(),
             api_secret.get_secret_value(),
-            paper=self.paper,
+            paper=True,
             url_override=base_url,
         )
         logger.info('Initialized Alpaca API')

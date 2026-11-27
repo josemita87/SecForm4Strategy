@@ -29,7 +29,7 @@ The data bucket holds three prefixes:
 - `models/` holds the trained models.
 - `athena-results/` holds Athena query results. Objects under it expire after 7 days.
 
-The bucket blocks all public access and encrypts objects with SSE-S3. Incomplete multipart uploads expire after 1 day.
+The bucket blocks all public access and encrypts objects with SSE-S3. Its bucket policy denies every request that does not use TLS (`aws:SecureTransport` is false). Versioning is on. A deleted or overwritten object stays as a noncurrent version for 7 days, then expires. This covers the files that `VACUUM` and compaction delete. Incomplete multipart uploads expire after 1 day.
 
 The Athena workgroup writes results to `athena-results/` and cancels any query that scans more than 1 GiB.
 
@@ -161,6 +161,8 @@ The live path runs the batch services as Lambda functions, on the same images, s
    1. yahoo-connect downloads the last 10 calendar days of daily bars of each ticker from Yahoo Finance. It returns `{"tickers": [...], "prices": [{"ticker", "date", "close_as_traded"}, ...]}`, one price per final bar. It reads and writes no table.
    2. target validates that input, builds the `BIR4` rows of the tickers with those prices, and returns `{"tickers": [...]}`.
    3. inference scores the rows and places Alpaca paper orders.
+
+`AlpacaClient` accepts only a base URL on the host `paper-api.alpaca.markets`. Any other `ALPACA_BASE_URL` raises `ValueError` when the client is built, so the inference and site-publisher services cannot reach a live account.
 
 A second schedule, `secform4strategy-live-catch-up`, invokes master-index at 07:55 ET, Monday to Friday, with `{"num_pages": 20}`. That poll reads 20 feed pages of 100 entries. The feed lists each filing once per filer, so 20 pages hold about 1,000 filings. Most Form 4s that arrive after the 15:59 poll are accepted from 16:00 to 22:00 ET, and some from 06:00 to 09:00 ET. The catch-up sends the new ones before the open, so inference places their orders for the open. It normally ends before the 08:00 poll starts. If the two overlap, a filing can be sent twice, and the downstream upserts and client order ids absorb the repeat. The `poll_schedule` variable of the `live` module holds both cron expressions, in `America/New_York` time, and the page count.
 
@@ -453,6 +455,8 @@ A merge to master therefore runs `quality`, then `images`, and a `terraform` run
 
 Master runs queue one after another, so each plan is made after the previous apply. Terraform reads the newest image of each repository when it plans, so a run that plans before `images` finishes keeps the previous images; run the workflow by hand after `images` to deploy them.
 
+Each workflow pins its actions to a full commit SHA, with the release tag in a comment.
+
 The branch rules of master require a pull request whose `quality-static` check passes. They block force pushes and deletion of master.
 
 ### OIDC trust
@@ -464,10 +468,16 @@ Each role trusts the provider only for the audience `sts.amazonaws.com` and exac
 | Role | Trusted subject | Permissions |
 | --- | --- | --- |
 | `secform4strategy-github-images` | `repo:josemita87/SecForm4Strategy:ref:refs/heads/master` | `ecr:GetAuthorizationToken`, and image push and pull on `secform4strategy/*` |
-| `secform4strategy-github-plan` | `repo:josemita87/SecForm4Strategy:pull_request`, and `repo:josemita87/SecForm4Strategy:ref:refs/heads/master` for the plan of a master run | `ReadOnlyAccess`, plus `s3:PutObject` and `s3:DeleteObject` on `*.tflock` in the state bucket, minus `cloudfront-keyvaluestore:GetKey` and `ListKeys` |
+| `secform4strategy-github-plan` | `repo:josemita87/SecForm4Strategy:pull_request`, and `repo:josemita87/SecForm4Strategy:ref:refs/heads/master` for the plan of a master run | `ReadOnlyAccess`, plus `s3:PutObject` and `s3:DeleteObject` on `*.tflock` in the state bucket, minus reads of the CloudFront key-value store and of the SSM secrets |
 | `secform4strategy-github-apply` | `repo:josemita87/SecForm4Strategy:environment:aws` | `AdministratorAccess` |
 
-The plan role can read every resource and the state, and can write only the lock file. A pull request therefore cannot change any resource. The inline policy `deny-site-keys` denies the plan role `cloudfront-keyvaluestore:GetKey` and `cloudfront-keyvaluestore:ListKeys` on all resources. A pull request branch can assume the plan role, and the key-value store `secform4strategy-site-auth` holds the hash of the site password.
+The plan role can read every resource and the state, and can write only the lock file. A pull request therefore cannot change any resource. A pull request branch can assume the plan role, so the inline policy `deny-secrets` denies it three things:
+
+- `cloudfront-keyvaluestore:GetKey` and `cloudfront-keyvaluestore:ListKeys` on all resources. The key-value store `secform4strategy-site-auth` holds the hash of the site password.
+- `ssm:GetParameter`, `ssm:GetParameters` and `ssm:GetParameterHistory` on `/secform4strategy/*`, the [secrets](#secrets), and `ssm:GetParametersByPath` on all paths. Access to a path covers every parameter below it, so a recursive read of `/` returns the secrets.
+- `kms:Decrypt` through SSM (`kms:ViaService` is `ssm.<region>.amazonaws.com`). The `SecureString` parameters use the key `alias/aws/ssm`.
+
+Terraform manages no SSM parameter, so `terraform plan` reads none of them and works under these denies.
 
 ### Approval gate
 

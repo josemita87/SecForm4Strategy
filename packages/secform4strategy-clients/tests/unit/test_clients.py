@@ -195,6 +195,16 @@ def test_alpaca_threads_credentials_and_places_order_with_its_client_id(monkeypa
     }
 
 
+@pytest.mark.parametrize(
+    'base_url', ['https://api.alpaca.markets', 'https://paper-api.alpaca.markets.example.com', 'https://evil/paper']
+)
+def test_alpaca_refuses_a_non_paper_url(monkeypatch, base_url):
+    calls = _install_fake_alpaca(monkeypatch, [])
+    with pytest.raises(ValueError, match='only paper trading'):
+        _fresh(monkeypatch, 'broker').AlpacaClient(api_key=SecretStr('k'), api_secret=SecretStr('s'), base_url=base_url)
+    assert calls['client'] == {}
+
+
 def test_alpaca_repeated_client_id_means_already_placed(monkeypatch):
     client, _ = _alpaca(monkeypatch, [_FakeAPIError(422, '{"message": "client_order_id must be unique"}')])
     assert client.place_order('AAPL', 1, 'sell', 'market', 'gtc', 'k') is None
