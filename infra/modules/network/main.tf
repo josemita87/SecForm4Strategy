@@ -1,5 +1,7 @@
+# Fargate has no ARM64 capacity in use1-az3, so the subnets never land there
 data "aws_availability_zones" "available" {
-  state = "available"
+  state            = "available"
+  exclude_zone_ids = ["use1-az3"]
 }
 
 resource "aws_vpc" "main" {

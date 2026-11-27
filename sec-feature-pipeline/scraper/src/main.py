@@ -112,6 +112,20 @@ def scrape(
     return done, len(txs)
 
 
+def still_left(left: set[str], messages: list[Message], done: list[Message]) -> set[str]:
+    """Return the accessions still unfinished after one receive, so a redelivery that finishes one clears it.
+
+    Args:
+        left: Accessions unfinished before this receive.
+        messages: The messages this receive returned.
+        done: The finished prefix of ``messages``.
+
+    Returns:
+        The accessions a redelivery has not finished yet.
+    """
+    return (left - {str(m.body['accession']) for m in done}) | {str(m.body['accession']) for m in messages[len(done) :]}
+
+
 if __name__ == '__main__':
     queue: MessageQueue
     match config.queue:
@@ -124,7 +138,7 @@ if __name__ == '__main__':
     time.sleep(config.delay)
     logger.info(f'Scraper started: {config.input_queue} -> {config.output_queue}')
 
-    left_for_retry = False
+    left: set[str] = set()
     with ThreadPoolExecutor(config.fetch_workers) as pool:
         while True:
             messages = queue.receive(config.input_queue, config.buffer_size, config.poll_timeout)
@@ -133,12 +147,12 @@ if __name__ == '__main__':
             queue.ack(config.input_queue, done)
             if messages:
                 logger.info(f'{len(done)} of {len(messages)} filings -> {sent} transactions')
+            left = still_left(left, messages, done)
             if len(done) < len(messages):
-                left_for_retry = True
                 time.sleep(config.retry_pause)
             if not messages and config.exit_when_empty:
                 break
 
     # SQS hides unfinished filings for its visibility timeout, so an empty queue does not mean they are done
-    if left_for_retry:
-        sys.exit('Filings were left for a retry; a rerun after the visibility timeout finishes them')
+    if left:
+        sys.exit(f'{len(left)} filings were left for a retry; a rerun after the visibility timeout finishes them')
